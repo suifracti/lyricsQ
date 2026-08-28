@@ -2299,7 +2299,7 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
                     // Safe idempotent no-op for re-saving exact identical immutable timing version
                     return
                 } else {
-                    throw LyricsRepositoryError.databaseOpenFailed(
+                    throw LyricsRepositoryError.dataIntegrityViolation(
                         "Timing version data integrity violation for \(existingTimingID): existing record differs from incoming payload (immutable timing identity mismatch)"
                     )
                 }

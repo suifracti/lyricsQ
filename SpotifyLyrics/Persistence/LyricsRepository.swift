@@ -12,6 +12,7 @@ public enum LyricsRepositoryError: Error, Equatable, Sendable, LocalizedError {
     case unsupportedSchema(Int)
     case invalidData(String)
     case unavailable(String)
+    case dataIntegrityViolation(String)
 
     public var errorDescription: String? {
         switch self {
@@ -21,6 +22,7 @@ public enum LyricsRepositoryError: Error, Equatable, Sendable, LocalizedError {
         case .unsupportedSchema(let version): return "歌词数据库版本 \(version) 高于当前 App 支持版本"
         case .invalidData(let message): return "歌词数据库数据无效：\(message)"
         case .unavailable(let message): return "歌词数据库不可用：\(message)"
+        case .dataIntegrityViolation(let message): return "歌词数据完整性校验失败：\(message)"
         }
     }
 }

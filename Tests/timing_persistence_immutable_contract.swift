@@ -133,8 +133,17 @@ struct TimingPersistenceImmutableContract {
             _ = try await repo.save(track: track, identity: identity, document: docAlteredPayload)
             log("FAIL: Reusing timingVersionID A with altered payload must throw integrity violation")
             exit(1)
+        } catch let repoError as LyricsRepositoryError {
+            switch repoError {
+            case .dataIntegrityViolation(let msg):
+                log("  - expected .dataIntegrityViolation caught: \(msg)")
+            default:
+                log("FAIL: Expected .dataIntegrityViolation, got \(repoError)")
+                exit(1)
+            }
         } catch {
-            log("  - expected integrity error caught when payload differed: \(error)")
+            log("FAIL: Expected LyricsRepositoryError, got \(error)")
+            exit(1)
         }
 
         // Verify count is still 1 and original payload is intact
@@ -216,8 +225,17 @@ struct TimingPersistenceImmutableContract {
             _ = try await repo.save(track: track, identity: identity, document: mismatchedDoc)
             log("FAIL: Expected integrity violation to throw error")
             exit(1)
+        } catch let repoError as LyricsRepositoryError {
+            switch repoError {
+            case .dataIntegrityViolation(let msg):
+                log("  - expected .dataIntegrityViolation caught: \(msg)")
+            default:
+                log("FAIL: Expected .dataIntegrityViolation, got \(repoError)")
+                exit(1)
+            }
         } catch {
-            log("  - expected integrity error caught: \(error)")
+            log("FAIL: Expected LyricsRepositoryError, got \(error)")
+            exit(1)
         }
 
         log("PASS: Timing persistence immutable & idempotent re-save contract verified")

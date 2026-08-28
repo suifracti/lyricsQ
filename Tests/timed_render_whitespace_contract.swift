@@ -12,13 +12,9 @@ struct TimedRenderWhitespaceContract {
     static func main() throws {
         print("[1] Testing 'Hello World!' composition with untimed whitespace and punctuation...")
         let originalText1 = "Hello World!"
-        let startIdx = originalText1.startIndex
-        let span0Range = startIdx..<originalText1.index(startIdx, offsetBy: 5) // "Hello"
-        let span1Range = originalText1.index(startIdx, offsetBy: 6)..<originalText1.index(startIdx, offsetBy: 11) // "World"
-
         let spans1 = [
-            ResolvedGraphemeSpan(id: 0, text: "Hello", startTime: 1.0, endTime: 2.0, range: span0Range, granularity: .timedUnit),
-            ResolvedGraphemeSpan(id: 1, text: "World", startTime: 2.0, endTime: 3.0, range: span1Range, granularity: .timedUnit)
+            TimedTextSpan(id: 0, text: "Hello", trailingWhitespace: " ", startTime: 1.0, endTime: 2.0, utf16Start: 0, utf16Length: 5, granularity: .timedUnit),
+            TimedTextSpan(id: 1, text: "World", trailingWhitespace: "", startTime: 2.0, endTime: 3.0, utf16Start: 6, utf16Length: 5, granularity: .timedUnit)
         ]
 
         // Check composed string matches originalText at any time
@@ -50,13 +46,9 @@ struct TimedRenderWhitespaceContract {
 
         print("[2] Testing mixed-language '君と Hello World' with leading and inter-word whitespace...")
         let originalText2 = "君と Hello World"
-        let startIdx2 = originalText2.startIndex
-        let spanHRange = originalText2.index(startIdx2, offsetBy: 3)..<originalText2.index(startIdx2, offsetBy: 8) // "Hello"
-        let spanWRange = originalText2.index(startIdx2, offsetBy: 9)..<originalText2.index(startIdx2, offsetBy: 14) // "World"
-
         let spans2 = [
-            ResolvedGraphemeSpan(id: 0, text: "Hello", startTime: 2.0, endTime: 3.0, range: spanHRange, granularity: .timedUnit),
-            ResolvedGraphemeSpan(id: 1, text: "World", startTime: 3.0, endTime: 4.0, range: spanWRange, granularity: .timedUnit)
+            TimedTextSpan(id: 0, text: "Hello", trailingWhitespace: " ", startTime: 2.0, endTime: 3.0, utf16Start: 3, utf16Length: 5, granularity: .timedUnit),
+            TimedTextSpan(id: 1, text: "World", trailingWhitespace: "", startTime: 3.0, endTime: 4.0, utf16Start: 9, utf16Length: 5, granularity: .timedUnit)
         ]
 
         let segsMixed = TimedTextComposer.composeSegments(text: originalText2, spans: spans2, currentTime: 2.5)

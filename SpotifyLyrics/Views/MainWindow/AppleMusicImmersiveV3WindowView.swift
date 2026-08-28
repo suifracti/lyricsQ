@@ -1947,8 +1947,8 @@ private struct AppleMusicImmersiveV3LyricRow: View {
                     maxWidth: readableLineWidth
                 )
             } else if preferences.showOriginal {
-                if isActive, let spans = line.resolvedGraphemeSpans(), !spans.isEmpty {
-                    timedSpanText(text: semanticDisplayText, spans: spans)
+                if isActive, let timedSpans = line.timedSpans, !timedSpans.isEmpty {
+                    timedSpanText(displayText: semanticDisplayText, originalText: line.originalText, spans: timedSpans)
                         .font(.system(size: baseSize, weight: rowWeight, design: .rounded))
                         .fixedSize(horizontal: false, vertical: true)
                 } else {
@@ -2004,8 +2004,13 @@ private struct AppleMusicImmersiveV3LyricRow: View {
         )
     }
 
-    private func timedSpanText(text: String, spans: [ResolvedGraphemeSpan]) -> Text {
-        let segments = TimedTextComposer.composeSegments(text: text, spans: spans, currentTime: currentTime)
+    private func timedSpanText(displayText: String, originalText: String, spans: [TimedTextSpan]) -> Text {
+        let segments = TimedTextComposer.composeSegments(
+            displayText: displayText,
+            originalText: originalText,
+            spans: spans,
+            currentTime: currentTime
+        )
         var result = Text("")
         for segment in segments {
             let color: Color = segment.isHighlighted ? .white : .white.opacity(0.42)

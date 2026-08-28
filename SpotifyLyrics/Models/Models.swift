@@ -226,29 +226,97 @@ public struct TimedTextSegment: Equatable, Sendable {
 }
 
 public enum TimedTextComposer {
+    private struct ResolvedSpan {
+        let text: String
+        let startTime: TimeInterval
+        let endTime: TimeInterval
+        let range: Range<String.Index>
+    }
+
+    /// Resolves `timedSpans` into exact `Range<String.Index>` values on the specific `currentText` instance.
+    /// Returns nil if ANY span fails UTF-16 bounds, grapheme boundary conversion, text equality, or monotonicity (Fail-Closed).
+    private static func resolveSpans(
+        in currentText: String,
+        timedSpans: [TimedTextSpan]
+    ) -> [ResolvedSpan]? {
+        guard !timedSpans.isEmpty else { return nil }
+        var resolved: [ResolvedSpan] = []
+        resolved.reserveCapacity(timedSpans.count)
+
+        let utf16 = currentText.utf16
+        var lastEnd = currentText.startIndex
+
+        for span in timedSpans {
+            guard span.utf16Start >= 0,
+                  span.utf16Length >= 0,
+                  span.utf16Start + span.utf16Length <= utf16.count else {
+                return nil
+            }
+            guard let startU16 = utf16.index(utf16.startIndex, offsetBy: span.utf16Start, limitedBy: utf16.endIndex),
+                  let endU16 = utf16.index(startU16, offsetBy: span.utf16Length, limitedBy: utf16.endIndex),
+                  let startIdx = String.Index(startU16, within: currentText),
+                  let endIdx = String.Index(endU16, within: currentText),
+                  startIdx <= endIdx else {
+                // Not a valid grapheme cluster boundary in currentText
+                return nil
+            }
+            // Strict monotonicity: spans must not overlap and must proceed forward
+            guard startIdx >= lastEnd else {
+                return nil
+            }
+            let extracted = String(currentText[startIdx..<endIdx])
+            guard extracted == span.text else {
+                return nil
+            }
+            resolved.append(
+                ResolvedSpan(
+                    text: span.text,
+                    startTime: span.startTime,
+                    endTime: span.endTime,
+                    range: startIdx..<endIdx
+                )
+            )
+            lastEnd = endIdx
+        }
+        return resolved
+    }
+
+    /// Composes display segments while ensuring source-of-truth timing safety.
+    /// Resolves `spans` dynamically against `originalText`.
+    /// If `displayText != originalText` (e.g. line breaker inserted `\n` or reading surface projection),
+    /// or if any span fails grapheme boundary validation, safely falls back to a non-fine-timing full display text segment.
     public static func composeSegments(
-        text: String,
-        spans: [ResolvedGraphemeSpan],
+        displayText: String,
+        originalText: String,
+        spans: [TimedTextSpan],
         currentTime: TimeInterval
     ) -> [TimedTextSegment] {
-        guard !text.isEmpty else { return [] }
+        guard !displayText.isEmpty else { return [] }
         guard !spans.isEmpty else {
-            return [TimedTextSegment(text: text, isHighlighted: true)]
+            return [TimedTextSegment(text: displayText, isHighlighted: true)]
+        }
+        // Strict identity: displayText must equal originalText
+        guard displayText == originalText else {
+            return [TimedTextSegment(text: displayText, isHighlighted: true)]
+        }
+        // Resolve spans on this specific originalText instance
+        guard let resolvedSpans = resolveSpans(in: originalText, timedSpans: spans) else {
+            return [TimedTextSegment(text: displayText, isHighlighted: true)]
         }
 
         var segments: [TimedTextSegment] = []
-        var cursor = text.startIndex
+        var cursor = originalText.startIndex
 
-        for span in spans {
+        for span in resolvedSpans {
             if cursor < span.range.lowerBound {
-                let untimedText = String(text[cursor..<span.range.lowerBound])
+                let untimedText = String(originalText[cursor..<span.range.lowerBound])
                 if !untimedText.isEmpty {
                     let isHighlighted = currentTime >= span.startTime
                     segments.append(TimedTextSegment(text: untimedText, isHighlighted: isHighlighted))
                 }
             }
 
-            let spanText = String(text[span.range])
+            let spanText = String(originalText[span.range])
             if !spanText.isEmpty {
                 let isPlayed = currentTime >= span.endTime
                 let isActiveSpan = currentTime >= span.startTime && currentTime < span.endTime
@@ -258,15 +326,23 @@ public enum TimedTextComposer {
             cursor = max(cursor, span.range.upperBound)
         }
 
-        if cursor < text.endIndex {
-            let trailingText = String(text[cursor..<text.endIndex])
+        if cursor < originalText.endIndex {
+            let trailingText = String(originalText[cursor..<originalText.endIndex])
             if !trailingText.isEmpty {
-                let isHighlighted = spans.last.map { currentTime >= $0.endTime } ?? false
+                let isHighlighted = resolvedSpans.last.map { currentTime >= $0.endTime } ?? false
                 segments.append(TimedTextSegment(text: trailingText, isHighlighted: isHighlighted))
             }
         }
 
         return segments
+    }
+
+    public static func composeSegments(
+        text: String,
+        spans: [TimedTextSpan],
+        currentTime: TimeInterval
+    ) -> [TimedTextSegment] {
+        composeSegments(displayText: text, originalText: text, spans: spans, currentTime: currentTime)
     }
 }
 
