@@ -1948,9 +1948,14 @@ private struct AppleMusicImmersiveV3LyricRow: View {
                 )
             } else if preferences.showOriginal {
                 if isActive, let timedSpans = line.timedSpans, !timedSpans.isEmpty {
-                    timedSpanText(displayText: semanticDisplayText, originalText: line.originalText, spans: timedSpans)
-                        .font(.system(size: baseSize, weight: rowWeight, design: .rounded))
-                        .fixedSize(horizontal: false, vertical: true)
+                    AppleMusicImmersiveV3TimedRowView(
+                        displayText: semanticDisplayText,
+                        originalText: line.originalText,
+                        spans: timedSpans,
+                        currentTime: currentTime,
+                        font: .system(size: baseSize, weight: rowWeight, design: .rounded)
+                    )
+                    .fixedSize(horizontal: false, vertical: true)
                 } else {
                     Text(semanticDisplayText)
                         .font(.system(size: baseSize, weight: rowWeight, design: .rounded))
@@ -2003,20 +2008,56 @@ private struct AppleMusicImmersiveV3LyricRow: View {
             value: layoutSignature
         )
     }
+}
 
-    private func timedSpanText(displayText: String, originalText: String, spans: [TimedTextSpan]) -> Text {
+private struct AppleMusicImmersiveV3TimedRowView: View {
+    let displayText: String
+    let originalText: String
+    let spans: [TimedTextSpan]
+    let currentTime: TimeInterval
+    let font: Font
+
+    var body: some View {
         let segments = TimedTextComposer.composeSegments(
             displayText: displayText,
             originalText: originalText,
             spans: spans,
             currentTime: currentTime
         )
-        var result = Text("")
-        for segment in segments {
-            let color: Color = segment.isHighlighted ? .white : .white.opacity(0.42)
-            result = result + Text(segment.text).foregroundColor(color)
+
+        HStack(alignment: .firstTextBaseline, spacing: 0) {
+            ForEach(0..<segments.count, id: \.self) { index in
+                let segment = segments[index]
+                if segment.progress <= 0 {
+                    Text(segment.text)
+                        .font(font)
+                        .foregroundColor(.white.opacity(0.42))
+                } else if segment.progress >= 1.0 {
+                    Text(segment.text)
+                        .font(font)
+                        .foregroundColor(.white)
+                } else {
+                    Text(segment.text)
+                        .font(font)
+                        .foregroundColor(.white.opacity(0.42))
+                        .overlay(
+                            GeometryReader { geo in
+                                Text(segment.text)
+                                    .font(font)
+                                    .foregroundColor(.white)
+                                    .frame(width: geo.size.width, height: geo.size.height, alignment: .leading)
+                                    .mask(alignment: .leading) {
+                                        Rectangle()
+                                            .frame(
+                                                width: max(0, geo.size.width * CGFloat(segment.progress)),
+                                                height: geo.size.height
+                                            )
+                                    }
+                            }
+                        )
+                }
+            }
         }
-        return result
     }
 }
 

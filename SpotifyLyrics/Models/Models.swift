@@ -217,12 +217,26 @@ public struct ResolvedGraphemeSpan: Identifiable, Equatable, Sendable {
 
 public struct TimedTextSegment: Equatable, Sendable {
     public let text: String
-    public let isHighlighted: Bool
+    /// Progress of this segment: 0.0 (future/unplayed) ... 1.0 (played).
+    public let progress: Double
+    /// Whether this segment represents an untimed gap (whitespace or punctuation).
+    public let isUntimedGap: Bool
+
+    public init(text: String, progress: Double, isUntimedGap: Bool = false) {
+        self.text = text
+        self.progress = min(max(0.0, progress), 1.0)
+        self.isUntimedGap = isUntimedGap
+    }
 
     public init(text: String, isHighlighted: Bool) {
         self.text = text
-        self.isHighlighted = isHighlighted
+        self.progress = isHighlighted ? 1.0 : 0.0
+        self.isUntimedGap = false
     }
+
+    public var isPlayed: Bool { progress >= 1.0 }
+    public var isActive: Bool { progress > 0.0 && progress < 1.0 }
+    public var isHighlighted: Bool { progress > 0.0 }
 }
 
 public enum TimedTextComposer {
@@ -281,6 +295,27 @@ public enum TimedTextComposer {
         return resolved
     }
 
+    /// Pure, deterministic progress calculation for a timed span.
+    /// Clamped strictly to `0.0...1.0`.
+    public static func calculateSpanProgress(
+        startTime: TimeInterval,
+        endTime: TimeInterval,
+        currentTime: TimeInterval
+    ) -> Double {
+        let duration = endTime - startTime
+        if duration <= 0 {
+            return currentTime >= startTime ? 1.0 : 0.0
+        }
+        if currentTime <= startTime {
+            return 0.0
+        }
+        if currentTime >= endTime {
+            return 1.0
+        }
+        let raw = (currentTime - startTime) / duration
+        return min(max(0.0, raw), 1.0)
+    }
+
     /// Composes display segments while ensuring source-of-truth timing safety.
     /// Resolves `spans` dynamically against `originalText`.
     /// If `displayText != originalText` (e.g. line breaker inserted `\n` or reading surface projection),
@@ -293,15 +328,15 @@ public enum TimedTextComposer {
     ) -> [TimedTextSegment] {
         guard !displayText.isEmpty else { return [] }
         guard !spans.isEmpty else {
-            return [TimedTextSegment(text: displayText, isHighlighted: true)]
+            return [TimedTextSegment(text: displayText, progress: 1.0)]
         }
         // Strict identity: displayText must equal originalText
         guard displayText == originalText else {
-            return [TimedTextSegment(text: displayText, isHighlighted: true)]
+            return [TimedTextSegment(text: displayText, progress: 1.0)]
         }
         // Resolve spans on this specific originalText instance
         guard let resolvedSpans = resolveSpans(in: originalText, timedSpans: spans) else {
-            return [TimedTextSegment(text: displayText, isHighlighted: true)]
+            return [TimedTextSegment(text: displayText, progress: 1.0)]
         }
 
         var segments: [TimedTextSegment] = []
@@ -311,16 +346,19 @@ public enum TimedTextComposer {
             if cursor < span.range.lowerBound {
                 let untimedText = String(originalText[cursor..<span.range.lowerBound])
                 if !untimedText.isEmpty {
-                    let isHighlighted = currentTime >= span.startTime
-                    segments.append(TimedTextSegment(text: untimedText, isHighlighted: isHighlighted))
+                    let progress = currentTime >= span.startTime ? 1.0 : 0.0
+                    segments.append(TimedTextSegment(text: untimedText, progress: progress, isUntimedGap: true))
                 }
             }
 
             let spanText = String(originalText[span.range])
             if !spanText.isEmpty {
-                let isPlayed = currentTime >= span.endTime
-                let isActiveSpan = currentTime >= span.startTime && currentTime < span.endTime
-                segments.append(TimedTextSegment(text: spanText, isHighlighted: isPlayed || isActiveSpan))
+                let progress = calculateSpanProgress(
+                    startTime: span.startTime,
+                    endTime: span.endTime,
+                    currentTime: currentTime
+                )
+                segments.append(TimedTextSegment(text: spanText, progress: progress, isUntimedGap: false))
             }
 
             cursor = max(cursor, span.range.upperBound)
@@ -329,8 +367,9 @@ public enum TimedTextComposer {
         if cursor < originalText.endIndex {
             let trailingText = String(originalText[cursor..<originalText.endIndex])
             if !trailingText.isEmpty {
-                let isHighlighted = resolvedSpans.last.map { currentTime >= $0.endTime } ?? false
-                segments.append(TimedTextSegment(text: trailingText, isHighlighted: isHighlighted))
+                let lastSpanEnd = resolvedSpans.last?.endTime ?? 0
+                let progress = currentTime >= lastSpanEnd ? 1.0 : 0.0
+                segments.append(TimedTextSegment(text: trailingText, progress: progress, isUntimedGap: true))
             }
         }
 
