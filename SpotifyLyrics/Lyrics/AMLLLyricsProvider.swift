@@ -18,7 +18,7 @@ public final class AMLLLyricsProvider: LyricsProvider, @unchecked Sendable {
     }
 
     private let session: AMLLSession
-    private let baseURL: URL
+    public let baseURL: URL
     private let timeout: TimeInterval
     private let cacheLock = NSLock()
     private var cache: [String: CacheEntry] = [:]
@@ -35,6 +35,14 @@ public final class AMLLLyricsProvider: LyricsProvider, @unchecked Sendable {
         self.timeout = timeout
     }
 
+    public func ttmlURL(for spotifyID: String) -> URL {
+        baseURL.appendingPathComponent(spotifyID + ".ttml")
+    }
+
+    public func lrcURL(for spotifyID: String) -> URL {
+        baseURL.appendingPathComponent(spotifyID + ".lrc")
+    }
+
     public func lookup(track: Track, identity: TrackIdentity) async -> LyricsLookupResult {
         guard !Task.isCancelled else { return .failed(.cancelled) }
         guard let spotifyID = Self.casePreservingSpotifyTrackID(from: track, fallback: identity) else {
@@ -45,9 +53,16 @@ public final class AMLLLyricsProvider: LyricsProvider, @unchecked Sendable {
             return cached
         }
 
-        var request = URLRequest(
-            url: baseURL.appendingPathComponent(spotifyID + ".lrc")
-        )
+        // Phase 1: Try AMLL TTML first for word/syllable timing
+        if let ttmlDoc = await fetchTTML(spotifyID: spotifyID, track: track, identity: identity) {
+            store(.match(ttmlDoc), for: spotifyID)
+            return .match(ttmlDoc)
+        }
+
+        guard !Task.isCancelled else { return .failed(.cancelled) }
+
+        // Fallback: Fetch standard line-level LRC
+        var request = URLRequest(url: lrcURL(for: spotifyID))
         request.httpMethod = "GET"
         request.timeoutInterval = timeout
         request.setValue("text/plain, application/octet-stream", forHTTPHeaderField: "Accept")
@@ -104,6 +119,45 @@ public final class AMLLLyricsProvider: LyricsProvider, @unchecked Sendable {
             }
         } catch {
             return .failed(.unknown(error.localizedDescription))
+        }
+    }
+
+    private func fetchTTML(
+        spotifyID: String,
+        track: Track,
+        identity: TrackIdentity
+    ) async -> LyricsDocument? {
+        var request = URLRequest(url: ttmlURL(for: spotifyID))
+        request.httpMethod = "GET"
+        request.timeoutInterval = timeout
+        request.setValue("application/xml, text/xml, text/plain", forHTTPHeaderField: "Accept")
+        request.setValue("SpotifyLyrics/1.0", forHTTPHeaderField: "User-Agent")
+
+        do {
+            let (data, response) = try await session.data(for: request)
+            guard !Task.isCancelled,
+                  let httpResponse = response as? HTTPURLResponse,
+                  (200..<300).contains(httpResponse.statusCode),
+                  let content = String(data: data, encoding: .utf8),
+                  let parsed = TTMLParser.parse(content, identity: identity, source: .amll),
+                  !parsed.lines.isEmpty else {
+                return nil
+            }
+            return LyricsDocument(
+                identity: identity,
+                title: parsed.title ?? track.title,
+                artist: parsed.artist ?? track.artist,
+                album: parsed.album ?? track.album,
+                duration: parsed.duration ?? track.duration,
+                lines: parsed.lines,
+                isSynchronized: parsed.isSynchronized,
+                source: .amll,
+                confidence: 1,
+                providerSourceID: "amll:\(spotifyID)",
+                spotifyTrackID: spotifyID
+            )
+        } catch {
+            return nil
         }
     }
 

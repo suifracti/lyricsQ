@@ -54,6 +54,8 @@ public struct LyricsDocument: Equatable, Sendable {
     /// start times that must be persisted (Assist partial timeline).
     /// Nil means legacy behavior: no times stored for unsynced documents.
     public let explicitlyTimedLineIndices: Set<Int>?
+    /// Adopted immutable timing version ID when word/syllable spans are present.
+    public let timingVersionID: UUID?
 
     public init(
         identity: TrackIdentity,
@@ -69,7 +71,8 @@ public struct LyricsDocument: Equatable, Sendable {
         spotifyTrackID: String? = nil,
         isrc: String? = nil,
         language: String? = nil,
-        explicitlyTimedLineIndices: Set<Int>? = nil
+        explicitlyTimedLineIndices: Set<Int>? = nil,
+        timingVersionID: UUID? = nil
     ) {
         self.identity = identity
         self.title = title
@@ -85,6 +88,15 @@ public struct LyricsDocument: Equatable, Sendable {
         self.isrc = isrc
         self.language = language
         self.explicitlyTimedLineIndices = explicitlyTimedLineIndices
+        self.timingVersionID = timingVersionID
+    }
+
+    public var hasTimedSpans: Bool {
+        lines.contains { $0.hasTimedSpans }
+    }
+
+    public var hasFineTiming: Bool {
+        hasTimedSpans
     }
 
     /// Whether line `index` has a meaningful start time for editor / playback.

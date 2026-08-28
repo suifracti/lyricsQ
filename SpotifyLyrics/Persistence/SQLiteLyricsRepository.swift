@@ -130,19 +130,53 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
             // Empty rows are invalid cache state; do not expose them as lyrics.
             return nil
         }
-        let document = LyricsPersistenceMapper.document(
+        let sourceContentHash = LyricsSourceContentHasher.hash(
+            isSynchronized: version.isSynced,
+            lines: lines
+        )
+        let timingRecord = try? fetchBestTimingVersion(
+            lyricsVersionID: version.id,
+            sourceContentHash: sourceContentHash
+        )
+        let timingMap = timingRecord.flatMap { DocumentTimingPayload.decode($0.spansPayload) }
+
+        var document = LyricsPersistenceMapper.document(
             identity: identity,
             track: trackRecord,
             version: version,
             lines: lines
         )
+        if let timingMap, !timingMap.isEmpty {
+            var updatedLines = document.lines
+            for i in updatedLines.indices {
+                if let timing = timingMap[i] {
+                    updatedLines[i].performerID = timing.performerID
+                    updatedLines[i].timedSpans = timing.spans
+                }
+            }
+            document = LyricsDocument(
+                identity: document.identity,
+                title: document.title,
+                artist: document.artist,
+                album: document.album,
+                duration: document.duration,
+                lines: updatedLines,
+                isSynchronized: document.isSynchronized,
+                source: document.source,
+                confidence: document.confidence,
+                providerSourceID: document.providerSourceID,
+                spotifyTrackID: document.spotifyTrackID,
+                isrc: document.isrc,
+                language: document.language,
+                explicitlyTimedLineIndices: document.explicitlyTimedLineIndices,
+                timingVersionID: timingRecord?.id
+            )
+        }
+
         return StoredLyricsDocument(
             document: document,
             versionID: version.id,
-            sourceContentHash: LyricsSourceContentHasher.hash(
-                isSynchronized: version.isSynced,
-                lines: lines
-            ),
+            sourceContentHash: sourceContentHash,
             alignmentProvenanceAvailability: version.source == DatabaseSourceIdentifier.identifier(for: .automaticAlignment)
                 ? alignmentProvenanceStore.availability(for: version.id)
                 : .unavailable
@@ -261,6 +295,13 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
                 providerSourceID: versionRecord.providerSourceID,
                 contentHash: versionRecord.contentHash
             ) {
+                try attachTimingVersionIfNeeded(
+                    document: document,
+                    lyricsVersionID: duplicateID,
+                    source: versionRecord.source,
+                    sourceContentHash: sourceContentHash,
+                    now: now
+                )
                 return LyricsPersistenceSaveResult(
                     versionID: duplicateID,
                     disposition: .duplicate,
@@ -276,6 +317,13 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
             for line in lines {
                 try insertLine(line)
             }
+            try attachTimingVersionIfNeeded(
+                document: document,
+                lyricsVersionID: versionID,
+                source: versionRecord.source,
+                sourceContentHash: sourceContentHash,
+                now: now
+            )
             return LyricsPersistenceSaveResult(
                 versionID: versionID,
                 disposition: .inserted,
@@ -2178,6 +2226,148 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
             )
         }
         return result
+    }
+
+    private func insertTimingVersion(_ record: DatabaseLyricsTimingVersionRecord) throws {
+        let statement = try prepare("""
+            INSERT INTO lyrics_timing_versions(
+                id, lyrics_version_id, source, granularity,
+                source_content_hash, spans_payload, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?);
+            """)
+        defer { sqlite3_finalize(statement) }
+        try bindText(record.id.uuidString, at: 1, to: statement)
+        try bindText(record.lyricsVersionID.uuidString, at: 2, to: statement)
+        try bindText(record.source, at: 3, to: statement)
+        try bindText(record.granularity, at: 4, to: statement)
+        try bindText(record.sourceContentHash, at: 5, to: statement)
+        try bindText(record.spansPayload, at: 6, to: statement)
+        try bindDouble(record.createdAt.timeIntervalSince1970, at: 7, to: statement)
+        try stepDone(statement)
+    }
+
+    private func fetchTimingVersion(id: UUID) throws -> DatabaseLyricsTimingVersionRecord? {
+        let statement = try prepare("""
+            SELECT id, lyrics_version_id, source, granularity,
+                   source_content_hash, spans_payload, created_at
+            FROM lyrics_timing_versions
+            WHERE id = ? LIMIT 1;
+            """)
+        defer { sqlite3_finalize(statement) }
+        try bindText(id.uuidString, at: 1, to: statement)
+
+        guard sqlite3_step(statement) == SQLITE_ROW else { return nil }
+        guard let idText = columnText(statement, index: 0),
+              let id = UUID(uuidString: idText),
+              let versionIDText = columnText(statement, index: 1),
+              let versionID = UUID(uuidString: versionIDText),
+              let source = columnText(statement, index: 2),
+              let granularity = columnText(statement, index: 3),
+              let hash = columnText(statement, index: 4),
+              let payload = columnText(statement, index: 5) else {
+            return nil
+        }
+        let createdAt = Date(timeIntervalSince1970: sqlite3_column_double(statement, 6))
+        return DatabaseLyricsTimingVersionRecord(
+            id: id,
+            lyricsVersionID: versionID,
+            source: source,
+            granularity: granularity,
+            sourceContentHash: hash,
+            spansPayload: payload,
+            createdAt: createdAt
+        )
+    }
+
+    private func attachTimingVersionIfNeeded(
+        document: LyricsDocument,
+        lyricsVersionID: UUID,
+        source: String,
+        sourceContentHash: String,
+        now: Date
+    ) throws {
+        guard let payload = DocumentTimingPayload.encode(document.lines) else { return }
+        let granularity = document.lines.compactMap(\.timedSpans).flatMap { $0 }.first?.granularity.rawValue ?? "timedUnit"
+
+        if let existingTimingID = document.timingVersionID {
+            if let existing = try fetchTimingVersion(id: existingTimingID) {
+                if existing.lyricsVersionID == lyricsVersionID &&
+                    existing.sourceContentHash == sourceContentHash &&
+                    existing.source == source &&
+                    existing.granularity == granularity &&
+                    existing.spansPayload == payload {
+                    // Safe idempotent no-op for re-saving exact identical immutable timing version
+                    return
+                } else {
+                    throw LyricsRepositoryError.databaseOpenFailed(
+                        "Timing version data integrity violation for \(existingTimingID): existing record differs from incoming payload (immutable timing identity mismatch)"
+                    )
+                }
+            } else {
+                let timingRecord = DatabaseLyricsTimingVersionRecord(
+                    id: existingTimingID,
+                    lyricsVersionID: lyricsVersionID,
+                    source: source,
+                    granularity: granularity,
+                    sourceContentHash: sourceContentHash,
+                    spansPayload: payload,
+                    createdAt: now
+                )
+                try insertTimingVersion(timingRecord)
+            }
+        } else {
+            let timingRecord = DatabaseLyricsTimingVersionRecord(
+                id: UUID(),
+                lyricsVersionID: lyricsVersionID,
+                source: source,
+                granularity: granularity,
+                sourceContentHash: sourceContentHash,
+                spansPayload: payload,
+                createdAt: now
+            )
+            try insertTimingVersion(timingRecord)
+        }
+    }
+
+    /// Phase 1 policy:
+    /// Latest compatible timing version wins for identical `(lyrics_version_id, source_content_hash)`.
+    /// Historical timing versions remain immutable in `lyrics_timing_versions` and are neither overwritten nor deleted.
+    private func fetchBestTimingVersion(
+        lyricsVersionID: UUID,
+        sourceContentHash: String
+    ) throws -> DatabaseLyricsTimingVersionRecord? {
+        let statement = try prepare("""
+            SELECT id, lyrics_version_id, source, granularity,
+                   source_content_hash, spans_payload, created_at
+            FROM lyrics_timing_versions
+            WHERE lyrics_version_id = ? AND source_content_hash = ?
+            ORDER BY created_at DESC LIMIT 1;
+            """)
+        defer { sqlite3_finalize(statement) }
+        try bindText(lyricsVersionID.uuidString, at: 1, to: statement)
+        try bindText(sourceContentHash, at: 2, to: statement)
+
+        guard sqlite3_step(statement) == SQLITE_ROW else { return nil }
+        guard let idText = columnText(statement, index: 0),
+              let id = UUID(uuidString: idText),
+              let versionIDText = columnText(statement, index: 1),
+              let versionID = UUID(uuidString: versionIDText),
+              let source = columnText(statement, index: 2),
+              let granularity = columnText(statement, index: 3),
+              let hash = columnText(statement, index: 4),
+              let payload = columnText(statement, index: 5) else {
+            return nil
+        }
+        let createdAt = Date(timeIntervalSince1970: sqlite3_column_double(statement, 6))
+        return DatabaseLyricsTimingVersionRecord(
+            id: id,
+            lyricsVersionID: versionID,
+            source: source,
+            granularity: granularity,
+            sourceContentHash: hash,
+            spansPayload: payload,
+            createdAt: createdAt
+        )
     }
 
     private func execute(_ sql: String) throws {

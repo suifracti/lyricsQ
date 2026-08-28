@@ -146,6 +146,130 @@ public struct LyricRubyToken: Identifiable, Equatable, Hashable, Codable, Sendab
     }
 }
 
+public enum LyricTimingGranularity: String, Codable, Sendable, Equatable {
+    case syllable
+    case word
+    case timedUnit
+}
+
+public struct TimedTextSpan: Identifiable, Equatable, Hashable, Codable, Sendable {
+    public let id: Int
+    public let text: String
+    public let trailingWhitespace: String
+    public let startTime: TimeInterval
+    public let endTime: TimeInterval
+    public let utf16Start: Int
+    public let utf16Length: Int
+    public let granularity: LyricTimingGranularity
+
+    public init(
+        id: Int,
+        text: String,
+        trailingWhitespace: String = "",
+        startTime: TimeInterval,
+        endTime: TimeInterval,
+        utf16Start: Int,
+        utf16Length: Int,
+        granularity: LyricTimingGranularity = .timedUnit
+    ) {
+        self.id = id
+        self.text = text
+        self.trailingWhitespace = trailingWhitespace
+        self.startTime = startTime
+        self.endTime = endTime
+        self.utf16Start = utf16Start
+        self.utf16Length = utf16Length
+        self.granularity = granularity
+    }
+
+    public var duration: TimeInterval { max(0, endTime - startTime) }
+}
+
+public struct ResolvedGraphemeSpan: Identifiable, Equatable, Sendable {
+    public let id: Int
+    public let text: String
+    public let trailingWhitespace: String
+    public let startTime: TimeInterval
+    public let endTime: TimeInterval
+    public let range: Range<String.Index>
+    public let granularity: LyricTimingGranularity
+
+    public init(
+        id: Int,
+        text: String,
+        trailingWhitespace: String = "",
+        startTime: TimeInterval,
+        endTime: TimeInterval,
+        range: Range<String.Index>,
+        granularity: LyricTimingGranularity
+    ) {
+        self.id = id
+        self.text = text
+        self.trailingWhitespace = trailingWhitespace
+        self.startTime = startTime
+        self.endTime = endTime
+        self.range = range
+        self.granularity = granularity
+    }
+
+    public var duration: TimeInterval { max(0, endTime - startTime) }
+}
+
+public struct TimedTextSegment: Equatable, Sendable {
+    public let text: String
+    public let isHighlighted: Bool
+
+    public init(text: String, isHighlighted: Bool) {
+        self.text = text
+        self.isHighlighted = isHighlighted
+    }
+}
+
+public enum TimedTextComposer {
+    public static func composeSegments(
+        text: String,
+        spans: [ResolvedGraphemeSpan],
+        currentTime: TimeInterval
+    ) -> [TimedTextSegment] {
+        guard !text.isEmpty else { return [] }
+        guard !spans.isEmpty else {
+            return [TimedTextSegment(text: text, isHighlighted: true)]
+        }
+
+        var segments: [TimedTextSegment] = []
+        var cursor = text.startIndex
+
+        for span in spans {
+            if cursor < span.range.lowerBound {
+                let untimedText = String(text[cursor..<span.range.lowerBound])
+                if !untimedText.isEmpty {
+                    let isHighlighted = currentTime >= span.startTime
+                    segments.append(TimedTextSegment(text: untimedText, isHighlighted: isHighlighted))
+                }
+            }
+
+            let spanText = String(text[span.range])
+            if !spanText.isEmpty {
+                let isPlayed = currentTime >= span.endTime
+                let isActiveSpan = currentTime >= span.startTime && currentTime < span.endTime
+                segments.append(TimedTextSegment(text: spanText, isHighlighted: isPlayed || isActiveSpan))
+            }
+
+            cursor = max(cursor, span.range.upperBound)
+        }
+
+        if cursor < text.endIndex {
+            let trailingText = String(text[cursor..<text.endIndex])
+            if !trailingText.isEmpty {
+                let isHighlighted = spans.last.map { currentTime >= $0.endTime } ?? false
+                segments.append(TimedTextSegment(text: trailingText, isHighlighted: isHighlighted))
+            }
+        }
+
+        return segments
+    }
+}
+
 public struct LyricLine: Identifiable, Equatable, Hashable, Sendable {
     public let id: UUID
     public var timestamp: TimeInterval
@@ -155,6 +279,10 @@ public struct LyricLine: Identifiable, Equatable, Hashable, Sendable {
     public var romajiText: String?
     public var kanaText: String?
     public var rubyTokens: [LyricRubyToken]?
+    /// Performer / duet agent ID (e.g. "v1", "v2" from TTML).
+    public var performerID: String?
+    /// Word / syllable level timing spans. Optional additive enhancement.
+    public var timedSpans: [TimedTextSpan]?
     /// Runtime-only reading projection fields. They are never written back
     /// into the source lyric version; the shared ReadingSessionController
     /// uses them to distinguish pinyin/script-converted display from legacy
@@ -171,6 +299,8 @@ public struct LyricLine: Identifiable, Equatable, Hashable, Sendable {
         romajiText: String? = nil,
         kanaText: String? = nil,
         rubyTokens: [LyricRubyToken]? = nil,
+        performerID: String? = nil,
+        timedSpans: [TimedTextSpan]? = nil,
         readingRepresentationID: String? = nil,
         readingSurfaceText: String? = nil
     ) {
@@ -182,8 +312,57 @@ public struct LyricLine: Identifiable, Equatable, Hashable, Sendable {
         self.romajiText = romajiText
         self.kanaText = kanaText
         self.rubyTokens = rubyTokens
+        self.performerID = performerID
+        self.timedSpans = timedSpans
         self.readingRepresentationID = readingRepresentationID
         self.readingSurfaceText = readingSurfaceText
+    }
+
+    public var hasTimedSpans: Bool {
+        guard let timedSpans, !timedSpans.isEmpty else { return false }
+        return true
+    }
+
+    /// Converts UTF-16 indexed `timedSpans` into exact `Range<String.Index>` spans.
+    /// Returns nil if ANY span fails exact Extended Grapheme Cluster boundary validation (Fail-Closed, Contract 4).
+    public func resolvedGraphemeSpans() -> [ResolvedGraphemeSpan]? {
+        guard let timedSpans, !timedSpans.isEmpty else { return nil }
+        var resolved: [ResolvedGraphemeSpan] = []
+        resolved.reserveCapacity(timedSpans.count)
+
+        let utf16 = originalText.utf16
+        for span in timedSpans {
+            guard span.utf16Start >= 0,
+                  span.utf16Length >= 0,
+                  span.utf16Start + span.utf16Length <= utf16.count else {
+                return nil
+            }
+            guard let startU16 = utf16.index(utf16.startIndex, offsetBy: span.utf16Start, limitedBy: utf16.endIndex),
+                  let endU16 = utf16.index(startU16, offsetBy: span.utf16Length, limitedBy: utf16.endIndex),
+                  let startIdx = String.Index(startU16, within: originalText),
+                  let endIdx = String.Index(endU16, within: originalText),
+                  startIdx <= endIdx else {
+                // Fails exact grapheme boundary check
+                return nil
+            }
+            let extracted = String(originalText[startIdx..<endIdx])
+            guard extracted == span.text else {
+                // Text mismatch check
+                return nil
+            }
+            resolved.append(
+                ResolvedGraphemeSpan(
+                    id: span.id,
+                    text: span.text,
+                    trailingWhitespace: span.trailingWhitespace,
+                    startTime: span.startTime,
+                    endTime: span.endTime,
+                    range: startIdx..<endIdx,
+                    granularity: span.granularity
+                )
+            )
+        }
+        return resolved
     }
 }
 

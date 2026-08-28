@@ -13,6 +13,7 @@ swiftc -parse-as-library \
   SpotifyLyrics/Lyrics/AlignmentModels.swift \
   SpotifyLyrics/Lyrics/LyricsModels.swift \
   SpotifyLyrics/Lyrics/LRCParser.swift \
+  SpotifyLyrics/Lyrics/TTMLParser.swift \
   SpotifyLyrics/Lyrics/AMLLLyricsProvider.swift \
   Tests/amll_provider_contract.swift \
   -o "$TMP_DIR/amll-provider-contract"

@@ -1455,7 +1455,8 @@ private struct AppleMusicImmersiveV3LyricsViewport: View {
             preferences: state.preferences,
             language: language,
             trackStableKey: trackStableKey,
-            artistDisplay: artistDisplay
+            artistDisplay: artistDisplay,
+            currentTime: state.currentTime
         )
         .environmentObject(settings)
         if let timestamp = LyricsTimeline.validSeekTimestamp(
@@ -1639,6 +1640,7 @@ private struct AppleMusicImmersiveV3LyricRow: View {
     let language: String?
     let trackStableKey: String?
     let artistDisplay: String?
+    var currentTime: TimeInterval = 0
     @EnvironmentObject private var settings: AppSettingsStore
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -1945,10 +1947,16 @@ private struct AppleMusicImmersiveV3LyricRow: View {
                     maxWidth: readableLineWidth
                 )
             } else if preferences.showOriginal {
-                Text(semanticDisplayText)
-                    .font(.system(size: baseSize, weight: rowWeight, design: .rounded))
-                    .foregroundStyle(.white)
-                    .fixedSize(horizontal: false, vertical: true)
+                if isActive, let spans = line.resolvedGraphemeSpans(), !spans.isEmpty {
+                    timedSpanText(text: semanticDisplayText, spans: spans)
+                        .font(.system(size: baseSize, weight: rowWeight, design: .rounded))
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    Text(semanticDisplayText)
+                        .font(.system(size: baseSize, weight: rowWeight, design: .rounded))
+                        .foregroundStyle(.white)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 if preferences.kanaDisplayMode == .independentLine, shouldShowKana,
                    let kana = displayKanaText {
                     Text(kana)
@@ -1994,6 +2002,16 @@ private struct AppleMusicImmersiveV3LyricRow: View {
             transitionAnimation,
             value: layoutSignature
         )
+    }
+
+    private func timedSpanText(text: String, spans: [ResolvedGraphemeSpan]) -> Text {
+        let segments = TimedTextComposer.composeSegments(text: text, spans: spans, currentTime: currentTime)
+        var result = Text("")
+        for segment in segments {
+            let color: Color = segment.isHighlighted ? .white : .white.opacity(0.42)
+            result = result + Text(segment.text).foregroundColor(color)
+        }
+        return result
     }
 }
 
