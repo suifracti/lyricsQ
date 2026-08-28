@@ -564,13 +564,33 @@ public enum JapaneseReadingPipeline {
 
             if !containsHan(token.originalText) {
                 let expected = Array(JapaneseRomanizer.toHiraganaPreservingLatin(token.originalText))
-                guard !expected.isEmpty,
-                      prefix(expected, in: characters, at: cursor) else {
-                    return nil
+                guard !expected.isEmpty else { return nil }
+
+                if prefix(expected, in: characters, at: cursor) {
+                    projected.append(String(characters[cursor..<(cursor + expected.count)]))
+                    cursor += expected.count
+                    continue
                 }
-                projected.append(String(expected))
-                cursor += expected.count
-                continue
+
+                // Allow pronunciation variants (へ/え, は/わ, を/お) strictly when
+                // the token is identified as a particle by morphology.
+                if let variants = particlePronunciationVariants(for: token) {
+                    var matched = false
+                    for variant in variants {
+                        let variantChars = Array(variant)
+                        if prefix(variantChars, in: characters, at: cursor) {
+                            projected.append(String(characters[cursor..<(cursor + variantChars.count)]))
+                            cursor += variantChars.count
+                            matched = true
+                            break
+                        }
+                    }
+                    if matched {
+                        continue
+                    }
+                }
+
+                return nil
             }
 
             let localAnchor = token.readingKatakana
@@ -578,7 +598,7 @@ public enum JapaneseReadingPipeline {
                 .map(Array.init) ?? []
             if !localAnchor.isEmpty,
                prefix(localAnchor, in: characters, at: cursor) {
-                projected.append(String(localAnchor))
+                projected.append(String(characters[cursor..<(cursor + localAnchor.count)]))
                 cursor += localAnchor.count
                 continue
             }
@@ -634,6 +654,22 @@ public enum JapaneseReadingPipeline {
             }
         }
         return nil
+    }
+
+    private static func isParticleToken(_ token: JapaneseMorphologyToken) -> Bool {
+        guard let pos = token.partOfSpeech else { return false }
+        return pos.hasPrefix("助詞") || pos.contains("助詞") || pos == "particle"
+    }
+
+    private static func particlePronunciationVariants(for token: JapaneseMorphologyToken) -> [String]? {
+        guard isParticleToken(token) else { return nil }
+        let hiragana = JapaneseRomanizer.toHiraganaPreservingLatin(token.originalText)
+        switch hiragana {
+        case "へ": return ["へ", "え"]
+        case "は": return ["は", "わ"]
+        case "を": return ["を", "お"]
+        default: return [hiragana]
+        }
     }
 
     private static func prefix(

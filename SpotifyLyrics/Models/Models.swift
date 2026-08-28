@@ -649,6 +649,238 @@ public enum TimedTextComposer {
         return nil
         #endif
     }
+
+    public static func computeTimedRubyLayout(
+        originalText: String,
+        spans: [TimedTextSpan],
+        rubyTokens: [LyricRubyToken]?,
+        fontSize: CGFloat = 28,
+        weight: CGFloat = 0.56,
+        design: String = "rounded"
+    ) -> TimedRubyLayout? {
+        #if canImport(AppKit) && canImport(CoreText)
+        guard !originalText.isEmpty, !spans.isEmpty else {
+            #if DEBUG
+            LyricsE2ELog.log("[V3TimedRubyLayoutFail] text=\(originalText) reason=empty_text_or_spans")
+            #endif
+            return nil
+        }
+
+        // Strict Canonical Validation: Must pass the exact resolveSpans validation
+        guard let resolvedSpans = resolveSpans(in: originalText, timedSpans: spans) else {
+            #if DEBUG
+            LyricsE2ELog.log("[V3TimedRubyLayoutFail] text=\(originalText) reason=resolveSpans_failed")
+            #endif
+            return nil
+        }
+
+        let totalUTF16Length = originalText.utf16.count
+        let nsText = originalText as NSString
+
+        // 1. Partition originalText into aligned tokens (including plain gap runs)
+        var rawTokens: [(id: Int, surface: String, ruby: String?, kanaSurface: String?, range: Range<Int>)] = []
+        var curOffset = 0
+
+        if let rubyTokens, !rubyTokens.isEmpty {
+            for token in rubyTokens {
+                guard !token.surface.isEmpty else { continue }
+                let searchRange = NSRange(location: curOffset, length: totalUTF16Length - curOffset)
+                let found = nsText.range(of: token.surface, options: [], range: searchRange)
+                guard found.location != NSNotFound else {
+                    #if DEBUG
+                    LyricsE2ELog.log("[V3TimedRubyLayoutFail] text=\(originalText) reason=token_surface_not_found:\(token.surface)")
+                    #endif
+                    return nil
+                }
+                if found.location > curOffset {
+                    let gapRange = curOffset..<found.location
+                    let gapText = nsText.substring(with: NSRange(location: curOffset, length: found.location - curOffset))
+                    rawTokens.append((id: rawTokens.count, surface: gapText, ruby: nil, kanaSurface: nil, range: gapRange))
+                }
+                let tokenRange = found.location..<(found.location + found.length)
+                rawTokens.append((id: token.id, surface: token.surface, ruby: token.ruby, kanaSurface: token.kanaSurface, range: tokenRange))
+                curOffset = found.location + found.length
+            }
+        }
+        if curOffset < totalUTF16Length {
+            let trailingRange = curOffset..<totalUTF16Length
+            let trailingText = nsText.substring(with: NSRange(location: curOffset, length: totalUTF16Length - curOffset))
+            rawTokens.append((id: rawTokens.count, surface: trailingText, ruby: nil, kanaSurface: nil, range: trailingRange))
+        }
+
+        // Validate reconstruction and grapheme boundaries
+        var reconstructed = ""
+        var expectedOffset = 0
+        let utf16 = originalText.utf16
+        for t in rawTokens {
+            guard t.range.lowerBound == expectedOffset else {
+                #if DEBUG
+                LyricsE2ELog.log("[V3TimedRubyLayoutFail] text=\(originalText) reason=gap_alignment_mismatch")
+                #endif
+                return nil
+            }
+            guard t.surface == nsText.substring(with: NSRange(location: t.range.lowerBound, length: t.range.count)) else {
+                #if DEBUG
+                LyricsE2ELog.log("[V3TimedRubyLayoutFail] text=\(originalText) reason=surface_mismatch")
+                #endif
+                return nil
+            }
+            guard let startU16 = utf16.index(utf16.startIndex, offsetBy: t.range.lowerBound, limitedBy: utf16.endIndex),
+                  let endU16 = utf16.index(utf16.startIndex, offsetBy: t.range.upperBound, limitedBy: utf16.endIndex),
+                  let startIdx = String.Index(startU16, within: originalText),
+                  let endIdx = String.Index(endU16, within: originalText),
+                  startIdx <= endIdx else {
+                #if DEBUG
+                LyricsE2ELog.log("[V3TimedRubyLayoutFail] text=\(originalText) reason=grapheme_boundary_fail")
+                #endif
+                return nil
+            }
+            expectedOffset = t.range.upperBound
+            reconstructed += t.surface
+        }
+        guard expectedOffset == totalUTF16Length, reconstructed == originalText else {
+            #if DEBUG
+            LyricsE2ELog.log("[V3TimedRubyLayoutFail] text=\(originalText) reason=reconstruction_mismatch:\(reconstructed)_vs_\(originalText)")
+            #endif
+            return nil
+        }
+
+        // 2. Measure each token with CoreText using exact system font
+        let nsWeight = NSFont.Weight(weight)
+        let sysDesign: NSFontDescriptor.SystemDesign = design == "rounded" ? .rounded : .default
+        let font = makeSystemFont(size: fontSize, weight: nsWeight, design: sysDesign)
+
+        struct RawTokenFragment {
+            let tokenIndex: Int
+            let spanID: Int
+            let utf16Range: Range<Int>
+            let text: String
+            let startX: CGFloat
+            let endX: CGFloat
+            let rawWidth: CGFloat
+        }
+
+        var tokenMeasurements: [(ctLine: CTLine, width: CGFloat)] = []
+        for t in rawTokens {
+            let attr = NSAttributedString(string: t.surface, attributes: [NSAttributedString.Key(kCTFontAttributeName as String): font])
+            let ctLine = CTLineCreateWithAttributedString(attr)
+            var a: CGFloat = 0, d: CGFloat = 0, l: CGFloat = 0
+            let w = CTLineGetTypographicBounds(ctLine, &a, &d, &l)
+            tokenMeasurements.append((ctLine, w))
+        }
+
+        // 3. Map resolved spans to token fragments
+        var spanRawFragments: [Int: [RawTokenFragment]] = [:]
+        for (spanIdx, resolvedSpan) in resolvedSpans.enumerated() {
+            let spanStart = resolvedSpan.range.lowerBound.utf16Offset(in: originalText)
+            let spanEnd = resolvedSpan.range.upperBound.utf16Offset(in: originalText)
+
+            for (tokenIdx, t) in rawTokens.enumerated() {
+                let tokenStart = t.range.lowerBound
+                let tokenEnd = t.range.upperBound
+
+                let overlapStart = max(spanStart, tokenStart)
+                let overlapEnd = min(spanEnd, tokenEnd)
+
+                if overlapStart < overlapEnd {
+                    let localStart = overlapStart - tokenStart
+                    let localEnd = overlapEnd - tokenStart
+                    let ctLine = tokenMeasurements[tokenIdx].ctLine
+
+                    var sec1: CGFloat = 0, sec2: CGFloat = 0
+                    let startX = CTLineGetOffsetForStringIndex(ctLine, localStart, &sec1)
+                    let endX = CTLineGetOffsetForStringIndex(ctLine, localEnd, &sec2)
+                    let fragWidth = max(0, endX - startX)
+                    let fragText = (t.surface as NSString).substring(with: NSRange(location: localStart, length: localEnd - localStart))
+
+                    let frag = RawTokenFragment(
+                        tokenIndex: tokenIdx,
+                        spanID: spanIdx,
+                        utf16Range: overlapStart..<overlapEnd,
+                        text: fragText,
+                        startX: startX,
+                        endX: endX,
+                        rawWidth: fragWidth
+                    )
+                    spanRawFragments[spanIdx, default: []].append(frag)
+                }
+            }
+        }
+
+        // 4. Verify Full Coverage for each span
+        for (spanIdx, resolvedSpan) in resolvedSpans.enumerated() {
+            guard let fragments = spanRawFragments[spanIdx], !fragments.isEmpty else {
+                return nil
+            }
+            let spanStart = resolvedSpan.range.lowerBound.utf16Offset(in: originalText)
+            let spanEnd = resolvedSpan.range.upperBound.utf16Offset(in: originalText)
+
+            guard fragments.first?.utf16Range.lowerBound == spanStart else {
+                return nil
+            }
+            for j in 0..<(fragments.count - 1) {
+                guard fragments[j].utf16Range.upperBound == fragments[j + 1].utf16Range.lowerBound else {
+                    return nil
+                }
+            }
+            guard fragments.last?.utf16Range.upperBound == spanEnd else {
+                return nil
+            }
+        }
+
+        // 5. Allocate time across fragments
+        var tokenTimedFragments: [Int: [TimedSpanFragment]] = [:]
+        for (spanIdx, resolvedSpan) in resolvedSpans.enumerated() {
+            guard let fragments = spanRawFragments[spanIdx], !fragments.isEmpty else { continue }
+            let spanTotalWidth = fragments.reduce(0.0) { $0 + $1.rawWidth }
+            let spanDuration = max(0.0, resolvedSpan.endTime - resolvedSpan.startTime)
+
+            var curTime = resolvedSpan.startTime
+            for (fIdx, f) in fragments.enumerated() {
+                let fDuration: TimeInterval
+                if spanTotalWidth > 0 {
+                    let ratio = Double(f.rawWidth / spanTotalWidth)
+                    fDuration = (fIdx == fragments.count - 1) ? (resolvedSpan.endTime - curTime) : (spanDuration * ratio)
+                } else {
+                    fDuration = spanDuration / Double(fragments.count)
+                }
+                let fEnd = min(resolvedSpan.endTime, curTime + fDuration)
+                let timedFrag = TimedSpanFragment(
+                    spanID: spanIdx,
+                    utf16Range: f.utf16Range,
+                    text: f.text,
+                    startTime: curTime,
+                    endTime: fEnd,
+                    startX: f.startX,
+                    endX: f.endX
+                )
+                tokenTimedFragments[f.tokenIndex, default: []].append(timedFrag)
+                curTime = fEnd
+            }
+        }
+
+        // 6. Build final TimedRubyToken list
+        var timedTokens: [TimedRubyToken] = []
+        for (tokenIdx, t) in rawTokens.enumerated() {
+            let frags = tokenTimedFragments[tokenIdx]?.sorted(by: { $0.startTime < $1.startTime }) ?? []
+            let width = tokenMeasurements[tokenIdx].width
+            let rubyTok = TimedRubyToken(
+                id: t.id,
+                sourceUTF16Range: t.range,
+                surface: t.surface,
+                ruby: t.ruby,
+                kanaSurface: t.kanaSurface,
+                baseWidth: width,
+                fragments: frags
+            )
+            timedTokens.append(rubyTok)
+        }
+
+        return TimedRubyLayout(originalText: originalText, tokens: timedTokens)
+        #else
+        return nil
+        #endif
+    }
 }
 
 public struct TimedSpanFragment: Equatable, Sendable {
@@ -776,6 +1008,80 @@ public struct TimedMultilineLayout: Equatable, Sendable {
 
     public var maxLineWidth: CGFloat {
         lines.map(\.totalWidth).max() ?? 0
+    }
+}
+
+public struct TimedRubyToken: Identifiable, Equatable, Sendable {
+    public let id: Int
+    public let sourceUTF16Range: Range<Int>
+    public let surface: String
+    public let ruby: String?
+    public let kanaSurface: String?
+    public let baseWidth: CGFloat
+    public let fragments: [TimedSpanFragment]
+
+    public var hasRuby: Bool { ruby != nil }
+
+    public init(
+        id: Int,
+        sourceUTF16Range: Range<Int>,
+        surface: String,
+        ruby: String?,
+        kanaSurface: String? = nil,
+        baseWidth: CGFloat,
+        fragments: [TimedSpanFragment]
+    ) {
+        self.id = id
+        self.sourceUTF16Range = sourceUTF16Range
+        self.surface = surface
+        self.ruby = ruby
+        self.kanaSurface = kanaSurface
+        self.baseWidth = baseWidth
+        self.fragments = fragments
+    }
+
+    public func fillFraction(at presentationTime: TimeInterval) -> Double {
+        guard baseWidth > 0 else { return 0.0 }
+        return Double(filledWidth(at: presentationTime) / baseWidth)
+    }
+
+    public func filledWidth(at presentationTime: TimeInterval) -> CGFloat {
+        guard !fragments.isEmpty else { return 0.0 }
+        guard let first = fragments.first, let last = fragments.last else { return 0.0 }
+
+        if presentationTime <= first.startTime {
+            return 0.0
+        }
+        if presentationTime >= last.endTime {
+            return baseWidth
+        }
+
+        for frag in fragments {
+            if presentationTime < frag.startTime {
+                return frag.startX
+            }
+            if presentationTime <= frag.endTime {
+                let duration = frag.endTime - frag.startTime
+                let p = duration > 0 ? (presentationTime - frag.startTime) / duration : 1.0
+                let clampedP = min(max(p, 0.0), 1.0)
+                return frag.startX + CGFloat(clampedP) * (frag.endX - frag.startX)
+            }
+        }
+        return baseWidth
+    }
+}
+
+public struct TimedRubyLayout: Equatable, Sendable {
+    public let originalText: String
+    public let tokens: [TimedRubyToken]
+
+    public init(originalText: String, tokens: [TimedRubyToken]) {
+        self.originalText = originalText
+        self.tokens = tokens
+    }
+
+    public var reconstructedText: String {
+        tokens.map(\.surface).joined()
     }
 }
 

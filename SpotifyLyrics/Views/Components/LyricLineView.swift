@@ -455,6 +455,8 @@ struct RubyLineView: View {
     let originalText: String
     let kanaText: String
     let tokens: [LyricRubyToken]?
+    var timedLayout: TimedRubyLayout? = nil
+    var currentTime: TimeInterval? = nil
     let baseFont: Font
     let rubyFont: Font
     let baseColor: Color
@@ -484,35 +486,86 @@ struct RubyLineView: View {
         rubyTokenGroups(displayTokens)
     }
 
+    private var displayTimedTokenGroups: [[TimedRubyToken]] {
+        guard let timedLayout else { return [] }
+        return rubyTimedTokenGroups(timedLayout.tokens)
+    }
+
     var body: some View {
         RubyTokenFlowLayout(horizontalSpacing: 0, verticalSpacing: tokenVerticalSpacing, maxWidth: maxWidth) {
-            ForEach(Array(displayTokenGroups.enumerated()), id: \.offset) { _, group in
-                let groupEdgeReserve: CGFloat = group.count > 1
-                    && group.filter(\.hasRuby).count == 1 ? 5 : 0
-                HStack(alignment: .lastTextBaseline, spacing: 0) {
-                    ForEach(group) { token in
-                        RubyTokenBlock(
-                            token: token,
-                            baseFont: baseFont,
-                            rubyFont: rubyFont,
-                            baseColor: baseColor,
-                            rubyColor: rubyColor,
-                            rubySpacing: rubySpacing,
-                            annotationOverhang: token.hasRuby ? groupEdgeReserve : 0
-                        )
+            if timedLayout != nil, currentTime != nil {
+                ForEach(Array(displayTimedTokenGroups.enumerated()), id: \.offset) { _, group in
+                    let groupEdgeReserve: CGFloat = group.count > 1
+                        && group.filter(\.hasRuby).count == 1 ? 5 : 0
+                    HStack(alignment: .lastTextBaseline, spacing: 0) {
+                        ForEach(group) { timedToken in
+                            RubyTokenBlock(
+                                token: nil,
+                                timedToken: timedToken,
+                                currentTime: currentTime,
+                                baseFont: baseFont,
+                                rubyFont: rubyFont,
+                                baseColor: baseColor,
+                                rubyColor: rubyColor,
+                                rubySpacing: rubySpacing,
+                                annotationOverhang: timedToken.hasRuby ? groupEdgeReserve : 0
+                            )
+                        }
                     }
+                    .padding(.horizontal, groupEdgeReserve)
                 }
-                // The reserved outer edges exactly contain the visual
-                // overhang borrowed inside a kanji + okurigana group. This
-                // keeps the baseline text attached without letting ruby
-                // collide with the neighbouring morphology group.
-                .padding(.horizontal, groupEdgeReserve)
+            } else {
+                ForEach(Array(displayTokenGroups.enumerated()), id: \.offset) { _, group in
+                    let groupEdgeReserve: CGFloat = group.count > 1
+                        && group.filter(\.hasRuby).count == 1 ? 5 : 0
+                    HStack(alignment: .lastTextBaseline, spacing: 0) {
+                        ForEach(group) { token in
+                            RubyTokenBlock(
+                                token: token,
+                                timedToken: nil,
+                                currentTime: nil,
+                                baseFont: baseFont,
+                                rubyFont: rubyFont,
+                                baseColor: baseColor,
+                                rubyColor: rubyColor,
+                                rubySpacing: rubySpacing,
+                                annotationOverhang: token.hasRuby ? groupEdgeReserve : 0
+                            )
+                        }
+                    }
+                    .padding(.horizontal, groupEdgeReserve)
+                }
             }
         }
         .frame(maxWidth: maxWidth ?? .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(originalText)
+        #if DEBUG
+        .onAppear {
+            if let currentTime, let timedLayout {
+                let firstFrac = timedLayout.tokens.first?.fillFraction(at: currentTime) ?? 0
+                Self.logTimedRubyRowIfNeeded(text: originalText, time: currentTime, fraction: firstFrac)
+            }
+        }
+        .onChange(of: currentTime) { newTime in
+            if let newTime, let timedLayout {
+                let firstFrac = timedLayout.tokens.first?.fillFraction(at: newTime) ?? 0
+                Self.logTimedRubyRowIfNeeded(text: originalText, time: newTime, fraction: firstFrac)
+            }
+        }
+        #endif
     }
+
+    #if DEBUG
+    private static var lastTimedRubyLogTime: TimeInterval = 0
+    private static func logTimedRubyRowIfNeeded(text: String, time: TimeInterval, fraction: Double) {
+        let now = ProcessInfo.processInfo.systemUptime
+        if now - lastTimedRubyLogTime >= 0.5 {
+            lastTimedRubyLogTime = now
+            LyricsE2ELog.log("[V3TimedRubyRow] active=true text=\(text) time=\(String(format: "%.3f", time)) frac=\(String(format: "%.3f", fraction))")
+        }
+    }
+    #endif
 }
 
 /// Builder IDs reserve the high digits for the morphology token and the low
@@ -535,8 +588,26 @@ private func rubyTokenGroups(_ tokens: [LyricRubyToken]) -> [[LyricRubyToken]] {
     return groups
 }
 
+private func rubyTimedTokenGroups(_ tokens: [TimedRubyToken]) -> [[TimedRubyToken]] {
+    var groups: [[TimedRubyToken]] = []
+    var currentKey: Int?
+
+    for token in tokens {
+        let key = token.id / 10_000
+        if currentKey == key, !groups.isEmpty {
+            groups[groups.count - 1].append(token)
+        } else {
+            groups.append([token])
+            currentKey = key
+        }
+    }
+    return groups
+}
+
 private struct RubyTokenBlock: View {
-    let token: LyricRubyToken
+    let token: LyricRubyToken?
+    let timedToken: TimedRubyToken?
+    let currentTime: TimeInterval?
     let baseFont: Font
     let rubyFont: Font
     let baseColor: Color
@@ -546,18 +617,37 @@ private struct RubyTokenBlock: View {
 
     private let katakanaAnnotationTracking: CGFloat = 0.35
 
+    private var surface: String {
+        timedToken?.surface ?? token?.surface ?? ""
+    }
+
+    private var displayRuby: String? {
+        timedToken?.displayRubyText ?? token?.displayRubyText
+    }
+
+    private var hasRuby: Bool {
+        timedToken?.hasRuby ?? token?.hasRuby ?? false
+    }
+
     private var isKatakanaAnnotation: Bool {
-        !token.hasRuby && token.surface.unicodeScalars.contains { scalar in
+        !hasRuby && surface.unicodeScalars.contains { scalar in
             (0x30A1...0x30FA).contains(scalar.value)
         }
     }
 
     var body: some View {
+        let fillFraction: Double = {
+            if let timedToken, let currentTime {
+                return timedToken.fillFraction(at: currentTime)
+            }
+            return 1.0
+        }()
+
         RubyTokenBlockLayout(
             rubySpacing: rubySpacing,
             annotationOverhang: annotationOverhang
         ) {
-            if let ruby = token.displayRubyText {
+            if let ruby = displayRuby {
                 Text(ruby)
                     .font(rubyFont)
                     .tracking(isKatakanaAnnotation ? katakanaAnnotationTracking : 0)
@@ -567,11 +657,34 @@ private struct RubyTokenBlock: View {
                     .fixedSize(horizontal: true, vertical: false)
             }
 
-            Text(token.surface)
-                .font(baseFont)
-                .foregroundStyle(baseColor)
-                .lineLimit(1)
-                .fixedSize(horizontal: true, vertical: false)
+            if timedToken != nil, currentTime != nil {
+                Text(surface)
+                    .font(baseFont)
+                    .foregroundColor(baseColor.opacity(0.42))
+                    .overlay(
+                        GeometryReader { geo in
+                            Text(surface)
+                                .font(baseFont)
+                                .foregroundColor(baseColor)
+                                .frame(width: geo.size.width, height: geo.size.height, alignment: .leading)
+                                .mask(alignment: .leading) {
+                                    Rectangle()
+                                        .frame(
+                                            width: max(0, geo.size.width * CGFloat(fillFraction)),
+                                            height: geo.size.height
+                                        )
+                                }
+                        }
+                    )
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+            } else {
+                Text(surface)
+                    .font(baseFont)
+                    .foregroundStyle(baseColor)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+            }
         }
     }
 }
@@ -582,6 +695,28 @@ private struct RubyTokenBlock: View {
 /// the same inline-Ruby mode.  Plain hiragana, Latin, digits and punctuation
 /// do not receive a redundant annotation.
 extension LyricRubyToken {
+    var displayRubyText: String? {
+        if hasRuby, let ruby {
+            return JapaneseRomanizer.displayKana(ruby)
+        }
+
+        guard surface.unicodeScalars.contains(where: { scalar in
+            (0x30A1...0x30FA).contains(scalar.value)
+        }) else {
+            return nil
+        }
+
+        let reading = JapaneseRomanizer.displayKana(kanaSurface ?? surface)
+        guard !reading.isEmpty, reading != surface else { return nil }
+        return reading
+    }
+
+    var hasDisplayRuby: Bool {
+        displayRubyText != nil
+    }
+}
+
+extension TimedRubyToken {
     var displayRubyText: String? {
         if hasRuby, let ruby {
             return JapaneseRomanizer.displayKana(ruby)

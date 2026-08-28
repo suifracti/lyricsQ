@@ -1923,18 +1923,59 @@ private struct AppleMusicImmersiveV3LyricRow: View {
                 .shadow(color: Color.black.opacity(0.2), radius: 8, x: 0, y: 3)
             } else if shouldRenderInlineRuby,
                let kana = displayKanaText {
-                RubyLineView(
-                    originalText: effectiveOriginalText,
-                    kanaText: kana,
-                    tokens: inlineRubyTokens,
-                    baseFont: .system(size: baseSize, weight: rowWeight, design: .rounded),
-                    rubyFont: .system(size: rubySize, weight: .regular, design: .rounded),
-                    baseColor: .white,
-                    rubyColor: .white.opacity(rubyOpacity),
-                    rubySpacing: 1,
-                    tokenVerticalSpacing: 3,
-                    maxWidth: readableLineWidth
+                #if DEBUG
+                let _ = Self.logRubyDecisionIfNeeded(
+                    isActive: isActive,
+                    line: line,
+                    shouldRenderInlineRuby: true,
+                    storedKana: storedKanaText,
+                    displayKana: displayKanaText,
+                    rubyTokens: inlineRubyTokens,
+                    layout: line.timedSpans.flatMap { precomputedTimedRubyLayout(for: line, spans: $0) }
                 )
+                #endif
+                if isActive, let timedSpans = line.timedSpans, !timedSpans.isEmpty,
+                   let rubyLayout = precomputedTimedRubyLayout(for: line, spans: timedSpans) {
+                    #if DEBUG
+                    let _ = Self.logRowModeIfNeeded(mode: "timedRuby", width: readableLineWidth, lineWidth: 0)
+                    #endif
+                    TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: !presentationClock.isPlaying)) { _ in
+                        let presentationTime = presentationClock.presentationTime(at: ProcessInfo.processInfo.systemUptime)
+                        RubyLineView(
+                            originalText: effectiveOriginalText,
+                            kanaText: kana,
+                            tokens: inlineRubyTokens,
+                            timedLayout: rubyLayout,
+                            currentTime: presentationTime,
+                            baseFont: .system(size: baseSize, weight: rowWeight, design: .rounded),
+                            rubyFont: .system(size: rubySize, weight: .regular, design: .rounded),
+                            baseColor: .white,
+                            rubyColor: .white.opacity(rubyOpacity),
+                            rubySpacing: 1,
+                            tokenVerticalSpacing: 3,
+                            maxWidth: readableLineWidth
+                        )
+                    }
+                    .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    #if DEBUG
+                    if isActive {
+                        let _ = Self.logRowModeIfNeeded(mode: "staticRuby", width: readableLineWidth, lineWidth: 0)
+                    }
+                    #endif
+                    RubyLineView(
+                        originalText: effectiveOriginalText,
+                        kanaText: kana,
+                        tokens: inlineRubyTokens,
+                        baseFont: .system(size: baseSize, weight: rowWeight, design: .rounded),
+                        rubyFont: .system(size: rubySize, weight: .regular, design: .rounded),
+                        baseColor: .white,
+                        rubyColor: .white.opacity(rubyOpacity),
+                        rubySpacing: 1,
+                        tokenVerticalSpacing: 3,
+                        maxWidth: readableLineWidth
+                    )
+                }
             } else if preferences.showOriginal, preferences.kanaDisplayMode == .kanaReplacement, shouldShowKana,
                       let kana = displayKanaText {
                 KanaReplacementLineView(
@@ -1949,6 +1990,17 @@ private struct AppleMusicImmersiveV3LyricRow: View {
                     maxWidth: readableLineWidth
                 )
             } else if preferences.showOriginal {
+                #if DEBUG
+                let _ = Self.logRubyDecisionIfNeeded(
+                    isActive: isActive,
+                    line: line,
+                    shouldRenderInlineRuby: false,
+                    storedKana: storedKanaText,
+                    displayKana: displayKanaText,
+                    rubyTokens: inlineRubyTokens,
+                    layout: nil
+                )
+                #endif
                 if isActive, let timedSpans = line.timedSpans, !timedSpans.isEmpty,
                    let layout = precomputedTimedMultilineLayout(for: line, spans: timedSpans) {
                     #if DEBUG
@@ -2033,7 +2085,37 @@ private struct AppleMusicImmersiveV3LyricRow: View {
         )
     }
 
+    private func precomputedTimedRubyLayout(for line: LyricLine, spans: [TimedTextSpan]) -> TimedRubyLayout? {
+        TimedTextComposer.computeTimedRubyLayout(
+            originalText: line.originalText,
+            spans: spans,
+            rubyTokens: inlineRubyTokens,
+            fontSize: baseSize,
+            weight: rowWeight.nsWeightValue,
+            design: "rounded"
+        )
+    }
+
     #if DEBUG
+    private static var lastDecisionLogTime: TimeInterval = 0
+    private static func logRubyDecisionIfNeeded(
+        isActive: Bool,
+        line: LyricLine,
+        shouldRenderInlineRuby: Bool,
+        storedKana: String?,
+        displayKana: String?,
+        rubyTokens: [LyricRubyToken]?,
+        layout: TimedRubyLayout?
+    ) {
+        guard isActive else { return }
+        let now = ProcessInfo.processInfo.systemUptime
+        if now - lastDecisionLogTime >= 0.5 {
+            lastDecisionLogTime = now
+            let layoutStr = shouldRenderInlineRuby ? (layout != nil ? "ok" : "nil") : "bypassed_shouldRenderInlineRuby_false"
+            LyricsE2ELog.log("[V3TimedRubyDecision] text=\(line.originalText) shouldRenderInlineRuby=\(shouldRenderInlineRuby) storedKana=\(storedKana ?? "nil") displayKana=\(displayKana ?? "nil") rubyTokens=\(rubyTokens?.count.description ?? "nil") timedSpans=\(line.timedSpans?.count.description ?? "nil") readingSurfaceText=\(line.readingSurfaceText ?? "nil") timedRubyLayout=\(layoutStr)")
+        }
+    }
+
     private static var lastModeLogTime: TimeInterval = 0
     private static func logRowModeIfNeeded(mode: String, width: CGFloat, lineWidth: CGFloat) {
         let now = ProcessInfo.processInfo.systemUptime

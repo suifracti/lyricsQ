@@ -276,6 +276,39 @@ struct JapaneseReadingContract {
         precondition(JapaneseKanaGenerator.kanaPreservingOriginal("水曜日の約束") == "すいようびのやくそく")
         precondition(JapaneseKanaGenerator.kanaPreservingOriginal("𩸽定食") == nil)
 
+        // Phase 2.3 Strict Particle Alignment & Non-Particle Fail-Closed Contracts:
+        // 1. Positive: Morphologically confirmed particles (へ->え, を->お, は->わ) align correctly.
+        let pos1 = JapaneseReadingPipeline.analyze(originalText: "何処へ続いていても", providerKana: "どこえつづいていても")
+        precondition(pos1.isTokenAligned, "何処へ続いていても failed alignment with どこえつづいていても")
+        precondition(pos1.tokens.count == 7, "何処へ続いていても token count mismatch")
+
+        let pos2 = JapaneseReadingPipeline.analyze(originalText: "星を", providerKana: "ほしお")
+        precondition(pos2.isTokenAligned, "星を failed alignment with ほしお")
+        precondition(pos2.tokens.count == 2, "星を token count mismatch")
+
+        let pos3 = JapaneseReadingPipeline.analyze(originalText: "私は", providerKana: "わたしわ")
+        precondition(pos3.isTokenAligned, "私は failed alignment with わたしわ")
+        precondition(pos3.tokens.count == 2, "私は token count mismatch")
+
+        let pos4 = JapaneseReadingPipeline.analyze(originalText: "海へ", providerKana: "うみえ")
+        precondition(pos4.isTokenAligned, "海へ failed alignment with うみえ")
+
+        // 2. Negative: Non-particle tokens with internal は/へ/を must NOT accept pronunciation variants (strict fail-closed).
+        let neg1 = JapaneseReadingPipeline.analyze(originalText: "はなたば", providerKana: "わなたば")
+        precondition(!neg1.isTokenAligned, "Non-particle はなたば must not align with わなたば")
+
+        let neg2 = JapaneseReadingPipeline.analyze(originalText: "へや", providerKana: "えや")
+        precondition(!neg2.isTokenAligned, "Non-particle へや must not align with えや")
+
+        let neg3 = JapaneseReadingPipeline.analyze(originalText: "おっと", providerKana: "をっと")
+        precondition(!neg3.isTokenAligned, "Non-particle おっと must not align with をっと")
+
+        let neg4 = JapaneseReadingPipeline.analyze(originalText: "はい", providerKana: "わい")
+        precondition(!neg4.isTokenAligned, "Non-particle はい must not align with わい")
+
+        let neg5 = JapaneseReadingPipeline.analyze(originalText: "へそ", providerKana: "えそ")
+        precondition(!neg5.isTokenAligned, "Non-particle へそ must not align with えそ")
+
         print("japanese reading contract passed")
     }
 }
