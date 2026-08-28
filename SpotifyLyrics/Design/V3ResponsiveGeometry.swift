@@ -150,74 +150,60 @@ enum V3ResponsiveGeometry {
         )
     }
 
-    /// Returns a fully visible, aspect-preserving artwork rect for the stage
-    /// presentation. The rect is clamped to a safe canvas region, so a large
-    /// scale value can make the artwork larger without turning it into a crop.
+    /// Computes the pure window-level aspect-fit rect for the single stage artwork.
+    /// Uses the entire App window as the geometric container with minimal system
+    /// insets, calculating the largest possible uncropped, aspect-preserved rect
+    /// (e.g. side = min(canvasWidth - insets, canvasHeight - insets) for 1:1 covers).
+    /// Lyrics and HUD float as responsive overlays rather than shrinking the artwork.
     static func stageArtworkRect(
         canvasSize: CGSize,
         artworkAspectRatio: CGFloat,
-        requestedScale: CGFloat,
-        position: String,
+        requestedScale: CGFloat = 1.0,
+        position: String = "left",
         horizontalMargin: CGFloat = 18,
         topInset: CGFloat = 16,
         bottomInset: CGFloat = 16
     ) -> CGRect {
         let canvasWidth = finitePositive(canvasSize.width)
         let canvasHeight = finitePositive(canvasSize.height)
-        let margin = min(canvasWidth / 2, finiteNonNegative(horizontalMargin))
-        let top = min(canvasHeight, finiteNonNegative(topInset))
-        let bottom = min(max(0, canvasHeight - top), finiteNonNegative(bottomInset))
-        let safeWidth = max(1, canvasWidth - margin * 2)
-        let safeHeight = max(1, canvasHeight - top - bottom)
         let aspect = min(4, max(0.25, finiteValue(artworkAspectRatio)))
 
-        var width: CGFloat
-        var height: CGFloat
+        let top = min(canvasHeight, finiteNonNegative(topInset))
+        let bottom = min(max(0, canvasHeight - top), finiteNonNegative(bottomInset))
+        let margin = min(canvasWidth / 2, finiteNonNegative(horizontalMargin))
+
+        let safeHeight = max(1, canvasHeight - top - bottom)
+        let safeWidth = max(1, canvasWidth - margin * 2)
+
+        // Pure window-level aspect-fit:
+        var targetWidth: CGFloat
+        var targetHeight: CGFloat
         if safeWidth / safeHeight > aspect {
-            height = safeHeight
-            width = height * aspect
+            targetHeight = safeHeight
+            targetWidth = targetHeight * aspect
         } else {
-            width = safeWidth
-            height = width / aspect
+            targetWidth = safeWidth
+            targetHeight = targetWidth / aspect
         }
 
-        let normalizedScale = min(1, max(0, (finiteValue(requestedScale) - 0.8) / 0.6))
-        let occupancy = 0.72 + normalizedScale * 0.28
-        width *= occupancy
-        height *= occupancy
-
-        // Re-clamp after scaling while preserving the source ratio.
-        if width > safeWidth {
-            width = safeWidth
-            height = width / aspect
-        }
-        if height > safeHeight {
-            height = safeHeight
-            width = height * aspect
-        }
-
+        // Horizontal alignment based on stage position
         let preferredX: CGFloat
         switch position {
-        case "right": preferredX = canvasWidth * 0.72
-        case "center": preferredX = canvasWidth * 0.50
-        default: preferredX = canvasWidth * 0.28
+        case "right":
+            preferredX = canvasWidth - margin - targetWidth / 2
+        case "center":
+            preferredX = canvasWidth / 2
+        default:
+            preferredX = margin + targetWidth / 2
         }
 
-        let halfWidth = width / 2
-        let minimumX = margin + halfWidth
-        let maximumX = max(minimumX, canvasWidth - margin - halfWidth)
-        let centerX = min(maximumX, max(minimumX, preferredX))
-        let safeCenterY = top + safeHeight / 2
-        let halfHeight = height / 2
-        let minimumY = top + halfHeight
-        let maximumY = max(minimumY, canvasHeight - bottom - halfHeight)
-        let centerY = min(maximumY, max(minimumY, safeCenterY))
+        let preferredY = top + safeHeight / 2
 
         return CGRect(
-            x: centerX - halfWidth,
-            y: centerY - halfHeight,
-            width: width,
-            height: height
+            x: preferredX - targetWidth / 2,
+            y: preferredY - targetHeight / 2,
+            width: targetWidth,
+            height: targetHeight
         )
     }
 

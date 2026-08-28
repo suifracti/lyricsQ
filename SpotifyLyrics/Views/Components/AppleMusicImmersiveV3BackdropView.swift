@@ -54,7 +54,9 @@ struct AppleMusicImmersiveV3BackdropView: View {
             }
 
             // The veil is intentionally independent of playback position.
-            Color.black.opacity(readabilityVeilOpacity)
+            if settings.v3ArtworkPresentation != .stage {
+                Color.black.opacity(readabilityVeilOpacity)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .ignoresSafeArea()
@@ -192,11 +194,11 @@ struct AppleMusicImmersiveV3BackdropView: View {
     private var coverLightCenter: UnitPoint {
         let position = settings.v3ArtworkPosition
         if position == "right" {
-            return UnitPoint(x: 0.78, y: 0.42)
+            return UnitPoint(x: 0.76, y: 0.38)
         } else if position == "center" {
-            return UnitPoint(x: 0.50, y: 0.38)
+            return UnitPoint(x: 0.50, y: 0.36)
         } else {
-            return UnitPoint(x: 0.22, y: 0.42)
+            return UnitPoint(x: 0.24, y: 0.38)
         }
     }
 
@@ -214,127 +216,107 @@ struct AppleMusicImmersiveV3BackdropView: View {
 
     @ViewBuilder
     private func stageArtworkLayers(image: NSImage, ambientImage: NSImage?) -> some View {
-        let saturation = min(
-            1.32,
-            presentationStyle.paletteSaturation * 1.20 + (increaseContrast ? 0.06 : 0)
-        )
+        let style = presentationStyle
+        let saturation = min(1.35, style.paletteSaturation * 1.15)
 
-        // Extend album colour beyond the aspect-fitted artwork without using
-        // an arbitrary readable crop as the whole window.
-        LinearGradient(
-            colors: [
-                ambientColor(palette.primary, saturation: saturation, maximumLuminance: 0.36),
-                ambientColor(palette.secondary, saturation: saturation, maximumLuminance: 0.24),
-                Color(red: 0.045, green: 0.048, blue: 0.058)
-            ],
-            startPoint: coverLightCenter,
-            endPoint: settings.v3ArtworkPosition == "right" ? .topLeading : .bottomTrailing
-        )
-
+        // 1. Non-Semantic Low-Frequency Ambient Stage Extension (Layer 0)
+        // Fills the window canvas with abstract color temperature and soft light.
+        // Uses low-resolution ambient derivative heavily diffused so NO face, text,
+        // hair, or object contours can be recognized.
         if let ambientImage {
             Image(nsImage: ambientImage)
                 .resizable()
-                .interpolation(.high)
+                .interpolation(.low)
                 .scaledToFill()
-                .scaleEffect(1.18)
-                .blur(radius: normalizedBlur * 68, opaque: true)
-                .saturation(saturation)
-                .brightness(-normalizedBlur * 0.12)
-                .opacity(normalizedBlur * 0.42)
+                .scaleEffect(1.24)
+                .blur(radius: 64.0 + normalizedBlur * 32.0, opaque: true)
+                .saturation(1.05 + normalizedBlur * 0.10)
+                .brightness(-0.02 - normalizedBlur * 0.05)
+                .opacity(1.0)
+        } else {
+            Image(nsImage: image)
+                .resizable()
+                .interpolation(.low)
+                .scaledToFill()
+                .scaleEffect(1.24)
+                .blur(radius: 80.0 + normalizedBlur * 32.0, opaque: true)
+                .saturation(1.05 + normalizedBlur * 0.10)
+                .brightness(-0.02 - normalizedBlur * 0.05)
+                .opacity(1.0)
         }
 
-        // One recognisable, aspect-fitted artwork plane sits inside the
-        // colour field. There is no duplicate foreground cover card.
+        // 2. The ONE AND ONLY High-Definition Aspect-Fit Stage Cover (Layer 1)
+        // 100% complete, uncropped, aspect-preserved master cover whose 4 edges
+        // are clearly visible, floating cleanly on the ambient stage.
         GeometryReader { geometry in
-            let scale = min(1.4, max(0.8, settings.v3ArtworkSizeScale))
             let artworkAspectRatio = image.size.width > 0 && image.size.height > 0
                 ? image.size.width / image.size.height
                 : 1.0
             let artworkRect = stageArtworkPlaneSize(
                 canvas: geometry.size,
-                artworkAspectRatio: artworkAspectRatio,
-                requestedScale: scale
+                artworkAspectRatio: artworkAspectRatio
             )
+            let cornerRadius = min(20, max(12, artworkRect.width * 0.035))
 
             Image(nsImage: image)
                 .resizable()
                 .interpolation(.high)
                 .scaledToFit()
                 .frame(width: artworkRect.width, height: artworkRect.height)
-                .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-                .position(x: artworkRect.midX, y: artworkRect.midY)
-                .blur(radius: normalizedBlur * 10.0)
+                .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+                .shadow(color: Color.black.opacity(0.35), radius: 24, x: 0, y: 8)
+                .blur(radius: normalizedBlur * 20.0)
                 .saturation(1.0 + normalizedBlur * (saturation - 1.0))
-                .brightness(-normalizedBlur * 0.08)
-                .opacity(1.0 - normalizedBlur * 0.12)
-                .shadow(
-                    color: Color.black.opacity(0.20 + normalizedBlur * 0.10),
-                    radius: 28,
-                    x: 0,
-                    y: 10
-                )
+                .brightness(-normalizedBlur * 0.06)
+                .position(x: artworkRect.midX, y: artworkRect.midY)
         }
 
+        // 3. Directional Stage Reading Veil (Layer 2)
+        // Softly enhances right-side lyrics contrast without darkening the top or left stage.
         stageReadingVeil
-
-        RadialGradient(
-            colors: [
-                .clear,
-                Color.black.opacity(min(0.38, presentationStyle.vignetteIntensity * 0.70))
-            ],
-            center: coverLightCenter,
-            startRadius: 220,
-            endRadius: 980
-        )
-
-        if let noiseImage {
-            Image(nsImage: noiseImage)
-                .resizable(resizingMode: .tile)
-                .blendMode(.softLight)
-                .opacity(min(0.045, presentationStyle.noiseIntensity))
-        }
     }
 
-    /// Stage is the only complete-cover backdrop. The user size range changes
-    /// how much of the canvas it occupies, but never lets the square exceed
-    /// the available window and silently turn back into a cropped wallpaper.
+    /// Stage presentation sizing helper for geometry contracts.
     private func stageArtworkPlaneSize(
         canvas: CGSize,
-        artworkAspectRatio: CGFloat,
-        requestedScale: CGFloat
+        artworkAspectRatio: CGFloat
     ) -> CGRect {
         V3ResponsiveGeometry.stageArtworkRect(
             canvasSize: canvas,
             artworkAspectRatio: artworkAspectRatio,
-            requestedScale: requestedScale,
             position: settings.v3ArtworkPosition
         )
     }
 
     @ViewBuilder
     private var stageReadingVeil: some View {
-        if settings.v3ArtworkPosition == "right" {
+        let isRight = settings.v3ArtworkPosition == "right"
+        let isCenter = settings.v3ArtworkPosition == "center"
+
+        if isRight {
             LinearGradient(
                 stops: [
-                    .init(color: Color.black.opacity(0.54), location: 0),
-                    .init(color: Color.black.opacity(0.24), location: 0.46),
-                    .init(color: .clear, location: 0.78)
+                    .init(color: Color.black.opacity(0.55), location: 0.0),
+                    .init(color: Color.black.opacity(0.40), location: 0.40),
+                    .init(color: Color.black.opacity(0.12), location: 0.54),
+                    .init(color: .clear, location: 0.70)
                 ],
                 startPoint: .leading,
                 endPoint: .trailing
             )
-        } else if settings.v3ArtworkPosition == "center" {
+        } else if isCenter {
             LinearGradient(
-                colors: [Color.black.opacity(0.14), Color.black.opacity(0.30)],
+                colors: [Color.clear, Color.black.opacity(0.28)],
                 startPoint: .top,
                 endPoint: .bottom
             )
         } else {
             LinearGradient(
                 stops: [
-                    .init(color: .clear, location: 0.18),
-                    .init(color: Color.black.opacity(0.16), location: 0.48),
-                    .init(color: Color.black.opacity(0.58), location: 1)
+                    .init(color: .clear, location: 0.45),
+                    .init(color: Color.black.opacity(0.18), location: 0.58),
+                    .init(color: Color.black.opacity(0.48), location: 0.75),
+                    .init(color: Color.black.opacity(0.62), location: 1.0)
                 ],
                 startPoint: .leading,
                 endPoint: .trailing

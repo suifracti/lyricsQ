@@ -384,13 +384,26 @@ private final class DirectionDMainWindowDebugDelegate: NSObject, NSApplicationDe
             router: Self.configuredRouter
         )
 
+        var initialWidth: CGFloat = 1_200
+        var initialHeight: CGFloat = 760
+        if let envSize = ProcessInfo.processInfo.environment["SPOTIFYLYRICS_WINDOW_SIZE"] {
+            let parts = envSize.split(separator: "x")
+            if parts.count == 2, let w = Double(parts[0]), let h = Double(parts[1]) {
+                initialWidth = CGFloat(w)
+                initialHeight = CGFloat(h)
+            }
+        }
+
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 1_200, height: 760),
-            styleMask: [.titled, .closable, .resizable, .miniaturizable],
+            contentRect: NSRect(x: 0, y: 0, width: initialWidth, height: initialHeight),
+            styleMask: [.titled, .closable, .resizable, .miniaturizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
         window.title = "Lyric Island"
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+        window.isMovableByWindowBackground = true
         window.identifier = NSUserInterfaceItemIdentifier("direction-d-main-window")
         window.isReleasedWhenClosed = false
         // Keep the direct DEBUG host at the visual envelope used for the
@@ -412,6 +425,9 @@ private final class DirectionDMainWindowDebugDelegate: NSObject, NSApplicationDe
         ])
         window.contentView = container
         window.center()
+        if ProcessInfo.processInfo.environment["SPOTIFYLYRICS_WINDOW_SIZE"] != nil {
+            window.setFrame(NSRect(x: 100, y: 100, width: initialWidth, height: initialHeight), display: true)
+        }
         self.window = window
 
         NSApp.activate(ignoringOtherApps: true)

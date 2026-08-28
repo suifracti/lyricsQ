@@ -98,6 +98,7 @@ struct AppleMusicImmersiveV3WindowView: View {
             minWidth: MainWindowResponsiveThresholds.technicalMinimumSize.width,
             minHeight: MainWindowResponsiveThresholds.technicalMinimumSize.height
         )
+        .ignoresSafeArea()
         .preferredColorScheme(.dark)
         .sheet(isPresented: $isAlignmentDetailsPresented) {
             if let report = state.liveLyricsState.alignmentReport {
@@ -108,25 +109,29 @@ struct AppleMusicImmersiveV3WindowView: View {
 
     @ViewBuilder
     private func layout(for geometry: GeometryProxy) -> some View {
-        switch MainWindowResponsiveMode.resolve(
-            width: geometry.size.width,
-            height: geometry.size.height,
-            automaticLyricsFocus: settings.automaticCompactLyricsFocus,
-            wideBreakpoint: MainWindowResponsiveThresholds.wideBreakpoint,
-            comfortableSize: MainWindowResponsiveThresholds.comfortableMinimumSize,
-            compactFocusWidth: MainWindowResponsiveThresholds.compactLyricsFocusWidth,
-            compactFocusHeight: MainWindowResponsiveThresholds.compactLyricsFocusHeight
-        ) {
-        case .wide, .medium:
-            adaptiveSplitLayout(in: geometry)
-        case .small:
-            // Keep the legacy enum value decodable for saved preview state,
-            // but render it through the same bounded split geometry. A second
-            // vertical poster composition makes live window resizing jump
-            // between unrelated coordinate systems.
-            adaptiveSplitLayout(in: geometry)
-        case .lyricsFocus:
-            compactLyricsFocusLayout(in: geometry)
+        if settings.v3ArtworkPresentation == .stage {
+            stageTheaterLayout(in: geometry)
+        } else {
+            switch MainWindowResponsiveMode.resolve(
+                width: geometry.size.width,
+                height: geometry.size.height,
+                automaticLyricsFocus: settings.automaticCompactLyricsFocus,
+                wideBreakpoint: MainWindowResponsiveThresholds.wideBreakpoint,
+                comfortableSize: MainWindowResponsiveThresholds.comfortableMinimumSize,
+                compactFocusWidth: MainWindowResponsiveThresholds.compactLyricsFocusWidth,
+                compactFocusHeight: MainWindowResponsiveThresholds.compactLyricsFocusHeight
+            ) {
+            case .wide, .medium:
+                adaptiveSplitLayout(in: geometry)
+            case .small:
+                // Keep the legacy enum value decodable for saved preview state,
+                // but render it through the same bounded split geometry. A second
+                // vertical poster composition makes live window resizing jump
+                // between unrelated coordinate systems.
+                adaptiveSplitLayout(in: geometry)
+            case .lyricsFocus:
+                compactLyricsFocusLayout(in: geometry)
+            }
         }
     }
 
@@ -187,15 +192,29 @@ struct AppleMusicImmersiveV3WindowView: View {
         )
         let position = settings.v3ArtworkPosition
         let trackAlignment: HorizontalAlignment = position == "center" ? .center : .leading
+        let isWide = metrics.contentWidth >= 1080
 
-        let trackCol = trackColumn(
-            width: metrics.artworkWidth,
-            availableHeight: metrics.availableHeight,
-            coverSize: metrics.coverSize,
-            alignment: trackAlignment,
-            compact: false,
-            progressDensity: .wide
-        )
+        let trackCol = Group {
+            if isWide {
+                trackColumn(
+                    width: metrics.artworkWidth,
+                    availableHeight: metrics.availableHeight,
+                    coverSize: metrics.coverSize,
+                    alignment: trackAlignment,
+                    compact: false,
+                    progressDensity: .wide
+                )
+            } else {
+                trackColumn(
+                    width: metrics.artworkWidth,
+                    availableHeight: metrics.availableHeight,
+                    coverSize: metrics.coverSize,
+                    alignment: trackAlignment,
+                    compact: false,
+                    progressDensity: .medium
+                )
+            }
+        }
         .frame(width: metrics.artworkWidth)
         .frame(maxHeight: .infinity)
 
@@ -221,6 +240,80 @@ struct AppleMusicImmersiveV3WindowView: View {
         )
         .padding(.horizontal, metrics.horizontalPadding)
         .padding(.vertical, metrics.verticalPadding)
+    }
+
+    private var currentArtworkAspectRatio: CGFloat {
+        if let image = ArtworkImageLoader.shared.cachedImage(for: state.currentTrack.artworkURL),
+           image.size.width > 0, image.size.height > 0 {
+            return image.size.width / image.size.height
+        }
+        return 1.0
+    }
+
+    private func stageTheaterLayout(in geometry: GeometryProxy) -> some View {
+        let canvasWidth = max(1, geometry.size.width)
+        let canvasHeight = max(1, geometry.size.height)
+        let position = settings.v3ArtworkPosition
+        let isRight = position == "right"
+        let isCenter = position == "center"
+
+        let artworkRect = V3ResponsiveGeometry.stageArtworkRect(
+            canvasSize: geometry.size,
+            artworkAspectRatio: currentArtworkAspectRatio,
+            position: position
+        )
+
+        let hudWidth = min(artworkRect.width - 32, 380)
+        let hudView = StageHUDView(state: state, width: hudWidth)
+
+        let lyricsWidth: CGFloat
+        if isCenter {
+            lyricsWidth = max(260, canvasWidth * 0.44)
+        } else if isRight {
+            lyricsWidth = max(220, artworkRect.minX - 32)
+        } else {
+            lyricsWidth = max(220, canvasWidth - artworkRect.maxX - 32)
+        }
+
+        let lyricsCol = lyricsColumn(width: lyricsWidth, compact: false)
+            .frame(width: lyricsWidth)
+            .frame(maxHeight: .infinity)
+
+        return ZStack(alignment: .topLeading) {
+            // Lyrics Overlay floating in the safe reading zone
+            if isRight {
+                HStack(spacing: 0) {
+                    lyricsCol
+                        .padding(.leading, 24)
+                    Spacer()
+                }
+                .frame(width: canvasWidth, height: canvasHeight)
+            } else if isCenter {
+                lyricsCol
+                    .frame(width: lyricsWidth)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
+                    .padding(.trailing, 24)
+            } else {
+                HStack(spacing: 0) {
+                    Spacer()
+                    lyricsCol
+                        .padding(.trailing, 24)
+                }
+                .frame(width: canvasWidth, height: canvasHeight)
+            }
+
+            // HUD Overlay anchored at the stage artwork base
+            VStack {
+                Spacer()
+                hudView
+            }
+            .frame(width: hudWidth, alignment: isRight ? .trailing : (isCenter ? .center : .leading))
+            .padding(.leading, isRight ? 0 : (isCenter ? 0 : artworkRect.minX + 16))
+            .padding(.trailing, isRight ? (canvasWidth - artworkRect.maxX + 16) : 0)
+            .padding(.bottom, max(20, canvasHeight - artworkRect.maxY + 16))
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: isCenter ? .bottom : (isRight ? .bottomTrailing : .bottomLeading))
+        }
+        .frame(width: canvasWidth, height: canvasHeight)
     }
 
     private func instrumentalPosterLayout(in geometry: GeometryProxy) -> some View {
@@ -309,7 +402,7 @@ struct AppleMusicImmersiveV3WindowView: View {
         coverSize: CGFloat,
         alignment: HorizontalAlignment,
         compact: Bool,
-        progressDensity: AppleMusicImmersiveV3ProgressDensity
+        progressDensity: AppleMusicImmersiveV3ProgressDensity = .medium
     ) -> some View {
         VStack(alignment: alignment, spacing: 0) {
             if showsForegroundArtwork {
@@ -887,6 +980,98 @@ private struct AppleMusicImmersiveV3TransportControls: View {
     }
 }
 
+private struct StageHUDView: View {
+    @ObservedObject var state: PlaybackState
+    let width: CGFloat
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // Title and Artist/Album
+            VStack(alignment: .leading, spacing: 4) {
+                Text(state.currentTrack.title)
+                    .font(.system(size: 24, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
+                    .lineLimit(2)
+                    .shadow(color: Color.black.opacity(0.55), radius: 6, x: 0, y: 2)
+
+                Text("\(state.currentTrack.artist) — \(state.currentTrack.album)")
+                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.82))
+                    .lineLimit(1)
+                    .shadow(color: Color.black.opacity(0.45), radius: 4, x: 0, y: 1)
+            }
+
+            // Transport Buttons + Progress in a sleek horizontal HUD
+            VStack(spacing: 6) {
+                HStack(spacing: 12) {
+                    V3TransportIconButton(
+                        systemImage: "backward.fill",
+                        label: "上一首",
+                        enabled: state.canControlSpotify
+                    ) {
+                        state.previousTrack()
+                    }
+
+                    Button {
+                        state.togglePlayPause()
+                    } label: {
+                        Image(systemName: state.isPlaying ? "pause.fill" : "play.fill")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .frame(width: 40, height: 40)
+                            .background(.ultraThinMaterial.opacity(0.80), in: Circle())
+                            .overlay(
+                                Circle()
+                                    .stroke(Color.white.opacity(0.24), lineWidth: 0.8)
+                            )
+                            .shadow(color: Color.black.opacity(0.25), radius: 8, y: 3)
+                    }
+                    .buttonStyle(V3BounceButtonStyle())
+                    .disabled(!state.canInteractWithPlayback)
+                    .opacity(state.canInteractWithPlayback ? 1 : 0.42)
+                    .accessibilityLabel(state.isPlaying ? "暂停" : "播放")
+
+                    V3TransportIconButton(
+                        systemImage: "forward.fill",
+                        label: "下一首",
+                        enabled: state.canControlSpotify
+                    ) {
+                        state.nextTrack()
+                    }
+
+                    Spacer()
+                }
+
+                HStack(spacing: 8) {
+                    Text(formatTime(state.currentTime))
+                        .font(.system(size: 10, weight: .medium, design: .rounded).monospacedDigit())
+                        .foregroundStyle(.white.opacity(0.70))
+                        .shadow(color: Color.black.opacity(0.40), radius: 3, y: 1)
+
+                    AppleMusicImmersiveV3PlaybackProgress(
+                        state: state,
+                        density: .small,
+                        maxWidth: .infinity
+                    )
+
+                    Text(formatTime(state.currentTrack.duration))
+                        .font(.system(size: 10, weight: .medium, design: .rounded).monospacedDigit())
+                        .foregroundStyle(.white.opacity(0.70))
+                        .shadow(color: Color.black.opacity(0.40), radius: 3, y: 1)
+                }
+            }
+            .padding(.top, 4)
+        }
+        .frame(maxWidth: width, alignment: .leading)
+    }
+
+    private func formatTime(_ seconds: TimeInterval) -> String {
+        let minutes = Int(seconds) / 60
+        let remainder = Int(seconds) % 60
+        return String(format: "%02d:%02d", minutes, remainder)
+    }
+}
+
 private struct V3TransportIconButton: View {
     let systemImage: String
     let label: String
@@ -1066,18 +1251,6 @@ private struct AppleMusicImmersiveV3LyricsViewport: View {
         let artistDisplay = state.currentTrack.artist
 
         VStack(alignment: .leading, spacing: LyricsDesignTokens.Spacing.xs) {
-            if !lines.isEmpty {
-                let isInst = lines.first?.originalText.contains("纯音乐") == true
-                    || lines.first?.originalText.contains("没有填词") == true
-                AppleMusicImmersiveV3LyricProgressStatus(
-                    mode: synchronized ? .synchronized : .plainText,
-                    currentIndex: synchronized ? currentIndex : nil,
-                    isInstrumental: isInst,
-                    pureImmersion: settings.v3InstrumentalPureImmersion
-                )
-                .padding(.leading, 2)
-            }
-
             if lines.isEmpty {
                 if lyricsFocus {
                     focusEmptyState
@@ -1892,25 +2065,27 @@ private struct V3VisualTuningPopoverView: View {
                 }
             }
 
-            VStack(alignment: .leading, spacing: 6) {
-                HStack {
-                    Text(settings.v3ArtworkPresentation.artworkSizeControlTitle)
-                        .font(.system(size: 12, weight: .medium))
-                    Spacer()
-                    Text("\(sizePresetName) · \(Int(settings.v3ArtworkSizeScale * 100))%")
-                        .font(.system(size: 11, weight: .bold).monospacedDigit())
-                        .foregroundStyle(.secondary)
-                }
-                Slider(value: $settings.v3ArtworkSizeScale, in: 0.8...1.4, step: 0.05)
+            if settings.v3ArtworkPresentation != .stage {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        Text(settings.v3ArtworkPresentation.artworkSizeControlTitle)
+                            .font(.system(size: 12, weight: .medium))
+                        Spacer()
+                        Text("\(sizePresetName) · \(Int(settings.v3ArtworkSizeScale * 100))%")
+                            .font(.system(size: 11, weight: .bold).monospacedDigit())
+                            .foregroundStyle(.secondary)
+                    }
+                    Slider(value: $settings.v3ArtworkSizeScale, in: 0.8...1.4, step: 0.05)
 
-                HStack(spacing: 0) {
-                    sizePresetButton("精巧 80%", val: 0.80)
-                    Spacer()
-                    sizePresetButton("标准 100%", val: 1.00)
-                    Spacer()
-                    sizePresetButton("大图 120%", val: 1.20)
-                    Spacer()
-                    sizePresetButton("巨幕 140%", val: 1.40)
+                    HStack(spacing: 0) {
+                        sizePresetButton("精巧 80%", val: 0.80)
+                        Spacer()
+                        sizePresetButton("标准 100%", val: 1.00)
+                        Spacer()
+                        sizePresetButton("大图 120%", val: 1.20)
+                        Spacer()
+                        sizePresetButton("巨幕 140%", val: 1.40)
+                    }
                 }
             }
 

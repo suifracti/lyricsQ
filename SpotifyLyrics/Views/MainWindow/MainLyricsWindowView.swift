@@ -63,6 +63,7 @@ struct MainLyricsWindowView: View {
         .preferredColorScheme(.dark)
         .background(Color.clear)
         .background(WindowStateAccessor(settings: settings))
+        .ignoresSafeArea()
         .popover(
             isPresented: Binding(
                 get: { layoutStyle == .directionDV4 && isSearchPresented },
