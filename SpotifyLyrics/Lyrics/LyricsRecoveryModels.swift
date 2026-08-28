@@ -200,7 +200,11 @@ public enum LyricsLayerEnricher {
                 translationText: layers.translationText,
                 romajiText: layers.romajiText,
                 kanaText: layers.kanaText,
-                rubyTokens: rubyTokens
+                rubyTokens: rubyTokens,
+                performerID: line.performerID,
+                timedSpans: line.timedSpans,
+                readingRepresentationID: line.readingRepresentationID,
+                readingSurfaceText: line.readingSurfaceText
             )
         }
     }

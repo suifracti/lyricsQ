@@ -62,6 +62,7 @@ public final class PlaybackState: ObservableObject {
     private var networkWasSatisfied = false
     private var playbackAnchorPosition: TimeInterval = 0
     private var playbackAnchorDate = Date()
+    private var playbackAnchorMonotonic: TimeInterval = ProcessInfo.processInfo.systemUptime
     private var lastProviderRefreshDate = Date.distantPast
 #if DEBUG
     /// Optional acceptance harness: when `SPOTIFYLYRICS_ACCEPTANCE_CONTROL_PATH`
@@ -2029,7 +2030,18 @@ public final class PlaybackState: ObservableObject {
     private func resetPlaybackAnchor(to position: TimeInterval) {
         playbackAnchorPosition = max(0, min(position, currentTrack.duration))
         playbackAnchorDate = Date()
+        playbackAnchorMonotonic = ProcessInfo.processInfo.systemUptime
         currentTime = playbackAnchorPosition
+    }
+
+    public var presentationClock: LyricsPresentationClock {
+        LyricsPresentationClock(
+            authoritativePosition: playbackAnchorPosition,
+            receivedAtMonotonicTime: playbackAnchorMonotonic,
+            isPlaying: isPlaying,
+            trackID: currentTrack.id,
+            trackDuration: currentTrack.duration
+        )
     }
 }
 

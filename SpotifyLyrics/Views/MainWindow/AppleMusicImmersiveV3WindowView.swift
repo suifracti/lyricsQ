@@ -1456,7 +1456,8 @@ private struct AppleMusicImmersiveV3LyricsViewport: View {
             language: language,
             trackStableKey: trackStableKey,
             artistDisplay: artistDisplay,
-            currentTime: state.currentTime
+            currentTime: state.currentTime,
+            presentationClock: state.presentationClock
         )
         .environmentObject(settings)
         if let timestamp = LyricsTimeline.validSeekTimestamp(
@@ -1641,6 +1642,7 @@ private struct AppleMusicImmersiveV3LyricRow: View {
     let trackStableKey: String?
     let artistDisplay: String?
     var currentTime: TimeInterval = 0
+    var presentationClock: LyricsPresentationClock = LyricsPresentationClock()
     @EnvironmentObject private var settings: AppSettingsStore
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -1947,15 +1949,32 @@ private struct AppleMusicImmersiveV3LyricRow: View {
                     maxWidth: readableLineWidth
                 )
             } else if preferences.showOriginal {
-                if isActive, let timedSpans = line.timedSpans, !timedSpans.isEmpty {
-                    AppleMusicImmersiveV3TimedRowView(
-                        displayText: semanticDisplayText,
-                        originalText: line.originalText,
-                        spans: timedSpans,
-                        currentTime: currentTime,
-                        font: .system(size: baseSize, weight: rowWeight, design: .rounded)
-                    )
-                    .fixedSize(horizontal: false, vertical: true)
+                if isActive, let timedSpans = line.timedSpans, !timedSpans.isEmpty,
+                   let layout = precomputedTimedLayout(for: line, spans: timedSpans) {
+                    if layout.totalLineWidth <= readableLineWidth,
+                       semanticDisplayText == line.originalText {
+                        #if DEBUG
+                        let _ = Self.logRowModeIfNeeded(mode: "fineTiming", width: readableLineWidth, lineWidth: layout.totalLineWidth)
+                        #endif
+                        TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: !presentationClock.isPlaying)) { _ in
+                            let presentationTime = presentationClock.presentationTime(at: ProcessInfo.processInfo.systemUptime)
+                            AppleMusicImmersiveV3TimedRowView(
+                                originalText: line.originalText,
+                                layout: layout,
+                                currentTime: presentationTime,
+                                font: .system(size: baseSize, weight: rowWeight, design: .rounded)
+                            )
+                        }
+                        .fixedSize(horizontal: false, vertical: true)
+                    } else {
+                        #if DEBUG
+                        let _ = Self.logRowModeIfNeeded(mode: "fallbackWrap", width: readableLineWidth, lineWidth: layout.totalLineWidth)
+                        #endif
+                        Text(semanticDisplayText)
+                            .font(.system(size: baseSize, weight: rowWeight, design: .rounded))
+                            .foregroundStyle(.white)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 } else {
                     Text(semanticDisplayText)
                         .font(.system(size: baseSize, weight: rowWeight, design: .rounded))
@@ -2008,55 +2027,80 @@ private struct AppleMusicImmersiveV3LyricRow: View {
             value: layoutSignature
         )
     }
+
+    private func precomputedTimedLayout(for line: LyricLine, spans: [TimedTextSpan]) -> TimedLineLayout? {
+        TimedTextComposer.computeLayoutFractions(
+            originalText: line.originalText,
+            spans: spans,
+            fontSize: baseSize,
+            weight: rowWeight.nsWeightValue,
+            design: "rounded"
+        )
+    }
+
+    #if DEBUG
+    private static var lastModeLogTime: TimeInterval = 0
+    private static func logRowModeIfNeeded(mode: String, width: CGFloat, lineWidth: CGFloat) {
+        let now = ProcessInfo.processInfo.systemUptime
+        if now - lastModeLogTime >= 0.5 {
+            lastModeLogTime = now
+            LyricsE2ELog.log("[V3TimedRow] mode=\(mode) width=\(String(format: "%.1f", width)) lineWidth=\(String(format: "%.1f", lineWidth))")
+        }
+    }
+    #endif
 }
 
 private struct AppleMusicImmersiveV3TimedRowView: View {
-    let displayText: String
     let originalText: String
-    let spans: [TimedTextSpan]
+    let layout: TimedLineLayout
     let currentTime: TimeInterval
     let font: Font
 
     var body: some View {
-        let segments = TimedTextComposer.composeSegments(
-            displayText: displayText,
-            originalText: originalText,
-            spans: spans,
-            currentTime: currentTime
-        )
-
-        HStack(alignment: .firstTextBaseline, spacing: 0) {
-            ForEach(0..<segments.count, id: \.self) { index in
-                let segment = segments[index]
-                if segment.progress <= 0 {
-                    Text(segment.text)
-                        .font(font)
-                        .foregroundColor(.white.opacity(0.42))
-                } else if segment.progress >= 1.0 {
-                    Text(segment.text)
+        let fraction = layout.fillFraction(at: currentTime)
+        #if DEBUG
+        let _ = Self.logTimedRowIfNeeded(text: originalText, time: currentTime, fraction: fraction)
+        #endif
+        Text(originalText)
+            .font(font)
+            .foregroundColor(.white.opacity(0.42))
+            .overlay(
+                GeometryReader { geo in
+                    Text(originalText)
                         .font(font)
                         .foregroundColor(.white)
-                } else {
-                    Text(segment.text)
-                        .font(font)
-                        .foregroundColor(.white.opacity(0.42))
-                        .overlay(
-                            GeometryReader { geo in
-                                Text(segment.text)
-                                    .font(font)
-                                    .foregroundColor(.white)
-                                    .frame(width: geo.size.width, height: geo.size.height, alignment: .leading)
-                                    .mask(alignment: .leading) {
-                                        Rectangle()
-                                            .frame(
-                                                width: max(0, geo.size.width * CGFloat(segment.progress)),
-                                                height: geo.size.height
-                                            )
-                                    }
-                            }
-                        )
+                        .frame(width: geo.size.width, height: geo.size.height, alignment: .leading)
+                        .mask(alignment: .leading) {
+                            Rectangle()
+                                .frame(
+                                    width: max(0, geo.size.width * CGFloat(fraction)),
+                                    height: geo.size.height
+                                )
+                        }
                 }
-            }
+            )
+    }
+
+    #if DEBUG
+    private static var lastLogTime: TimeInterval = 0
+    private static func logTimedRowIfNeeded(text: String, time: TimeInterval, fraction: Double) {
+        let now = ProcessInfo.processInfo.systemUptime
+        if now - lastLogTime >= 0.5 {
+            lastLogTime = now
+            LyricsE2ELog.log("[V3TimedRow] active=true text=\(text.prefix(16)) time=\(String(format: "%.3f", time)) frac=\(String(format: "%.3f", fraction))")
+        }
+    }
+    #endif
+}
+
+private extension Font.Weight {
+    var nsWeightValue: CGFloat {
+        switch self {
+        case .heavy, .black: return 0.56
+        case .bold: return 0.4
+        case .semibold: return 0.3
+        case .medium: return 0.23
+        default: return 0.0
         }
     }
 }

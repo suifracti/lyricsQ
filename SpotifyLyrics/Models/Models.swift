@@ -1,5 +1,11 @@
 // Shared/Models/Models.swift
 import Foundation
+#if canImport(AppKit)
+import AppKit
+#endif
+#if canImport(CoreText)
+import CoreText
+#endif
 
 public struct TrackArtistLink: Identifiable, Equatable, Hashable, Sendable {
     public let name: String
@@ -382,6 +388,159 @@ public enum TimedTextComposer {
         currentTime: TimeInterval
     ) -> [TimedTextSegment] {
         composeSegments(displayText: text, originalText: text, spans: spans, currentTime: currentTime)
+    }
+
+    #if canImport(AppKit) && canImport(CoreText)
+    /// Constructs a CTFont matching SwiftUI's `.system(size:weight:design:)`.
+    public static func makeSystemFont(
+        size: CGFloat,
+        weight: NSFont.Weight = .bold,
+        design: NSFontDescriptor.SystemDesign = .rounded
+    ) -> CTFont {
+        let baseFont = NSFont.systemFont(ofSize: size, weight: weight)
+        if let descriptor = baseFont.fontDescriptor.withDesign(design),
+           let roundedFont = NSFont(descriptor: descriptor, size: size) {
+            return roundedFont as CTFont
+        }
+        return baseFont as CTFont
+    }
+    #endif
+
+    /// Computes typographic horizontal layout boundaries for each span across the full, unsplit originalText line using true system font metrics.
+    /// Returns nil if spans fail validation or if CoreText typography cannot be computed (Fail-Closed).
+    public static func computeLayoutFractions(
+        originalText: String,
+        spans: [TimedTextSpan],
+        fontSize: CGFloat = 28,
+        weight: CGFloat = 0.56, // Default to .heavy (0.56) / .bold (0.4)
+        design: String = "rounded"
+    ) -> TimedLineLayout? {
+        guard !originalText.isEmpty, !spans.isEmpty else { return nil }
+        guard let resolvedSpans = resolveSpans(in: originalText, timedSpans: spans) else {
+            return nil
+        }
+        #if canImport(AppKit) && canImport(CoreText)
+        let nsWeight = NSFont.Weight(weight)
+        let sysDesign: NSFontDescriptor.SystemDesign = design == "rounded" ? .rounded : .default
+        let font = makeSystemFont(size: fontSize, weight: nsWeight, design: sysDesign)
+
+        let attrString = NSAttributedString(
+            string: originalText,
+            attributes: [NSAttributedString.Key(kCTFontAttributeName as String): font]
+        )
+        let line = CTLineCreateWithAttributedString(attrString)
+        let totalWidth = CTLineGetTypographicBounds(line, nil, nil, nil)
+        guard totalWidth > 0 else { return nil }
+
+        var spanBounds: [TimedLineLayout.SpanBounds] = []
+        spanBounds.reserveCapacity(resolvedSpans.count)
+
+        for span in resolvedSpans {
+            let startU16 = span.range.lowerBound.utf16Offset(in: originalText)
+            let endU16 = span.range.upperBound.utf16Offset(in: originalText)
+            let startX = CTLineGetOffsetForStringIndex(line, startU16, nil)
+            let endX = CTLineGetOffsetForStringIndex(line, endU16, nil)
+            let startFrac = min(max(0.0, startX / totalWidth), 1.0)
+            let endFrac = min(max(0.0, endX / totalWidth), 1.0)
+            spanBounds.append(
+                TimedLineLayout.SpanBounds(
+                    startTime: span.startTime,
+                    endTime: span.endTime,
+                    startFraction: startFrac,
+                    endFraction: endFrac
+                )
+            )
+        }
+
+        return TimedLineLayout(spans: spanBounds, totalLineWidth: CGFloat(totalWidth))
+        #else
+        return nil
+        #endif
+    }
+}
+
+public struct TimedLineLayout: Equatable, Sendable {
+    public struct SpanBounds: Equatable, Sendable {
+        public let startTime: TimeInterval
+        public let endTime: TimeInterval
+        public let startFraction: Double
+        public let endFraction: Double
+
+        public init(
+            startTime: TimeInterval,
+            endTime: TimeInterval,
+            startFraction: Double,
+            endFraction: Double
+        ) {
+            self.startTime = startTime
+            self.endTime = endTime
+            self.startFraction = min(max(0.0, startFraction), 1.0)
+            self.endFraction = min(max(0.0, endFraction), 1.0)
+        }
+    }
+
+    public let spans: [SpanBounds]
+    public let totalLineWidth: CGFloat
+
+    public init(spans: [SpanBounds], totalLineWidth: CGFloat = 0) {
+        self.spans = spans
+        self.totalLineWidth = totalLineWidth
+    }
+
+    public func fillFraction(at currentTime: TimeInterval) -> Double {
+        guard !spans.isEmpty else { return 1.0 }
+        guard let first = spans.first, let last = spans.last else { return 1.0 }
+        if currentTime <= first.startTime { return 0.0 }
+        if currentTime >= last.endTime { return 1.0 }
+
+        for span in spans {
+            if currentTime >= span.startTime && currentTime <= span.endTime {
+                let duration = span.endTime - span.startTime
+                let p = duration > 0 ? (currentTime - span.startTime) / duration : 1.0
+                let clampedP = min(max(0.0, p), 1.0)
+                return span.startFraction + (span.endFraction - span.startFraction) * clampedP
+            } else if currentTime < span.startTime {
+                // In untimed gap before this span
+                return span.startFraction
+            }
+        }
+        return 1.0
+    }
+}
+
+public struct LyricsPresentationClock: Equatable, Sendable {
+    public let authoritativePosition: TimeInterval
+    public let receivedAtMonotonicTime: TimeInterval
+    public let isPlaying: Bool
+    public let trackID: String
+    public let trackDuration: TimeInterval
+
+    public init(
+        authoritativePosition: TimeInterval = 0,
+        receivedAtMonotonicTime: TimeInterval = 0,
+        isPlaying: Bool = false,
+        trackID: String = "",
+        trackDuration: TimeInterval = 0
+    ) {
+        self.authoritativePosition = max(0, authoritativePosition)
+        self.receivedAtMonotonicTime = receivedAtMonotonicTime
+        self.isPlaying = isPlaying
+        self.trackID = trackID
+        self.trackDuration = max(0, trackDuration)
+    }
+
+    /// Pure monotonic extrapolation of playback position.
+    /// Invariant 1: If isPlaying is false, returns authoritativePosition (frozen).
+    /// Invariant 2: If isPlaying is true, advances linearly by (now - receivedAtMonotonicTime).
+    /// Invariant 3: Clamped to [0, trackDuration] when duration is positive.
+    public func presentationTime(at monotonicNow: TimeInterval) -> TimeInterval {
+        guard isPlaying else { return authoritativePosition }
+        let elapsed = max(0, monotonicNow - receivedAtMonotonicTime)
+        let estimated = authoritativePosition + elapsed
+        if trackDuration > 0 {
+            return min(trackDuration, estimated)
+        }
+        return estimated
     }
 }
 
