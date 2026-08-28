@@ -1950,32 +1950,26 @@ private struct AppleMusicImmersiveV3LyricRow: View {
                 )
             } else if preferences.showOriginal {
                 if isActive, let timedSpans = line.timedSpans, !timedSpans.isEmpty,
-                   let layout = precomputedTimedLayout(for: line, spans: timedSpans) {
-                    if layout.totalLineWidth <= readableLineWidth,
-                       semanticDisplayText == line.originalText {
-                        #if DEBUG
-                        let _ = Self.logRowModeIfNeeded(mode: "fineTiming", width: readableLineWidth, lineWidth: layout.totalLineWidth)
-                        #endif
-                        TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: !presentationClock.isPlaying)) { _ in
-                            let presentationTime = presentationClock.presentationTime(at: ProcessInfo.processInfo.systemUptime)
-                            AppleMusicImmersiveV3TimedRowView(
-                                originalText: line.originalText,
-                                layout: layout,
-                                currentTime: presentationTime,
-                                font: .system(size: baseSize, weight: rowWeight, design: .rounded)
-                            )
-                        }
-                        .fixedSize(horizontal: false, vertical: true)
-                    } else {
-                        #if DEBUG
-                        let _ = Self.logRowModeIfNeeded(mode: "fallbackWrap", width: readableLineWidth, lineWidth: layout.totalLineWidth)
-                        #endif
-                        Text(semanticDisplayText)
-                            .font(.system(size: baseSize, weight: rowWeight, design: .rounded))
-                            .foregroundStyle(.white)
-                            .fixedSize(horizontal: false, vertical: true)
+                   let layout = precomputedTimedMultilineLayout(for: line, spans: timedSpans) {
+                    #if DEBUG
+                    let modeName = layout.isSingleLine ? "fineTiming" : "fineTimingMultiline"
+                    let _ = Self.logRowModeIfNeeded(mode: modeName, width: readableLineWidth, lineWidth: layout.maxLineWidth)
+                    #endif
+                    TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: !presentationClock.isPlaying)) { _ in
+                        let presentationTime = presentationClock.presentationTime(at: ProcessInfo.processInfo.systemUptime)
+                        AppleMusicImmersiveV3TimedRowView(
+                            layout: layout,
+                            currentTime: presentationTime,
+                            font: .system(size: baseSize, weight: rowWeight, design: .rounded)
+                        )
                     }
+                    .fixedSize(horizontal: false, vertical: true)
                 } else {
+                    #if DEBUG
+                    if isActive {
+                        let _ = Self.logRowModeIfNeeded(mode: "fallbackWrap", width: readableLineWidth, lineWidth: 0)
+                    }
+                    #endif
                     Text(semanticDisplayText)
                         .font(.system(size: baseSize, weight: rowWeight, design: .rounded))
                         .foregroundStyle(.white)
@@ -2028,13 +2022,14 @@ private struct AppleMusicImmersiveV3LyricRow: View {
         )
     }
 
-    private func precomputedTimedLayout(for line: LyricLine, spans: [TimedTextSpan]) -> TimedLineLayout? {
-        TimedTextComposer.computeLayoutFractions(
+    private func precomputedTimedMultilineLayout(for line: LyricLine, spans: [TimedTextSpan]) -> TimedMultilineLayout? {
+        TimedTextComposer.computeMultilineLayout(
             originalText: line.originalText,
             spans: spans,
             fontSize: baseSize,
             weight: rowWeight.nsWeightValue,
-            design: "rounded"
+            design: "rounded",
+            availableWidth: readableLineWidth
         )
     }
 
@@ -2051,34 +2046,61 @@ private struct AppleMusicImmersiveV3LyricRow: View {
 }
 
 private struct AppleMusicImmersiveV3TimedRowView: View {
-    let originalText: String
-    let layout: TimedLineLayout
+    let layout: TimedMultilineLayout
     let currentTime: TimeInterval
     let font: Font
 
     var body: some View {
-        let fraction = layout.fillFraction(at: currentTime)
         #if DEBUG
-        let _ = Self.logTimedRowIfNeeded(text: originalText, time: currentTime, fraction: fraction)
+        let firstFrac = layout.lines.first?.fillFraction(at: currentTime) ?? 0
+        let _ = Self.logTimedRowIfNeeded(text: layout.originalText, time: currentTime, fraction: firstFrac)
         #endif
-        Text(originalText)
-            .font(font)
-            .foregroundColor(.white.opacity(0.42))
-            .overlay(
-                GeometryReader { geo in
-                    Text(originalText)
+
+        if layout.isSingleLine, let singleLine = layout.lines.first {
+            let fraction = singleLine.fillFraction(at: currentTime)
+            Text(singleLine.text)
+                .font(font)
+                .foregroundColor(.white.opacity(0.42))
+                .overlay(
+                    GeometryReader { geo in
+                        Text(singleLine.text)
+                            .font(font)
+                            .foregroundColor(.white)
+                            .frame(width: geo.size.width, height: geo.size.height, alignment: .leading)
+                            .mask(alignment: .leading) {
+                                Rectangle()
+                                    .frame(
+                                        width: max(0, geo.size.width * CGFloat(fraction)),
+                                        height: geo.size.height
+                                    )
+                            }
+                    }
+                )
+        } else {
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(layout.lines, id: \.lineIndex) { visualLine in
+                    let fraction = visualLine.fillFraction(at: currentTime)
+                    Text(visualLine.text)
                         .font(font)
-                        .foregroundColor(.white)
-                        .frame(width: geo.size.width, height: geo.size.height, alignment: .leading)
-                        .mask(alignment: .leading) {
-                            Rectangle()
-                                .frame(
-                                    width: max(0, geo.size.width * CGFloat(fraction)),
-                                    height: geo.size.height
-                                )
-                        }
+                        .foregroundColor(.white.opacity(0.42))
+                        .overlay(
+                            GeometryReader { geo in
+                                Text(visualLine.text)
+                                    .font(font)
+                                    .foregroundColor(.white)
+                                    .frame(width: geo.size.width, height: geo.size.height, alignment: .leading)
+                                    .mask(alignment: .leading) {
+                                        Rectangle()
+                                            .frame(
+                                                width: max(0, geo.size.width * CGFloat(fraction)),
+                                                height: geo.size.height
+                                            )
+                                    }
+                            }
+                        )
                 }
-            )
+            }
+        }
     }
 
     #if DEBUG

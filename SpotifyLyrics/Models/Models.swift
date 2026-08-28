@@ -457,6 +457,326 @@ public enum TimedTextComposer {
         return nil
         #endif
     }
+
+    public static func computeMultilineLayout(
+        originalText: String,
+        spans: [TimedTextSpan],
+        fontSize: CGFloat = 28,
+        weight: CGFloat = 0.56,
+        design: String = "rounded",
+        availableWidth: CGFloat
+    ) -> TimedMultilineLayout? {
+        #if canImport(AppKit) && canImport(CoreText)
+        guard !originalText.isEmpty, !spans.isEmpty, availableWidth > 0 else {
+            return nil
+        }
+
+        // Strict Canonical Validation: Must pass the exact resolveSpans validation
+        guard let resolvedSpans = resolveSpans(in: originalText, timedSpans: spans) else {
+            return nil
+        }
+
+        let nsWeight = NSFont.Weight(weight)
+        let sysDesign: NSFontDescriptor.SystemDesign = design == "rounded" ? .rounded : .default
+        let font = makeSystemFont(size: fontSize, weight: nsWeight, design: sysDesign)
+        let totalUTF16Length = originalText.utf16.count
+
+        let attrString = NSAttributedString(
+            string: originalText,
+            attributes: [NSAttributedString.Key(kCTFontAttributeName as String): font]
+        )
+
+        let typesetter = CTTypesetterCreateWithAttributedString(attrString)
+        var startOffset = 0
+        var rawVisualLines: [(line: CTLine, range: CFRange, text: String, width: CGFloat, ascent: CGFloat, descent: CGFloat, leading: CGFloat)] = []
+
+        while startOffset < totalUTF16Length {
+            let suggestedCount = CTTypesetterSuggestLineBreak(typesetter, startOffset, Double(availableWidth))
+            guard suggestedCount > 0 else { return nil }
+            let lineRange = CFRangeMake(startOffset, suggestedCount)
+            let ctLine = CTTypesetterCreateLine(typesetter, lineRange)
+            var ascent: CGFloat = 0, descent: CGFloat = 0, leading: CGFloat = 0
+            let lineWidth = CTLineGetTypographicBounds(ctLine, &ascent, &descent, &leading)
+            let lineSubstr = (originalText as NSString).substring(with: NSRange(location: startOffset, length: suggestedCount))
+            rawVisualLines.append((ctLine, lineRange, lineSubstr, lineWidth, ascent, descent, leading))
+            startOffset += suggestedCount
+        }
+
+        // Canonical completeness: All characters must be consumed
+        guard startOffset == totalUTF16Length, !rawVisualLines.isEmpty else {
+            return nil
+        }
+
+        // For each resolved span, create fragments across overlapping visual lines
+        struct RawFragment {
+            let lineIndex: Int
+            let spanID: Int
+            let utf16Range: Range<Int>
+            let text: String
+            let startX: CGFloat
+            let endX: CGFloat
+            let rawWidth: CGFloat
+        }
+
+        var spanRawFragments: [Int: [RawFragment]] = [:]
+
+        for (spanIdx, resolvedSpan) in resolvedSpans.enumerated() {
+            let spanStart = resolvedSpan.range.lowerBound.utf16Offset(in: originalText)
+            let spanEnd = resolvedSpan.range.upperBound.utf16Offset(in: originalText)
+
+            for (lineIdx, rawLine) in rawVisualLines.enumerated() {
+                let fullSubstr = rawLine.text
+                let delimLen = fullSubstr.hasSuffix("\r\n") ? 2 : ((fullSubstr.hasSuffix("\n") || fullSubstr.hasSuffix("\r")) ? 1 : 0)
+                let lineStart = rawLine.range.location
+                let lineEnd = rawLine.range.location + rawLine.range.length - delimLen
+
+                let overlapStart = max(spanStart, lineStart)
+                let overlapEnd = min(spanEnd, lineEnd)
+
+                if overlapStart < overlapEnd {
+                    var sec1: CGFloat = 0, sec2: CGFloat = 0
+                    let startX = CTLineGetOffsetForStringIndex(rawLine.line, overlapStart, &sec1)
+                    let endX = CTLineGetOffsetForStringIndex(rawLine.line, overlapEnd, &sec2)
+                    let fragWidth = max(0, endX - startX)
+                    let fragText = (originalText as NSString).substring(with: NSRange(location: overlapStart, length: overlapEnd - overlapStart))
+
+                    let frag = RawFragment(
+                        lineIndex: lineIdx,
+                        spanID: spanIdx,
+                        utf16Range: overlapStart..<overlapEnd,
+                        text: fragText,
+                        startX: startX,
+                        endX: endX,
+                        rawWidth: fragWidth
+                    )
+                    spanRawFragments[spanIdx, default: []].append(frag)
+                }
+            }
+        }
+
+        // Full coverage validation: Every span must have valid contiguous fragments covering spanStart..<spanEnd
+        for (spanIdx, resolvedSpan) in resolvedSpans.enumerated() {
+            guard let fragments = spanRawFragments[spanIdx], !fragments.isEmpty else {
+                return nil
+            }
+            let spanStart = resolvedSpan.range.lowerBound.utf16Offset(in: originalText)
+            let spanEnd = resolvedSpan.range.upperBound.utf16Offset(in: originalText)
+
+            guard fragments.first?.utf16Range.lowerBound == spanStart else {
+                return nil
+            }
+
+            for j in 0..<(fragments.count - 1) {
+                let currFrag = fragments[j]
+                let nextFrag = fragments[j + 1]
+                let rawLineOfCurr = rawVisualLines[currFrag.lineIndex]
+                let delimLen = rawLineOfCurr.text.hasSuffix("\r\n") ? 2 : ((rawLineOfCurr.text.hasSuffix("\n") || rawLineOfCurr.text.hasSuffix("\r")) ? 1 : 0)
+                let expectedNextStart = currFrag.utf16Range.upperBound + delimLen
+                guard nextFrag.utf16Range.lowerBound == expectedNextStart else {
+                    return nil
+                }
+            }
+
+            let lastFrag = fragments.last!
+            let rawLineOfLast = rawVisualLines[lastFrag.lineIndex]
+            let lastDelimLen = rawLineOfLast.text.hasSuffix("\r\n") ? 2 : ((rawLineOfLast.text.hasSuffix("\n") || rawLineOfLast.text.hasSuffix("\r")) ? 1 : 0)
+            let expectedLastEnd = (spanEnd == rawLineOfLast.range.location + rawLineOfLast.range.length) ? (spanEnd - lastDelimLen) : spanEnd
+            guard lastFrag.utf16Range.upperBound == expectedLastEnd else {
+                return nil
+            }
+        }
+
+        // Time allocation for each span across its fragments
+        var lineFragments: [Int: [TimedSpanFragment]] = [:]
+        for (spanIdx, resolvedSpan) in resolvedSpans.enumerated() {
+            guard let fragments = spanRawFragments[spanIdx], !fragments.isEmpty else { continue }
+            let spanTotalWidth = fragments.reduce(0.0) { $0 + $1.rawWidth }
+            let spanDuration = max(0.0, resolvedSpan.endTime - resolvedSpan.startTime)
+
+            var curTime = resolvedSpan.startTime
+            for (fIdx, f) in fragments.enumerated() {
+                let fDuration: TimeInterval
+                if spanTotalWidth > 0 {
+                    let ratio = Double(f.rawWidth / spanTotalWidth)
+                    fDuration = (fIdx == fragments.count - 1) ? (resolvedSpan.endTime - curTime) : (spanDuration * ratio)
+                } else {
+                    fDuration = spanDuration / Double(fragments.count)
+                }
+                let fEnd = min(resolvedSpan.endTime, curTime + fDuration)
+                let timedFrag = TimedSpanFragment(
+                    spanID: spanIdx,
+                    utf16Range: f.utf16Range,
+                    text: f.text,
+                    startTime: curTime,
+                    endTime: fEnd,
+                    startX: f.startX,
+                    endX: f.endX
+                )
+                lineFragments[f.lineIndex, default: []].append(timedFrag)
+                curTime = fEnd
+            }
+        }
+
+        // Assemble final visual lines with explicit delimiter handling
+        var visualLines: [TimedVisualLine] = []
+        for (lineIdx, rawLine) in rawVisualLines.enumerated() {
+            let frags = lineFragments[lineIdx]?.sorted(by: { $0.startTime < $1.startTime }) ?? []
+            let fullSubstr = rawLine.text
+            let delimLen = fullSubstr.hasSuffix("\r\n") ? 2 : ((fullSubstr.hasSuffix("\n") || fullSubstr.hasSuffix("\r")) ? 1 : 0)
+            let displayText = String(fullSubstr.dropLast(delimLen))
+            let sourceRange = rawLine.range.location..<(rawLine.range.location + rawLine.range.length)
+
+            let vLine = TimedVisualLine(
+                lineIndex: lineIdx,
+                sourceUTF16Range: sourceRange,
+                displayText: displayText,
+                trailingDelimiterLength: delimLen,
+                totalWidth: rawLine.width,
+                ascent: rawLine.ascent,
+                descent: rawLine.descent,
+                leading: rawLine.leading,
+                fragments: frags
+            )
+            visualLines.append(vLine)
+        }
+
+        return TimedMultilineLayout(
+            originalText: originalText,
+            availableWidth: availableWidth,
+            lines: visualLines
+        )
+        #else
+        return nil
+        #endif
+    }
+}
+
+public struct TimedSpanFragment: Equatable, Sendable {
+    public let spanID: Int
+    public let utf16Range: Range<Int>
+    public let text: String
+    public let startTime: TimeInterval
+    public let endTime: TimeInterval
+    public let startX: CGFloat
+    public let endX: CGFloat
+
+    public init(
+        spanID: Int,
+        utf16Range: Range<Int>,
+        text: String,
+        startTime: TimeInterval,
+        endTime: TimeInterval,
+        startX: CGFloat,
+        endX: CGFloat
+    ) {
+        self.spanID = spanID
+        self.utf16Range = utf16Range
+        self.text = text
+        self.startTime = startTime
+        self.endTime = endTime
+        self.startX = startX
+        self.endX = endX
+    }
+}
+
+public struct TimedVisualLine: Equatable, Sendable {
+    public let lineIndex: Int
+    public let sourceUTF16Range: Range<Int>
+    public let displayText: String
+    public let trailingDelimiterLength: Int
+    public let totalWidth: CGFloat
+    public let ascent: CGFloat
+    public let descent: CGFloat
+    public let leading: CGFloat
+    public let fragments: [TimedSpanFragment]
+
+    public var text: String {
+        displayText
+    }
+
+    public var utf16Range: Range<Int> {
+        sourceUTF16Range
+    }
+
+    public var lineHeight: CGFloat {
+        ascent + descent + leading
+    }
+
+    public init(
+        lineIndex: Int,
+        sourceUTF16Range: Range<Int>,
+        displayText: String,
+        trailingDelimiterLength: Int = 0,
+        totalWidth: CGFloat,
+        ascent: CGFloat = 0,
+        descent: CGFloat = 0,
+        leading: CGFloat = 0,
+        fragments: [TimedSpanFragment]
+    ) {
+        self.lineIndex = lineIndex
+        self.sourceUTF16Range = sourceUTF16Range
+        self.displayText = displayText
+        self.trailingDelimiterLength = trailingDelimiterLength
+        self.totalWidth = totalWidth
+        self.ascent = ascent
+        self.descent = descent
+        self.leading = leading
+        self.fragments = fragments
+    }
+
+    public func fillFraction(at presentationTime: TimeInterval) -> Double {
+        guard totalWidth > 0 else { return 0.0 }
+        return Double(filledWidth(at: presentationTime) / totalWidth)
+    }
+
+    public func filledWidth(at presentationTime: TimeInterval) -> CGFloat {
+        guard !fragments.isEmpty else { return 0.0 }
+        guard let first = fragments.first, let last = fragments.last else { return 0.0 }
+
+        if presentationTime <= first.startTime {
+            return 0.0
+        }
+        if presentationTime >= last.endTime {
+            return totalWidth
+        }
+
+        for frag in fragments {
+            if presentationTime < frag.startTime {
+                return frag.startX
+            }
+            if presentationTime <= frag.endTime {
+                let duration = frag.endTime - frag.startTime
+                let p = duration > 0 ? (presentationTime - frag.startTime) / duration : 1.0
+                let clampedP = min(max(p, 0.0), 1.0)
+                return frag.startX + CGFloat(clampedP) * (frag.endX - frag.startX)
+            }
+        }
+        return totalWidth
+    }
+}
+
+public struct TimedMultilineLayout: Equatable, Sendable {
+    public let originalText: String
+    public let availableWidth: CGFloat
+    public let lines: [TimedVisualLine]
+
+    public init(
+        originalText: String,
+        availableWidth: CGFloat,
+        lines: [TimedVisualLine]
+    ) {
+        self.originalText = originalText
+        self.availableWidth = availableWidth
+        self.lines = lines
+    }
+
+    public var isSingleLine: Bool {
+        lines.count <= 1
+    }
+
+    public var maxLineWidth: CGFloat {
+        lines.map(\.totalWidth).max() ?? 0
+    }
 }
 
 public struct TimedLineLayout: Equatable, Sendable {
