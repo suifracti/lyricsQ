@@ -217,6 +217,8 @@
 		1100000F2D83400100000000 /* MockPlaybackProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MockPlaybackProvider.swift; sourceTree = "<group>"; };
 		110000102D83400100000000 /* ArtworkImageLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtworkImageLoader.swift; sourceTree = "<group>"; };
 		110000112D83400100000000 /* SpotifyLyrics.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = SpotifyLyrics.entitlements; sourceTree = "<group>"; };
+		110000112D83400100000001 /* SpotifyLyricsDebug.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = SpotifyLyricsDebug.entitlements; sourceTree = "<group>"; };
+		110000112D83400100000002 /* SpotifyLyricsRelease.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = SpotifyLyricsRelease.entitlements; sourceTree = "<group>"; };
 		110000122D83400100000000 /* TrackIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackIdentity.swift; sourceTree = "<group>"; };
 		110000132D83400100000000 /* LyricsModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricsModels.swift; sourceTree = "<group>"; };
 		110000142D83400100000000 /* LRCParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LRCParser.swift; sourceTree = "<group>"; };
@@ -453,6 +455,8 @@
 				110000002D83400000000025 /* Lyrics */,
 				110000002D83400000000026 /* Search */,
 				110000112D83400100000000 /* SpotifyLyrics.entitlements */,
+				110000112D83400100000001 /* SpotifyLyricsDebug.entitlements */,
+				110000112D83400100000002 /* SpotifyLyricsRelease.entitlements */,
 				1100010A2D83400100000000 /* DebugSigning.xcconfig */,
 				1100010B2D83400100000000 /* Info-Additions.plist */,
 				110000002D83400000000020 /* Views */,
@@ -1010,7 +1014,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				/* Empty identity: Automatic selects Apple Development / Mac Development. */
 				CODE_SIGN_IDENTITY = "";
-				CODE_SIGN_ENTITLEMENTS = SpotifyLyrics/SpotifyLyrics.entitlements;
+				CODE_SIGN_ENTITLEMENTS = SpotifyLyrics/SpotifyLyricsDebug.entitlements;
 				/* Avoid main stub + SpotifyLyrics.debug.dylib TCC identity split. */
 				ENABLE_DEBUG_DYLIB = NO;
 				COMBINE_HIDPI_IMAGES = YES;
@@ -1037,7 +1041,8 @@
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_IDENTITY = "-";
-				CODE_SIGN_ENTITLEMENTS = SpotifyLyrics/SpotifyLyrics.entitlements;
+				CODE_SIGN_ENTITLEMENTS = SpotifyLyrics/SpotifyLyricsRelease.entitlements;
+				CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
