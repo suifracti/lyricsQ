@@ -23,15 +23,18 @@ struct SpotifyLyricsApp: App {
         DebugDatabaseSafety.failClosedForCommandLineV4IfNeeded()
 #endif
         let settings = AppSettingsStore.shared
+        let playback = PlaybackState(settings: settings)
         _appSettings = StateObject(wrappedValue: settings)
-        _playbackState = StateObject(wrappedValue: PlaybackState(settings: settings))
+        _playbackState = StateObject(wrappedValue: playback)
         _settingsData = StateObject(wrappedValue: SettingsDataController())
         _directionDMainWindowAdapter = StateObject(wrappedValue: DirectionDProductStateAdapter())
+
+        MenuBarLyricsController.shared.bind(playbackState: playback)
 #if DEBUG
         DirectionDMainWindowDebugDelegate.configure(
-            playbackState: playbackState,
+            playbackState: playback,
             adapter: directionDMainWindowAdapter,
-            router: DirectionDExperimentalProductHost.makeRouter(playback: playbackState)
+            router: DirectionDExperimentalProductHost.makeRouter(playback: playback)
         )
 #endif
     }
@@ -48,6 +51,7 @@ struct SpotifyLyricsApp: App {
                 .onAppear {
                     // Product path: zero-operation automatic alignment observes playback.
                     AutomaticAlignmentJobController.shared.bind(playback: playbackState)
+                    MenuBarLyricsController.shared.bind(playbackState: playbackState)
 #if DEBUG
                     // A command-line v4 run is a controlled visual harness.
                     // Showing the existing capsule after the main scene is

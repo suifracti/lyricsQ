@@ -96,6 +96,11 @@ struct MainLyricsWindowView: View {
             openWindow(id: "lyrics-editor")
         }
 #endif
+        .onAppear {
+            MenuBarLyricsController.shared.setOpenMainWindowHandler { [openWindow] in
+                openWindow(id: "main-window")
+            }
+        }
         .task {
             state.startProvider(connectSpotify: settings.connectSpotifyOnLaunch)
             WindowManager.shared.restoreFloatingWindowIfConfigured(state: state)

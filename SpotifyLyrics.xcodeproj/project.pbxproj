@@ -194,6 +194,8 @@
 		110003042D83400100000001 /* DirectionDExperimentalProductHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110003042D83400100000000 /* DirectionDExperimentalProductHost.swift */; };
 		110004002D83400100000001 /* DirectionDResponsiveLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110004002D83400100000000 /* DirectionDResponsiveLayout.swift */; };
 		110004012D83400100000001 /* DirectionDMainWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110004012D83400100000000 /* DirectionDMainWindowView.swift */; };
+		110005002D83400100000001 /* MenuBarLyricsController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110005002D83400100000000 /* MenuBarLyricsController.swift */; };
+		110005012D83400100000001 /* MenuBarLyricsPopoverView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110005012D83400100000000 /* MenuBarLyricsPopoverView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -388,6 +390,8 @@
 		110003042D83400100000000 /* DirectionDExperimentalProductHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/Components/DirectionD/DirectionDExperimentalProductHost.swift; sourceTree = "<group>"; };
 		110004002D83400100000000 /* DirectionDResponsiveLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Design/DirectionD/DirectionDResponsiveLayout.swift; sourceTree = "<group>"; };
 		110004012D83400100000000 /* DirectionDMainWindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/Components/DirectionD/DirectionDMainWindowView.swift; sourceTree = "<group>"; };
+		110005002D83400100000000 /* MenuBarLyricsController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Windows/MenuBarLyricsController.swift; sourceTree = "<group>"; };
+		110005012D83400100000000 /* MenuBarLyricsPopoverView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/MenuBar/MenuBarLyricsPopoverView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -441,6 +445,8 @@
 				1100007A2D83400100000000 /* CapsuleLyricsView.swift */,
 				1100007B2D83400100000000 /* CapsuleLyricsWindowPersistence.swift */,
 				1100007C2D83400100000000 /* CapsuleLyricsWindowController.swift */,
+				110005002D83400100000000 /* MenuBarLyricsController.swift */,
+				110005012D83400100000000 /* MenuBarLyricsPopoverView.swift */,
 				110000F42D83400100000000 /* PresentationPreviewLabView.swift */,
 				110000F52D83400100000000 /* PresentationPreviewAdapters.swift */,
 				110000002D83400000000024 /* Providers */,
@@ -974,6 +980,8 @@
 				110000862D83400100000001 /* FullScreenLyricsPresentation.swift in Sources */,
 				110000872D83400100000001 /* FullScreenLyricsView.swift in Sources */,
 				110000882D83400100000001 /* LyricsLanguageGate.swift in Sources */,
+				110005002D83400100000001 /* MenuBarLyricsController.swift in Sources */,
+				110005012D83400100000001 /* MenuBarLyricsPopoverView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
