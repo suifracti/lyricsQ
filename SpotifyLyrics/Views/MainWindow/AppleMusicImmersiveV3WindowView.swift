@@ -1250,7 +1250,16 @@ private struct AppleMusicImmersiveV3LyricsViewport: View {
         let trackStableKey = state.currentTrackIdentity?.stableKey
         let artistDisplay = state.currentTrack.artist
 
-        VStack(alignment: .leading, spacing: LyricsDesignTokens.Spacing.xs) {
+#if DEBUG
+        let nowIso = ISO8601DateFormatter().string(from: Date())
+        let playbackTrackID = TrackIdentity.canonicalSpotifyTrackID(state.currentTrack.spotifyId) ?? state.currentTrack.spotifyId ?? "none"
+        let renderToken = lines.isEmpty ? "none" : (state.lyricsSession.debugLyricsBindingToken ?? "none")
+        let versionID = state.lyricsSession.activeLyricsVersionID?.uuidString ?? "none"
+        let sessionGen = state.lyricsSession.revision
+        print("[RuntimeLyricsRendered] timestamp=\(nowIso) sessionGeneration=\(sessionGen) playbackTrackID=\(playbackTrackID) renderLyricsBindingToken=\(renderToken) lyricsVersionID=\(versionID) activeLineIndex=\(currentIndex ?? -1)")
+#endif
+
+        return VStack(alignment: .leading, spacing: LyricsDesignTokens.Spacing.xs) {
             if lines.isEmpty {
                 if lyricsFocus {
                     focusEmptyState

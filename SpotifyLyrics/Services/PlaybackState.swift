@@ -1878,11 +1878,20 @@ public final class PlaybackState: ObservableObject {
             currentTrack = nextTrack
             songSearchSelectionMessage = ""
             LyricsE2ELog.log("Playback trackChange identity=\(nextIdentity.stableKey) title=\(nextTrack.title) artist=\(nextTrack.artist) duration=\(nextTrack.duration)")
+#if DEBUG
+            let previousGeneration = lyricsSession.revision
+#endif
             lyricsSession.begin(
                 track: nextTrack,
                 identity: nextIdentity,
                 automaticallySearch: settingsStore.autoSearchLyricsOnTrackChange
             )
+#if DEBUG
+            let newGeneration = lyricsSession.revision
+            let nowIso = ISO8601DateFormatter().string(from: Date())
+            let sid = TrackIdentity.canonicalSpotifyTrackID(nextTrack.spotifyId) ?? nextTrack.spotifyId ?? "none"
+            print("[RuntimeTrackObserved] timestamp=\(nowIso) spotifyTrackID=\(sid) previousGeneration=\(previousGeneration) sessionGeneration=\(newGeneration) title=\"\(nextTrack.title)\" artist=\"\(nextTrack.artist)\" position=\(snapshot.position)")
+#endif
             lyricsEditorSession.observePlayback(identity: nextIdentity, revision: lyricsSession.revision)
         } else if currentTrack != nextTrack {
             // Metadata/artwork may change without a lyric identity change. The
