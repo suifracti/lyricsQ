@@ -2445,9 +2445,1147 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
 
     private func lastError(_ result: Int32? = nil) -> LyricsRepositoryError {
         if let result, result != SQLITE_OK {
-            return .sqlite("SQLite error (result)")
+            return .sqlite("SQLite error (\(result))")
         }
         guard let database else { return .unavailable("SQLite handle 已关闭") }
         return .sqlite(String(cString: sqlite3_errmsg(database)))
+    }
+
+    // MARK: - Personal Asset Definition & Library Query
+
+    /// Returns tracks that have user local assets:
+    /// - Manually edited or locally imported lyrics (`is_manually_edited = 1` or `source = 'local'` or `source = 'manual'`)
+    /// - User locked lyrics version (`is_locked = 1`)
+    /// - Adopted or locked translation versions (`is_locked = 1` or `is_manually_edited = 1` or active complete translation)
+    /// - Saved reading versions (`reading_versions` attached to lyrics)
+    /// - Saved fine timing versions (`lyrics_timing_versions` attached to lyrics)
+    public func loadPersonalLibraryEntries(searchQuery: String? = nil) throws -> [PersonalLyricsLibraryEntry] {
+        try prepare()
+
+        let sql = """
+            SELECT DISTINCT t.stable_key, t.spotify_id, t.spotify_uri, t.isrc,
+                   t.title, t.artist_display, t.album, t.duration, t.artwork_url, t.updated_at
+            FROM tracks AS t
+            LEFT JOIN lyrics_versions AS lv ON lv.track_stable_key = t.stable_key
+            LEFT JOIN translation_versions AS tv ON tv.lyrics_version_id = lv.id
+            LEFT JOIN reading_versions AS rv ON rv.lyrics_version_id = lv.id
+            LEFT JOIN lyrics_timing_versions AS ltv ON ltv.lyrics_version_id = lv.id
+            WHERE (
+                lv.id IS NOT NULL
+                OR tv.id IS NOT NULL
+                OR rv.id IS NOT NULL
+                OR ltv.id IS NOT NULL
+            )
+            ORDER BY t.updated_at DESC;
+            """
+
+        let statement = try prepare(sql)
+        defer { sqlite3_finalize(statement) }
+
+        var results: [PersonalLyricsLibraryEntry] = []
+        let queryFilter = searchQuery?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard let stableKey = columnText(statement, index: 0),
+                  let title = columnText(statement, index: 4),
+                  let artist = columnText(statement, index: 5) else {
+                continue
+            }
+
+            let spotifyID = columnText(statement, index: 1)
+            let spotifyURI = columnText(statement, index: 2)
+            let isrc = columnText(statement, index: 3)
+            let album = columnText(statement, index: 6)
+            let duration = sqlite3_column_double(statement, 7)
+            let artworkURLText = columnText(statement, index: 8)
+            let artworkURL = artworkURLText.flatMap { URL(string: $0) }
+            let trackUpdatedAt = Date(timeIntervalSince1970: sqlite3_column_double(statement, 9))
+
+            if let filter = queryFilter, !filter.isEmpty {
+                let matchTitle = title.lowercased().contains(filter)
+                let matchArtist = artist.lowercased().contains(filter)
+                let matchAlbum = album?.lowercased().contains(filter) ?? false
+                guard matchTitle || matchArtist || matchAlbum else { continue }
+            }
+
+            let entry = try compileLibraryEntry(
+                stableKey: stableKey,
+                spotifyID: spotifyID,
+                spotifyURI: spotifyURI,
+                isrc: isrc,
+                title: title,
+                artist: artist,
+                album: album,
+                duration: duration,
+                artworkURL: artworkURL,
+                fallbackDate: trackUpdatedAt
+            )
+            results.append(entry)
+        }
+
+        return results
+    }
+
+    private func compileLibraryEntry(
+        stableKey: String,
+        spotifyID: String?,
+        spotifyURI: String?,
+        isrc: String?,
+        title: String,
+        artist: String,
+        album: String?,
+        duration: Double,
+        artworkURL: URL?,
+        fallbackDate: Date
+    ) throws -> PersonalLyricsLibraryEntry {
+        let lyricsStmt = try prepare("""
+            SELECT id, is_manually_edited, is_locked, confidence, updated_at, source
+            FROM lyrics_versions
+            WHERE track_stable_key = ?
+            ORDER BY is_locked DESC, confidence DESC, updated_at DESC;
+            """)
+        defer { sqlite3_finalize(lyricsStmt) }
+        try bindText(stableKey, at: 1, to: lyricsStmt)
+
+        var lyricsVersionCount = 0
+        var hasLockedLyrics = false
+        var hasManualLyrics = false
+        var activeLyricsVersionID: UUID?
+        var lyricsVersionIDs: [UUID] = []
+        var maxDate = fallbackDate
+
+        while sqlite3_step(lyricsStmt) == SQLITE_ROW {
+            guard let idText = columnText(lyricsStmt, index: 0),
+                  let id = UUID(uuidString: idText) else { continue }
+            lyricsVersionCount += 1
+            lyricsVersionIDs.append(id)
+            if activeLyricsVersionID == nil {
+                activeLyricsVersionID = id
+            }
+            let isManual = sqlite3_column_int(lyricsStmt, 1) == 1
+            let isLocked = sqlite3_column_int(lyricsStmt, 2) == 1
+            let updatedAt = Date(timeIntervalSince1970: sqlite3_column_double(lyricsStmt, 4))
+            let source = columnText(lyricsStmt, index: 5) ?? ""
+
+            if isLocked { hasLockedLyrics = true }
+            if isManual || source == "local" || source == "manual" { hasManualLyrics = true }
+            if updatedAt > maxDate { maxDate = updatedAt }
+        }
+
+        var translationVersionCount = 0
+        var hasLockedTranslation = false
+        var hasManualTranslation = false
+        var activeTranslationVersionID: UUID?
+
+        var readingVersionCount = 0
+        var hasReading = false
+        var activeReadingVersionIDs: [String: UUID] = [:]
+
+        var timingVersionCount = 0
+        var hasFineTiming = false
+        var activeTimingVersionID: UUID?
+
+        if !lyricsVersionIDs.isEmpty {
+            let idPlaceholders = lyricsVersionIDs.map { _ in "?" }.joined(separator: ",")
+
+            let transStmt = try prepare("""
+                SELECT id, is_locked, is_manually_edited, is_archived, status, updated_at, lyrics_version_id
+                FROM translation_versions
+                WHERE lyrics_version_id IN (\(idPlaceholders))
+                ORDER BY is_locked DESC, is_archived ASC, updated_at DESC;
+                """)
+            defer { sqlite3_finalize(transStmt) }
+            for (idx, id) in lyricsVersionIDs.enumerated() {
+                try bindText(id.uuidString, at: Int32(idx + 1), to: transStmt)
+            }
+
+            while sqlite3_step(transStmt) == SQLITE_ROW {
+                guard let idText = columnText(transStmt, index: 0),
+                      let id = UUID(uuidString: idText) else { continue }
+                translationVersionCount += 1
+                let isLocked = sqlite3_column_int(transStmt, 1) == 1
+                let isManual = sqlite3_column_int(transStmt, 2) == 1
+                let isArchived = sqlite3_column_int(transStmt, 3) == 1
+                let status = columnText(transStmt, index: 4) ?? ""
+                let updatedAt = Date(timeIntervalSince1970: sqlite3_column_double(transStmt, 5))
+                let lvidText = columnText(transStmt, index: 6)
+                let lvid = lvidText.flatMap { UUID(uuidString: $0) }
+
+                if isLocked { hasLockedTranslation = true }
+                if isManual { hasManualTranslation = true }
+                if activeTranslationVersionID == nil && !isArchived && (status == "complete" || isLocked) {
+                    if lvid == activeLyricsVersionID || activeLyricsVersionID == nil {
+                        activeTranslationVersionID = id
+                    }
+                }
+                if updatedAt > maxDate { maxDate = updatedAt }
+            }
+
+            let readStmt = try prepare("""
+                SELECT id, representation_id, is_current, is_locked, is_archived, updated_at, lyrics_version_id
+                FROM reading_versions
+                WHERE lyrics_version_id IN (\(idPlaceholders))
+                ORDER BY is_locked DESC, is_current DESC, updated_at DESC;
+                """)
+            defer { sqlite3_finalize(readStmt) }
+            for (idx, id) in lyricsVersionIDs.enumerated() {
+                try bindText(id.uuidString, at: Int32(idx + 1), to: readStmt)
+            }
+
+            while sqlite3_step(readStmt) == SQLITE_ROW {
+                guard let idText = columnText(readStmt, index: 0),
+                      let id = UUID(uuidString: idText),
+                      let repID = columnText(readStmt, index: 1) else { continue }
+                readingVersionCount += 1
+                hasReading = true
+                let isArchived = sqlite3_column_int(readStmt, 4) == 1
+                let updatedAt = Date(timeIntervalSince1970: sqlite3_column_double(readStmt, 5))
+                let lvidText = columnText(readStmt, index: 6)
+                let lvid = lvidText.flatMap { UUID(uuidString: $0) }
+
+                if !isArchived && activeReadingVersionIDs[repID] == nil {
+                    if lvid == activeLyricsVersionID || activeLyricsVersionID == nil {
+                        activeReadingVersionIDs[repID] = id
+                    }
+                }
+                if updatedAt > maxDate { maxDate = updatedAt }
+            }
+
+            let timeStmt = try prepare("""
+                SELECT id, created_at, lyrics_version_id
+                FROM lyrics_timing_versions
+                WHERE lyrics_version_id IN (\(idPlaceholders))
+                ORDER BY created_at DESC;
+                """)
+            defer { sqlite3_finalize(timeStmt) }
+            for (idx, id) in lyricsVersionIDs.enumerated() {
+                try bindText(id.uuidString, at: Int32(idx + 1), to: timeStmt)
+            }
+
+            while sqlite3_step(timeStmt) == SQLITE_ROW {
+                guard let idText = columnText(timeStmt, index: 0),
+                      let id = UUID(uuidString: idText) else { continue }
+                timingVersionCount += 1
+                hasFineTiming = true
+                let createdAt = Date(timeIntervalSince1970: sqlite3_column_double(timeStmt, 1))
+                let lvidText = columnText(timeStmt, index: 2)
+                let lvid = lvidText.flatMap { UUID(uuidString: $0) }
+
+                if activeTimingVersionID == nil {
+                    if lvid == activeLyricsVersionID || activeLyricsVersionID == nil {
+                        activeTimingVersionID = id
+                    }
+                }
+                if createdAt > maxDate { maxDate = createdAt }
+            }
+        }
+
+        return PersonalLyricsLibraryEntry(
+            trackStableKey: stableKey,
+            spotifyTrackID: spotifyID,
+            spotifyURI: spotifyURI,
+            isrc: isrc,
+            title: title,
+            artist: artist,
+            album: album,
+            duration: duration,
+            artworkURL: artworkURL,
+            lyricsVersionCount: lyricsVersionCount,
+            translationVersionCount: translationVersionCount,
+            readingVersionCount: readingVersionCount,
+            timingVersionCount: timingVersionCount,
+            hasLockedLyrics: hasLockedLyrics,
+            hasLockedTranslation: hasLockedTranslation,
+            hasManualLyrics: hasManualLyrics,
+            hasManualTranslation: hasManualTranslation,
+            hasReading: hasReading,
+            hasFineTiming: hasFineTiming,
+            lastModifiedAt: maxDate,
+            activeLyricsVersionID: activeLyricsVersionID,
+            activeTranslationVersionID: activeTranslationVersionID,
+            activeReadingVersionIDs: activeReadingVersionIDs,
+            activeTimingVersionID: activeTimingVersionID
+        )
+    }
+
+    // MARK: - Track Detail Query
+
+    public func loadPersonalLibraryTrackDetail(stableKey: String) throws -> PersonalLyricsLibraryTrackDetail? {
+        try prepare()
+
+        let trackStmt = try prepare("""
+            SELECT stable_key, spotify_id, spotify_uri, isrc, title, artist_display,
+                   album, duration, artwork_url, updated_at
+            FROM tracks
+            WHERE stable_key = ? LIMIT 1;
+            """)
+        defer { sqlite3_finalize(trackStmt) }
+        try bindText(stableKey, at: 1, to: trackStmt)
+
+        guard sqlite3_step(trackStmt) == SQLITE_ROW,
+              let title = columnText(trackStmt, index: 4),
+              let artist = columnText(trackStmt, index: 5) else {
+            return nil
+        }
+
+        let spotifyID = columnText(trackStmt, index: 1)
+        let spotifyURI = columnText(trackStmt, index: 2)
+        let isrc = columnText(trackStmt, index: 3)
+        let album = columnText(trackStmt, index: 6)
+        let duration = sqlite3_column_double(trackStmt, 7)
+        let artworkURLText = columnText(trackStmt, index: 8)
+        let artworkURL = artworkURLText.flatMap { URL(string: $0) }
+        let trackUpdatedAt = Date(timeIntervalSince1970: sqlite3_column_double(trackStmt, 9))
+
+        let entry = try compileLibraryEntry(
+            stableKey: stableKey,
+            spotifyID: spotifyID,
+            spotifyURI: spotifyURI,
+            isrc: isrc,
+            title: title,
+            artist: artist,
+            album: album,
+            duration: duration,
+            artworkURL: artworkURL,
+            fallbackDate: trackUpdatedAt
+        )
+
+        var lyricsItems: [PersonalLyricsVersionItem] = []
+        let lyricsStmt = try prepare("""
+            SELECT lv.id, lv.parent_version_id, lv.source, lv.provider_source_id, lv.language,
+                   lv.is_synced, lv.is_machine_generated, lv.is_manually_edited, lv.is_locked,
+                   lv.confidence, lv.created_at, lv.updated_at,
+                   (SELECT COUNT(*) FROM lyric_lines WHERE lyrics_version_id = lv.id)
+            FROM lyrics_versions AS lv
+            WHERE lv.track_stable_key = ?
+            ORDER BY lv.is_locked DESC, lv.confidence DESC, lv.updated_at DESC;
+            """)
+        defer { sqlite3_finalize(lyricsStmt) }
+        try bindText(stableKey, at: 1, to: lyricsStmt)
+
+        var isFirstLyrics = true
+        var lyricsVersionIDs: [UUID] = []
+
+        while sqlite3_step(lyricsStmt) == SQLITE_ROW {
+            guard let idText = columnText(lyricsStmt, index: 0),
+                  let id = UUID(uuidString: idText) else { continue }
+            lyricsVersionIDs.append(id)
+            let parentID = columnText(lyricsStmt, index: 1).flatMap { UUID(uuidString: $0) }
+            let source = columnText(lyricsStmt, index: 2) ?? ""
+            let providerSourceID = columnText(lyricsStmt, index: 3) ?? ""
+            let language = columnText(lyricsStmt, index: 4) ?? "und"
+            let isSynced = sqlite3_column_int(lyricsStmt, 5) == 1
+            let isMachine = sqlite3_column_int(lyricsStmt, 6) == 1
+            let isManual = sqlite3_column_int(lyricsStmt, 7) == 1
+            let isLocked = sqlite3_column_int(lyricsStmt, 8) == 1
+            let confidence = sqlite3_column_double(lyricsStmt, 9)
+            let createdAt = Date(timeIntervalSince1970: sqlite3_column_double(lyricsStmt, 10))
+            let updatedAt = Date(timeIntervalSince1970: sqlite3_column_double(lyricsStmt, 11))
+            let lineCount = Int(sqlite3_column_int(lyricsStmt, 12))
+
+            let isCurrent = isFirstLyrics
+            isFirstLyrics = false
+
+            lyricsItems.append(PersonalLyricsVersionItem(
+                id: id,
+                parentVersionID: parentID,
+                source: source,
+                providerSourceID: providerSourceID,
+                language: language,
+                isSynced: isSynced,
+                lineCount: lineCount,
+                isMachineGenerated: isMachine,
+                isManuallyEdited: isManual,
+                isLocked: isLocked,
+                isCurrent: isCurrent,
+                confidence: confidence,
+                createdAt: createdAt,
+                updatedAt: updatedAt
+            ))
+        }
+
+        var translationItems: [PersonalTranslationVersionItem] = []
+        if !lyricsVersionIDs.isEmpty {
+            let idPlaceholders = lyricsVersionIDs.map { _ in "?" }.joined(separator: ",")
+            let transStmt = try prepare("""
+                SELECT tv.id, tv.lyrics_version_id, tv.parent_version_id, tv.source_kind,
+                       tv.target_language, tv.is_machine_generated, tv.is_manually_edited,
+                       tv.is_locked, tv.is_archived, tv.status, tv.confidence,
+                       tv.engine_id, tv.created_at, tv.updated_at,
+                       (SELECT COUNT(*) FROM translation_lines WHERE translation_version_id = tv.id)
+                FROM translation_versions AS tv
+                WHERE tv.lyrics_version_id IN (\(idPlaceholders))
+                ORDER BY tv.is_locked DESC, tv.is_archived ASC, tv.updated_at DESC;
+                """)
+            defer { sqlite3_finalize(transStmt) }
+            for (idx, id) in lyricsVersionIDs.enumerated() {
+                try bindText(id.uuidString, at: Int32(idx + 1), to: transStmt)
+            }
+
+            var isFirstTrans = true
+            while sqlite3_step(transStmt) == SQLITE_ROW {
+                guard let idText = columnText(transStmt, index: 0),
+                      let id = UUID(uuidString: idText),
+                      let lvidText = columnText(transStmt, index: 1),
+                      let lvid = UUID(uuidString: lvidText) else { continue }
+                let parentID = columnText(transStmt, index: 2).flatMap { UUID(uuidString: $0) }
+                let sourceKind = columnText(transStmt, index: 3) ?? ""
+                let targetLang = columnText(transStmt, index: 4) ?? ""
+                let isMachine = sqlite3_column_int(transStmt, 5) == 1
+                let isManual = sqlite3_column_int(transStmt, 6) == 1
+                let isLocked = sqlite3_column_int(transStmt, 7) == 1
+                let isArchived = sqlite3_column_int(transStmt, 8) == 1
+                let status = columnText(transStmt, index: 9) ?? ""
+                let confidence = sqlite3_column_double(transStmt, 10)
+                let engineID = columnText(transStmt, index: 11) ?? ""
+                let createdAt = Date(timeIntervalSince1970: sqlite3_column_double(transStmt, 12))
+                let updatedAt = Date(timeIntervalSince1970: sqlite3_column_double(transStmt, 13))
+                let lineCount = Int(sqlite3_column_int(transStmt, 14))
+
+                let isCurrent = isFirstTrans && !isArchived
+                if isCurrent { isFirstTrans = false }
+
+                translationItems.append(PersonalTranslationVersionItem(
+                    id: id,
+                    lyricsVersionID: lvid,
+                    parentVersionID: parentID,
+                    sourceKind: sourceKind,
+                    targetLanguage: targetLang,
+                    lineCount: lineCount,
+                    isMachineGenerated: isMachine,
+                    isManuallyEdited: isManual,
+                    isLocked: isLocked,
+                    isArchived: isArchived,
+                    isCurrent: isCurrent,
+                    status: status,
+                    confidence: confidence,
+                    engineID: engineID,
+                    createdAt: createdAt,
+                    updatedAt: updatedAt
+                ))
+            }
+        }
+
+        var readingItems: [PersonalReadingVersionItem] = []
+        if !lyricsVersionIDs.isEmpty {
+            let idPlaceholders = lyricsVersionIDs.map { _ in "?" }.joined(separator: ",")
+            let readStmt = try prepare("""
+                SELECT rv.id, rv.lyrics_version_id, rv.parent_version_id, rv.representation_id,
+                       rv.source_kind, rv.language, rv.is_machine_generated, rv.is_manually_edited,
+                       rv.is_current, rv.is_locked, rv.is_archived, rv.engine_id,
+                       rv.created_at, rv.updated_at,
+                       (SELECT COUNT(*) FROM reading_lines WHERE reading_version_id = rv.id)
+                FROM reading_versions AS rv
+                WHERE rv.lyrics_version_id IN (\(idPlaceholders))
+                ORDER BY rv.is_locked DESC, rv.is_current DESC, rv.updated_at DESC;
+                """)
+            defer { sqlite3_finalize(readStmt) }
+            for (idx, id) in lyricsVersionIDs.enumerated() {
+                try bindText(id.uuidString, at: Int32(idx + 1), to: readStmt)
+            }
+
+            while sqlite3_step(readStmt) == SQLITE_ROW {
+                guard let idText = columnText(readStmt, index: 0),
+                      let id = UUID(uuidString: idText),
+                      let lvidText = columnText(readStmt, index: 1),
+                      let lvid = UUID(uuidString: lvidText),
+                      let repID = columnText(readStmt, index: 3) else { continue }
+                let parentID = columnText(readStmt, index: 2).flatMap { UUID(uuidString: $0) }
+                let sourceKind = columnText(readStmt, index: 4) ?? ""
+                let lang = columnText(readStmt, index: 5) ?? "und"
+                let isMachine = sqlite3_column_int(readStmt, 6) == 1
+                let isManual = sqlite3_column_int(readStmt, 7) == 1
+                let isCurrent = sqlite3_column_int(readStmt, 8) == 1
+                let isLocked = sqlite3_column_int(readStmt, 9) == 1
+                let isArchived = sqlite3_column_int(readStmt, 10) == 1
+                let engineID = columnText(readStmt, index: 11) ?? ""
+                let createdAt = Date(timeIntervalSince1970: sqlite3_column_double(readStmt, 12))
+                let updatedAt = Date(timeIntervalSince1970: sqlite3_column_double(readStmt, 13))
+                let lineCount = Int(sqlite3_column_int(readStmt, 14))
+
+                readingItems.append(PersonalReadingVersionItem(
+                    id: id,
+                    lyricsVersionID: lvid,
+                    parentVersionID: parentID,
+                    representationID: repID,
+                    sourceKind: sourceKind,
+                    language: lang,
+                    lineCount: lineCount,
+                    isMachineGenerated: isMachine,
+                    isManuallyEdited: isManual,
+                    isCurrent: isCurrent,
+                    isLocked: isLocked,
+                    isArchived: isArchived,
+                    engineID: engineID,
+                    createdAt: createdAt,
+                    updatedAt: updatedAt
+                ))
+            }
+        }
+
+        var timingItems: [PersonalTimingVersionItem] = []
+        if !lyricsVersionIDs.isEmpty {
+            let idPlaceholders = lyricsVersionIDs.map { _ in "?" }.joined(separator: ",")
+            let timeStmt = try prepare("""
+                SELECT id, lyrics_version_id, source, granularity, created_at
+                FROM lyrics_timing_versions
+                WHERE lyrics_version_id IN (\(idPlaceholders))
+                ORDER BY created_at DESC;
+                """)
+            defer { sqlite3_finalize(timeStmt) }
+            for (idx, id) in lyricsVersionIDs.enumerated() {
+                try bindText(id.uuidString, at: Int32(idx + 1), to: timeStmt)
+            }
+
+            var isFirstTiming = true
+            while sqlite3_step(timeStmt) == SQLITE_ROW {
+                guard let idText = columnText(timeStmt, index: 0),
+                      let id = UUID(uuidString: idText),
+                      let lvidText = columnText(timeStmt, index: 1),
+                      let lvid = UUID(uuidString: lvidText) else { continue }
+                let source = columnText(timeStmt, index: 2) ?? ""
+                let granularity = columnText(timeStmt, index: 3) ?? "timedUnit"
+                let createdAt = Date(timeIntervalSince1970: sqlite3_column_double(timeStmt, 4))
+
+                let isCurrent = isFirstTiming
+                isFirstTiming = false
+
+                timingItems.append(PersonalTimingVersionItem(
+                    id: id,
+                    lyricsVersionID: lvid,
+                    source: source,
+                    granularity: granularity,
+                    isCurrent: isCurrent,
+                    createdAt: createdAt
+                ))
+            }
+        }
+
+        return PersonalLyricsLibraryTrackDetail(
+            entry: entry,
+            lyricsVersions: lyricsItems,
+            translationVersions: translationItems,
+            readingVersions: readingItems,
+            timingVersions: timingItems
+        )
+    }
+
+    // MARK: - Export Standard Package v1
+
+    public func exportPersonalLibraryPackage(stableKey: String) throws -> PersonalLyricsLibraryPackage {
+        try prepare()
+
+        let trackStmt = try prepare("""
+            SELECT stable_key, spotify_id, spotify_uri, isrc, title, artist_display,
+                   album, duration, artwork_url
+            FROM tracks WHERE stable_key = ? LIMIT 1;
+            """)
+        defer { sqlite3_finalize(trackStmt) }
+        try bindText(stableKey, at: 1, to: trackStmt)
+
+        guard sqlite3_step(trackStmt) == SQLITE_ROW,
+              let title = columnText(trackStmt, index: 4),
+              let artist = columnText(trackStmt, index: 5) else {
+            throw LyricsRepositoryError.invalidData("找不到要导出的歌曲")
+        }
+
+        let pkgTrack = PersonalLyricsLibraryPackage.PackageTrack(
+            stableKey: stableKey,
+            spotifyID: columnText(trackStmt, index: 1),
+            spotifyURI: columnText(trackStmt, index: 2),
+            isrc: columnText(trackStmt, index: 3),
+            title: title,
+            artist: artist,
+            album: columnText(trackStmt, index: 6) ?? "",
+            duration: sqlite3_column_double(trackStmt, 7),
+            artworkURL: columnText(trackStmt, index: 8)
+        )
+
+        let lyricsStmt = try prepare("""
+            SELECT id, parent_version_id, source, provider_source_id, language,
+                   is_synced, raw_text, content_hash, is_machine_generated,
+                   is_manually_edited, is_locked, confidence, created_at, updated_at
+            FROM lyrics_versions WHERE track_stable_key = ?
+            ORDER BY created_at ASC;
+            """)
+        defer { sqlite3_finalize(lyricsStmt) }
+        try bindText(stableKey, at: 1, to: lyricsStmt)
+
+        var pkgLyrics: [PersonalLyricsLibraryPackage.PackageLyricsVersion] = []
+        var lyricsVersionIDs: [UUID] = []
+
+        while sqlite3_step(lyricsStmt) == SQLITE_ROW {
+            guard let idText = columnText(lyricsStmt, index: 0),
+                  let id = UUID(uuidString: idText),
+                  let source = columnText(lyricsStmt, index: 2),
+                  let rawText = columnText(lyricsStmt, index: 6),
+                  let contentHash = columnText(lyricsStmt, index: 7) else { continue }
+            lyricsVersionIDs.append(id)
+            let parentID = columnText(lyricsStmt, index: 1).flatMap { UUID(uuidString: $0) }
+            let providerSourceID = columnText(lyricsStmt, index: 3) ?? ""
+            let language = columnText(lyricsStmt, index: 4) ?? "und"
+            let isSynced = sqlite3_column_int(lyricsStmt, 5) == 1
+            let isMachine = sqlite3_column_int(lyricsStmt, 8) == 1
+            let isManual = sqlite3_column_int(lyricsStmt, 9) == 1
+            let isLocked = sqlite3_column_int(lyricsStmt, 10) == 1
+            let confidence = sqlite3_column_double(lyricsStmt, 11)
+            let createdAt = Date(timeIntervalSince1970: sqlite3_column_double(lyricsStmt, 12))
+            let updatedAt = Date(timeIntervalSince1970: sqlite3_column_double(lyricsStmt, 13))
+
+            let lineStmt = try prepare("""
+                SELECT line_index, start_time, end_time, original_text,
+                       kana_text, romaji_text, translation_text
+                FROM lyric_lines WHERE lyrics_version_id = ?
+                ORDER BY line_index ASC;
+                """)
+            try bindText(id.uuidString, at: 1, to: lineStmt)
+            var lines: [PersonalLyricsLibraryPackage.PackageLyricLine] = []
+            while sqlite3_step(lineStmt) == SQLITE_ROW {
+                let idx = Int(sqlite3_column_int(lineStmt, 0))
+                let st = sqlite3_column_type(lineStmt, 1) != SQLITE_NULL ? sqlite3_column_double(lineStmt, 1) : nil
+                let et = sqlite3_column_type(lineStmt, 2) != SQLITE_NULL ? sqlite3_column_double(lineStmt, 2) : nil
+                let orig = columnText(lineStmt, index: 3) ?? ""
+                let kana = columnText(lineStmt, index: 4)
+                let romaji = columnText(lineStmt, index: 5)
+                let trans = columnText(lineStmt, index: 6)
+                lines.append(PersonalLyricsLibraryPackage.PackageLyricLine(
+                    lineIndex: idx,
+                    startTime: st,
+                    endTime: et,
+                    originalText: orig,
+                    kanaText: kana,
+                    romajiText: romaji,
+                    translationText: trans
+                ))
+            }
+            sqlite3_finalize(lineStmt)
+
+            pkgLyrics.append(PersonalLyricsLibraryPackage.PackageLyricsVersion(
+                id: id,
+                trackStableKey: stableKey,
+                parentVersionID: parentID,
+                source: source,
+                providerSourceID: providerSourceID,
+                language: language,
+                isSynced: isSynced,
+                rawText: rawText,
+                contentHash: contentHash,
+                isMachineGenerated: isMachine,
+                isManuallyEdited: isManual,
+                isLocked: isLocked,
+                confidence: confidence,
+                createdAt: createdAt,
+                updatedAt: updatedAt,
+                lines: lines
+            ))
+        }
+
+        var pkgTranslations: [PersonalLyricsLibraryPackage.PackageTranslationVersion] = []
+        for lvid in lyricsVersionIDs {
+            let transStmt = try prepare("""
+                SELECT id, parent_version_id, source_kind, target_language,
+                       model, source_content_hash, is_machine_generated,
+                       is_manually_edited, is_locked, is_archived, status,
+                       confidence, engine_id, prompt_preset_id, created_at, updated_at
+                FROM translation_versions WHERE lyrics_version_id = ?
+                ORDER BY created_at ASC;
+                """)
+            try bindText(lvid.uuidString, at: 1, to: transStmt)
+            while sqlite3_step(transStmt) == SQLITE_ROW {
+                guard let idText = columnText(transStmt, index: 0),
+                      let id = UUID(uuidString: idText),
+                      let sourceKind = columnText(transStmt, index: 2),
+                      let targetLang = columnText(transStmt, index: 3),
+                      let hash = columnText(transStmt, index: 5) else { continue }
+                let parentID = columnText(transStmt, index: 1).flatMap { UUID(uuidString: $0) }
+                let model = columnText(transStmt, index: 4) ?? ""
+                let isMachine = sqlite3_column_int(transStmt, 6) == 1
+                let isManual = sqlite3_column_int(transStmt, 7) == 1
+                let isLocked = sqlite3_column_int(transStmt, 8) == 1
+                let isArchived = sqlite3_column_int(transStmt, 9) == 1
+                let status = columnText(transStmt, index: 10) ?? ""
+                let confidence = sqlite3_column_double(transStmt, 11)
+                let engineID = columnText(transStmt, index: 12) ?? ""
+                let promptPresetID = columnText(transStmt, index: 13) ?? ""
+                let createdAt = Date(timeIntervalSince1970: sqlite3_column_double(transStmt, 14))
+                let updatedAt = Date(timeIntervalSince1970: sqlite3_column_double(transStmt, 15))
+
+                let tlStmt = try prepare("SELECT line_index, translated_text FROM translation_lines WHERE translation_version_id = ? ORDER BY line_index ASC;")
+                try bindText(id.uuidString, at: 1, to: tlStmt)
+                var tlines: [PersonalLyricsLibraryPackage.PackageTranslationLine] = []
+                while sqlite3_step(tlStmt) == SQLITE_ROW {
+                    let lidx = Int(sqlite3_column_int(tlStmt, 0))
+                    let txt = columnText(tlStmt, index: 1) ?? ""
+                    tlines.append(PersonalLyricsLibraryPackage.PackageTranslationLine(lineIndex: lidx, translatedText: txt))
+                }
+                sqlite3_finalize(tlStmt)
+
+                pkgTranslations.append(PersonalLyricsLibraryPackage.PackageTranslationVersion(
+                    id: id,
+                    lyricsVersionID: lvid,
+                    parentVersionID: parentID,
+                    sourceKind: sourceKind,
+                    targetLanguage: targetLang,
+                    model: model,
+                    sourceContentHash: hash,
+                    isMachineGenerated: isMachine,
+                    isManuallyEdited: isManual,
+                    isLocked: isLocked,
+                    isArchived: isArchived,
+                    status: status,
+                    confidence: confidence,
+                    engineID: engineID,
+                    promptPresetID: promptPresetID,
+                    createdAt: createdAt,
+                    updatedAt: updatedAt,
+                    lines: tlines
+                ))
+            }
+            sqlite3_finalize(transStmt)
+        }
+
+        var pkgReadings: [PersonalLyricsLibraryPackage.PackageReadingVersion] = []
+        for lvid in lyricsVersionIDs {
+            let readStmt = try prepare("""
+                SELECT id, parent_version_id, source_content_hash, engine_id,
+                       representation_id, source_kind, language, is_machine_generated,
+                       is_manually_edited, is_current, is_locked, is_archived,
+                       confidence, created_at, updated_at
+                FROM reading_versions WHERE lyrics_version_id = ?
+                ORDER BY created_at ASC;
+                """)
+            try bindText(lvid.uuidString, at: 1, to: readStmt)
+            while sqlite3_step(readStmt) == SQLITE_ROW {
+                guard let idText = columnText(readStmt, index: 0),
+                      let id = UUID(uuidString: idText),
+                      let hash = columnText(readStmt, index: 2),
+                      let engineID = columnText(readStmt, index: 3),
+                      let repID = columnText(readStmt, index: 4) else { continue }
+                let parentID = columnText(readStmt, index: 1).flatMap { UUID(uuidString: $0) }
+                let sourceKind = columnText(readStmt, index: 5) ?? "generated"
+                let lang = columnText(readStmt, index: 6) ?? "und"
+                let isMachine = sqlite3_column_int(readStmt, 7) == 1
+                let isManual = sqlite3_column_int(readStmt, 8) == 1
+                let isCurrent = sqlite3_column_int(readStmt, 9) == 1
+                let isLocked = sqlite3_column_int(readStmt, 10) == 1
+                let isArchived = sqlite3_column_int(readStmt, 11) == 1
+                let confidence = sqlite3_column_double(readStmt, 12)
+                let createdAt = Date(timeIntervalSince1970: sqlite3_column_double(readStmt, 13))
+                let updatedAt = Date(timeIntervalSince1970: sqlite3_column_double(readStmt, 14))
+
+                let rlStmt = try prepare("SELECT line_index, original_text, reading_text, tokens_json, language, source FROM reading_lines WHERE reading_version_id = ? ORDER BY line_index ASC;")
+                try bindText(id.uuidString, at: 1, to: rlStmt)
+                var rlines: [PersonalLyricsLibraryPackage.PackageReadingLine] = []
+                while sqlite3_step(rlStmt) == SQLITE_ROW {
+                    let lidx = Int(sqlite3_column_int(rlStmt, 0))
+                    let orig = columnText(rlStmt, index: 1) ?? ""
+                    let rtxt = columnText(rlStmt, index: 2)
+                    let tok = columnText(rlStmt, index: 3) ?? "[]"
+                    let rlang = columnText(rlStmt, index: 4) ?? "und"
+                    let rsrc = columnText(rlStmt, index: 5) ?? "unknown"
+                    rlines.append(PersonalLyricsLibraryPackage.PackageReadingLine(
+                        lineIndex: lidx,
+                        originalText: orig,
+                        readingText: rtxt,
+                        tokensJSON: tok,
+                        language: rlang,
+                        source: rsrc
+                    ))
+                }
+                sqlite3_finalize(rlStmt)
+
+                pkgReadings.append(PersonalLyricsLibraryPackage.PackageReadingVersion(
+                    id: id,
+                    lyricsVersionID: lvid,
+                    parentVersionID: parentID,
+                    sourceContentHash: hash,
+                    engineID: engineID,
+                    representationID: repID,
+                    sourceKind: sourceKind,
+                    language: lang,
+                    isMachineGenerated: isMachine,
+                    isManuallyEdited: isManual,
+                    isCurrent: isCurrent,
+                    isLocked: isLocked,
+                    isArchived: isArchived,
+                    confidence: confidence,
+                    createdAt: createdAt,
+                    updatedAt: updatedAt,
+                    lines: rlines
+                ))
+            }
+            sqlite3_finalize(readStmt)
+        }
+
+        var pkgTimings: [PersonalLyricsLibraryPackage.PackageTimingVersion] = []
+        for lvid in lyricsVersionIDs {
+            let timeStmt = try prepare("""
+                SELECT id, source, granularity, source_content_hash, spans_payload, created_at
+                FROM lyrics_timing_versions WHERE lyrics_version_id = ?
+                ORDER BY created_at ASC;
+                """)
+            try bindText(lvid.uuidString, at: 1, to: timeStmt)
+            while sqlite3_step(timeStmt) == SQLITE_ROW {
+                guard let idText = columnText(timeStmt, index: 0),
+                      let id = UUID(uuidString: idText),
+                      let source = columnText(timeStmt, index: 1),
+                      let gran = columnText(timeStmt, index: 2),
+                      let hash = columnText(timeStmt, index: 3),
+                      let payload = columnText(timeStmt, index: 4) else { continue }
+                let createdAt = Date(timeIntervalSince1970: sqlite3_column_double(timeStmt, 5))
+                pkgTimings.append(PersonalLyricsLibraryPackage.PackageTimingVersion(
+                    id: id,
+                    lyricsVersionID: lvid,
+                    source: source,
+                    granularity: gran,
+                    sourceContentHash: hash,
+                    spansPayload: payload,
+                    createdAt: createdAt
+                ))
+            }
+            sqlite3_finalize(timeStmt)
+        }
+
+        return PersonalLyricsLibraryPackage(
+            track: pkgTrack,
+            lyricsVersions: pkgLyrics,
+            translationVersions: pkgTranslations,
+            readingVersions: pkgReadings,
+            timingVersions: pkgTimings
+        )
+    }
+
+    // MARK: - Preview Import Package
+
+    public func previewImportPersonalLibraryPackage(_ package: PersonalLyricsLibraryPackage) throws -> PersonalLibraryImportPreview {
+        try prepare()
+
+        var lyricsToAdd = 0
+        var lyricsToSkip = 0
+        var lyricsConflicts: [String] = []
+
+        var translationsToAdd = 0
+        var translationsToSkip = 0
+        var translationsConflicts: [String] = []
+
+        var readingsToAdd = 0
+        var readingsToSkip = 0
+        var readingsConflicts: [String] = []
+
+        var timingsToAdd = 0
+        var timingsToSkip = 0
+        var timingsConflicts: [String] = []
+
+        for lv in package.lyricsVersions {
+            let checkStmt = try prepare("SELECT content_hash FROM lyrics_versions WHERE id = ? LIMIT 1;")
+            try bindText(lv.id.uuidString, at: 1, to: checkStmt)
+            if sqlite3_step(checkStmt) == SQLITE_ROW {
+                let existingHash = columnText(checkStmt, index: 0) ?? ""
+                if existingHash == lv.contentHash {
+                    lyricsToSkip += 1
+                } else {
+                    lyricsConflicts.append("Lyrics version \(lv.id) exists with differing content hash")
+                }
+            } else {
+                lyricsToAdd += 1
+            }
+            sqlite3_finalize(checkStmt)
+        }
+
+        for tv in package.translationVersions {
+            let checkStmt = try prepare("SELECT source_content_hash FROM translation_versions WHERE id = ? LIMIT 1;")
+            try bindText(tv.id.uuidString, at: 1, to: checkStmt)
+            if sqlite3_step(checkStmt) == SQLITE_ROW {
+                let existingHash = columnText(checkStmt, index: 0) ?? ""
+                if existingHash == tv.sourceContentHash {
+                    translationsToSkip += 1
+                } else {
+                    translationsConflicts.append("Translation version \(tv.id) exists with differing content hash")
+                }
+            } else {
+                translationsToAdd += 1
+            }
+            sqlite3_finalize(checkStmt)
+        }
+
+        for rv in package.readingVersions {
+            let checkStmt = try prepare("SELECT source_content_hash, representation_id FROM reading_versions WHERE id = ? LIMIT 1;")
+            try bindText(rv.id.uuidString, at: 1, to: checkStmt)
+            if sqlite3_step(checkStmt) == SQLITE_ROW {
+                let existingHash = columnText(checkStmt, index: 0) ?? ""
+                if existingHash == rv.sourceContentHash {
+                    readingsToSkip += 1
+                } else {
+                    readingsConflicts.append("Reading version \(rv.id) (\(rv.representationID)) exists with differing content hash")
+                }
+            } else {
+                readingsToAdd += 1
+            }
+            sqlite3_finalize(checkStmt)
+        }
+
+        for tv in package.timingVersions {
+            let checkStmt = try prepare("SELECT spans_payload FROM lyrics_timing_versions WHERE id = ? LIMIT 1;")
+            try bindText(tv.id.uuidString, at: 1, to: checkStmt)
+            if sqlite3_step(checkStmt) == SQLITE_ROW {
+                let existingPayload = columnText(checkStmt, index: 0) ?? ""
+                if existingPayload == tv.spansPayload {
+                    timingsToSkip += 1
+                } else {
+                    timingsConflicts.append("Timing version \(tv.id) exists with differing payload")
+                }
+            } else {
+                timingsToAdd += 1
+            }
+            sqlite3_finalize(checkStmt)
+        }
+
+        return PersonalLibraryImportPreview(
+            trackTitle: package.track.title,
+            trackArtist: package.track.artist,
+            trackStableKey: package.track.stableKey,
+            lyricsToAdd: lyricsToAdd,
+            lyricsToSkip: lyricsToSkip,
+            lyricsConflicts: lyricsConflicts,
+            translationsToAdd: translationsToAdd,
+            translationsToSkip: translationsToSkip,
+            translationsConflicts: translationsConflicts,
+            readingsToAdd: readingsToAdd,
+            readingsToSkip: readingsToSkip,
+            readingsConflicts: readingsConflicts,
+            timingsToAdd: timingsToAdd,
+            timingsToSkip: timingsToSkip,
+            timingsConflicts: timingsConflicts
+        )
+    }
+
+    // MARK: - Execute Import Package
+
+    public func importPersonalLibraryPackage(_ package: PersonalLyricsLibraryPackage) throws {
+        try prepare()
+
+        let preview = try previewImportPersonalLibraryPackage(package)
+        guard !preview.hasConflicts else {
+            throw LyricsRepositoryError.dataIntegrityViolation("存在冲突版本，无法直接覆盖已有资产：\(preview.lyricsConflicts + preview.translationsConflicts + preview.readingsConflicts + preview.timingsConflicts)")
+        }
+
+        try execute("BEGIN IMMEDIATE TRANSACTION;")
+        do {
+            let targetStableKey = try redirectResolver?.resolve(package.track.stableKey) ?? package.track.stableKey
+            let trackInsert = try prepare("""
+                INSERT INTO tracks(
+                    stable_key, spotify_id, spotify_uri, isrc, title, artist_display,
+                    album, duration, artwork_url, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(stable_key) DO UPDATE SET
+                    title = excluded.title,
+                    artist_display = excluded.artist_display,
+                    album = excluded.album,
+                    artwork_url = COALESCE(excluded.artwork_url, tracks.artwork_url),
+                    updated_at = excluded.updated_at;
+                """)
+            defer { sqlite3_finalize(trackInsert) }
+
+            try bindText(targetStableKey, at: 1, to: trackInsert)
+            try bindText(package.track.spotifyID, at: 2, to: trackInsert)
+            try bindText(package.track.spotifyURI, at: 3, to: trackInsert)
+            try bindText(package.track.isrc, at: 4, to: trackInsert)
+            try bindText(package.track.title, at: 5, to: trackInsert)
+            try bindText(package.track.artist, at: 6, to: trackInsert)
+            try bindText(package.track.album, at: 7, to: trackInsert)
+            try bindDouble(package.track.duration, at: 8, to: trackInsert)
+            try bindText(package.track.artworkURL, at: 9, to: trackInsert)
+            try bindDouble(Date().timeIntervalSince1970, at: 10, to: trackInsert)
+            try bindDouble(Date().timeIntervalSince1970, at: 11, to: trackInsert)
+            try stepDone(trackInsert)
+
+            for lv in package.lyricsVersions {
+                let lvInsert = try prepare("""
+                    INSERT OR IGNORE INTO lyrics_versions(
+                        id, track_stable_key, parent_version_id, source, provider_source_id,
+                        language, is_synced, raw_text, content_hash, is_machine_generated,
+                        is_manually_edited, is_locked, confidence, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                    """)
+                try bindText(lv.id.uuidString, at: 1, to: lvInsert)
+                try bindText(targetStableKey, at: 2, to: lvInsert)
+                try bindText(lv.parentVersionID?.uuidString, at: 3, to: lvInsert)
+                try bindText(lv.source, at: 4, to: lvInsert)
+                try bindText(lv.providerSourceID, at: 5, to: lvInsert)
+                try bindText(lv.language, at: 6, to: lvInsert)
+                try bindInt(lv.isSynced ? 1 : 0, at: 7, to: lvInsert)
+                try bindText(lv.rawText, at: 8, to: lvInsert)
+                try bindText(lv.contentHash, at: 9, to: lvInsert)
+                try bindInt(lv.isMachineGenerated ? 1 : 0, at: 10, to: lvInsert)
+                try bindInt(lv.isManuallyEdited ? 1 : 0, at: 11, to: lvInsert)
+                try bindInt(lv.isLocked ? 1 : 0, at: 12, to: lvInsert)
+                try bindDouble(lv.confidence, at: 13, to: lvInsert)
+                try bindDouble(lv.createdAt.timeIntervalSince1970, at: 14, to: lvInsert)
+                try bindDouble(lv.updatedAt.timeIntervalSince1970, at: 15, to: lvInsert)
+                try stepDone(lvInsert)
+                sqlite3_finalize(lvInsert)
+
+                for line in lv.lines {
+                    let lineInsert = try prepare("""
+                        INSERT OR IGNORE INTO lyric_lines(
+                            lyrics_version_id, line_index, start_time, end_time,
+                            original_text, kana_text, romaji_text, translation_text
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+                        """)
+                    try bindText(lv.id.uuidString, at: 1, to: lineInsert)
+                    try bindInt(line.lineIndex, at: 2, to: lineInsert)
+                    if let st = line.startTime { try bindDouble(st, at: 3, to: lineInsert) } else { sqlite3_bind_null(lineInsert, 3) }
+                    if let et = line.endTime { try bindDouble(et, at: 4, to: lineInsert) } else { sqlite3_bind_null(lineInsert, 4) }
+                    try bindText(line.originalText, at: 5, to: lineInsert)
+                    try bindText(line.kanaText, at: 6, to: lineInsert)
+                    try bindText(line.romajiText, at: 7, to: lineInsert)
+                    try bindText(line.translationText, at: 8, to: lineInsert)
+                    try stepDone(lineInsert)
+                    sqlite3_finalize(lineInsert)
+                }
+            }
+
+            for tv in package.translationVersions {
+                let tvInsert = try prepare("""
+                    INSERT OR IGNORE INTO translation_versions(
+                        id, lyrics_version_id, parent_version_id, source_kind, target_language,
+                        model, base_url_host, prompt_hash, source_content_hash,
+                        is_machine_generated, is_manually_edited, is_locked, is_archived,
+                        status, confidence, engine_id, prompt_preset_id, profile_id,
+                        profile_snapshot, temperature, workflow_id, fallback_strategy,
+                        is_draft, created_at, updated_at
+                    ) VALUES (
+                        ?, ?, ?, ?, ?,
+                        ?, '', '', ?,
+                        ?, ?, ?, ?,
+                        ?, ?, ?, ?, NULL,
+                        '', 0.2, 'translationWorkflow.classicV1', 'none',
+                        0, ?, ?
+                    );
+                    """)
+                try bindText(tv.id.uuidString, at: 1, to: tvInsert)
+                try bindText(tv.lyricsVersionID.uuidString, at: 2, to: tvInsert)
+                try bindText(tv.parentVersionID?.uuidString, at: 3, to: tvInsert)
+                try bindText(tv.sourceKind, at: 4, to: tvInsert)
+                try bindText(tv.targetLanguage, at: 5, to: tvInsert)
+                try bindText(tv.model, at: 6, to: tvInsert)
+                try bindText(tv.sourceContentHash, at: 7, to: tvInsert)
+                try bindInt(tv.isMachineGenerated ? 1 : 0, at: 8, to: tvInsert)
+                try bindInt(tv.isManuallyEdited ? 1 : 0, at: 9, to: tvInsert)
+                try bindInt(tv.isLocked ? 1 : 0, at: 10, to: tvInsert)
+                try bindInt(tv.isArchived ? 1 : 0, at: 11, to: tvInsert)
+                try bindText(tv.status, at: 12, to: tvInsert)
+                try bindDouble(tv.confidence, at: 13, to: tvInsert)
+                try bindText(tv.engineID, at: 14, to: tvInsert)
+                try bindText(tv.promptPresetID, at: 15, to: tvInsert)
+                try bindDouble(tv.createdAt.timeIntervalSince1970, at: 16, to: tvInsert)
+                try bindDouble(tv.updatedAt.timeIntervalSince1970, at: 17, to: tvInsert)
+                try stepDone(tvInsert)
+                sqlite3_finalize(tvInsert)
+
+                for line in tv.lines {
+                    let tlInsert = try prepare("INSERT OR IGNORE INTO translation_lines(translation_version_id, line_index, translated_text) VALUES (?, ?, ?);")
+                    try bindText(tv.id.uuidString, at: 1, to: tlInsert)
+                    try bindInt(line.lineIndex, at: 2, to: tlInsert)
+                    try bindText(line.translatedText, at: 3, to: tlInsert)
+                    try stepDone(tlInsert)
+                    sqlite3_finalize(tlInsert)
+                }
+            }
+
+            for rv in package.readingVersions {
+                let rvInsert = try prepare("""
+                    INSERT OR IGNORE INTO reading_versions(
+                        id, lyrics_version_id, parent_version_id, source_content_hash,
+                        engine_id, representation_id, source_kind, language,
+                        is_machine_generated, is_manually_edited, is_current,
+                        is_locked, is_archived, confidence, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                    """)
+                try bindText(rv.id.uuidString, at: 1, to: rvInsert)
+                try bindText(rv.lyricsVersionID.uuidString, at: 2, to: rvInsert)
+                try bindText(rv.parentVersionID?.uuidString, at: 3, to: rvInsert)
+                try bindText(rv.sourceContentHash, at: 4, to: rvInsert)
+                try bindText(rv.engineID, at: 5, to: rvInsert)
+                try bindText(rv.representationID, at: 6, to: rvInsert)
+                try bindText(rv.sourceKind, at: 7, to: rvInsert)
+                try bindText(rv.language, at: 8, to: rvInsert)
+                try bindInt(rv.isMachineGenerated ? 1 : 0, at: 9, to: rvInsert)
+                try bindInt(rv.isManuallyEdited ? 1 : 0, at: 10, to: rvInsert)
+                try bindInt(rv.isCurrent ? 1 : 0, at: 11, to: rvInsert)
+                try bindInt(rv.isLocked ? 1 : 0, at: 12, to: rvInsert)
+                try bindInt(rv.isArchived ? 1 : 0, at: 13, to: rvInsert)
+                try bindDouble(rv.confidence, at: 14, to: rvInsert)
+                try bindDouble(rv.createdAt.timeIntervalSince1970, at: 15, to: rvInsert)
+                try bindDouble(rv.updatedAt.timeIntervalSince1970, at: 16, to: rvInsert)
+                try stepDone(rvInsert)
+                sqlite3_finalize(rvInsert)
+
+                for line in rv.lines {
+                    let rlInsert = try prepare("""
+                        INSERT OR IGNORE INTO reading_lines(
+                            reading_version_id, line_index, original_text, reading_text,
+                            tokens_json, language, source
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?);
+                        """)
+                    try bindText(rv.id.uuidString, at: 1, to: rlInsert)
+                    try bindInt(line.lineIndex, at: 2, to: rlInsert)
+                    try bindText(line.originalText, at: 3, to: rlInsert)
+                    try bindText(line.readingText, at: 4, to: rlInsert)
+                    try bindText(line.tokensJSON, at: 5, to: rlInsert)
+                    try bindText(line.language, at: 6, to: rlInsert)
+                    try bindText(line.source, at: 7, to: rlInsert)
+                    try stepDone(rlInsert)
+                    sqlite3_finalize(rlInsert)
+                }
+            }
+
+            for tv in package.timingVersions {
+                let timeInsert = try prepare("""
+                    INSERT OR IGNORE INTO lyrics_timing_versions(
+                        id, lyrics_version_id, source, granularity,
+                        source_content_hash, spans_payload, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?);
+                    """)
+                try bindText(tv.id.uuidString, at: 1, to: timeInsert)
+                try bindText(tv.lyricsVersionID.uuidString, at: 2, to: timeInsert)
+                try bindText(tv.source, at: 3, to: timeInsert)
+                try bindText(tv.granularity, at: 4, to: timeInsert)
+                try bindText(tv.sourceContentHash, at: 5, to: timeInsert)
+                try bindText(tv.spansPayload, at: 6, to: timeInsert)
+                try bindDouble(tv.createdAt.timeIntervalSince1970, at: 7, to: timeInsert)
+                try stepDone(timeInsert)
+                sqlite3_finalize(timeInsert)
+            }
+
+            try execute("COMMIT;")
+        } catch {
+            _ = try? execute("ROLLBACK;")
+            throw error
+        }
+    }
+
+    // MARK: - Active / Locked Mutations
+
+    public func setPersonalLibraryActiveLyrics(trackStableKey: String, lyricsVersionID: UUID) throws {
+        try prepare()
+        let now = Date().timeIntervalSince1970
+        let stmt = try prepare("UPDATE lyrics_versions SET updated_at = ? WHERE id = ? AND track_stable_key = ?;")
+        defer { sqlite3_finalize(stmt) }
+        try bindDouble(now, at: 1, to: stmt)
+        try bindText(lyricsVersionID.uuidString, at: 2, to: stmt)
+        try bindText(trackStableKey, at: 3, to: stmt)
+        try stepDone(stmt)
+    }
+
+    public func toggleLyricsLocked(versionID: UUID, locked: Bool) throws {
+        try prepare()
+        let now = Date().timeIntervalSince1970
+        let stmt = try prepare("UPDATE lyrics_versions SET is_locked = ?, updated_at = ? WHERE id = ?;")
+        defer { sqlite3_finalize(stmt) }
+        try bindInt(locked ? 1 : 0, at: 1, to: stmt)
+        try bindDouble(now, at: 2, to: stmt)
+        try bindText(versionID.uuidString, at: 3, to: stmt)
+        try stepDone(stmt)
     }
 }

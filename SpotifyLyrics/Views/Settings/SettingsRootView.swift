@@ -3,6 +3,7 @@ import AppKit
 
 private enum SettingsCategory: String, CaseIterable, Identifiable {
     case general = "通用"
+    case library = "我的歌词库"
     case display = "歌词显示"
     case reading = "读音与文字"
     case spotify = "Spotify"
@@ -17,6 +18,7 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
     var systemImage: String {
         switch self {
         case .general: return "gearshape"
+        case .library: return "music.note.list"
         case .display: return "text.quote"
         case .reading: return "character.book.closed"
         case .spotify: return "waveform.circle"
@@ -89,19 +91,19 @@ private struct SettingsDetailView: View {
     var body: some View {
         Group {
             switch category {
-            case .general: GeneralSettingsView()
-            case .display: DisplaySettingsView()
-            case .reading: ReadingSettingsView()
-            case .spotify: SpotifySettingsView()
-            case .lyricsSources: LyricsSourcesSettingsView()
-            case .data: DataSettingsView()
-            case .ai: AISettingsView()
-            case .experienceLibrary: ExperienceLibrarySettingsView(selectionStore: settings.presentationSelections)
-            case .advanced: AdvancedSettingsView()
+            case .general: GeneralSettingsView().padding(28)
+            case .library: PersonalLyricsLibraryView()
+            case .display: DisplaySettingsView().padding(28)
+            case .reading: ReadingSettingsView().padding(28)
+            case .spotify: SpotifySettingsView().padding(28)
+            case .lyricsSources: LyricsSourcesSettingsView().padding(28)
+            case .data: DataSettingsView().padding(28)
+            case .ai: AISettingsView().padding(28)
+            case .experienceLibrary: ExperienceLibrarySettingsView(selectionStore: settings.presentationSelections).padding(28)
+            case .advanced: AdvancedSettingsView().padding(28)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .padding(28)
     }
 }
 
