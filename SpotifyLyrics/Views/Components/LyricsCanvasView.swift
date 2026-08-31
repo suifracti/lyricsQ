@@ -19,9 +19,9 @@ struct LyricsCanvasView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .id(state.liveLyricsSessionRevision)
+        .id(state.lyricsSessionRevision)
         .sheet(isPresented: $isAlignmentDetailsPresented) {
-            if let report = state.liveLyricsState.alignmentReport {
+            if let report = state.lyricsState.alignmentReport {
                 AlignmentPreviewView(report: report)
             }
         }
@@ -34,7 +34,7 @@ struct LyricsCanvasView: View {
     /// states differs.
     @ViewBuilder
     private var systemStateContent: some View {
-        switch state.liveLyricsState {
+        switch state.lyricsState {
         case .loaded(_), .mockPreview:
             lyricsScroll
         case .alignmentQueued:
@@ -170,7 +170,7 @@ struct LyricsCanvasView: View {
 
     @ViewBuilder
     private var contentFirstStateContent: some View {
-        if !state.liveLyrics.isEmpty {
+        if !state.lyrics.isEmpty {
             systemStateContent
         } else {
             LyricsStateContentFirstView(state: state, onSearch: onSearch)
@@ -218,11 +218,11 @@ struct LyricsCanvasView: View {
                                 visibleLayerCount: visibleLayerCount
                             )
                         ) {
-                            ForEach(Array(state.liveLyrics.enumerated()), id: \.element.id) { index, line in
+                            ForEach(Array(state.lyrics.enumerated()), id: \.element.id) { index, line in
                                 if let seekTimestamp = LyricsTimeline.validSeekTimestamp(
                                     for: line,
-                                    isSynchronized: state.liveLyricsAreSynchronized,
-                                    duration: state.currentTrack.duration
+                                    isSynchronized: state.lyricsAreSynchronized,
+                                    duration: state.displayedTrack.duration
                                 ) {
                                     Button {
                                         state.seek(to: seekTimestamp, source: "lyric-line")
@@ -262,7 +262,7 @@ struct LyricsCanvasView: View {
                         )
                         .animation(
                             LyricsTransitionPolicy.animation(reduceMotion: reduceMotion),
-                            value: state.liveLyricsAreSynchronized
+                            value: state.lyricsAreSynchronized
                         )
 
                         Spacer(minLength: 0)
@@ -296,7 +296,7 @@ struct LyricsCanvasView: View {
                     .onChange(of: state.currentTime) { _, _ in
                         scrollToCurrentLine(using: proxy, animated: true)
                     }
-                    .onChange(of: state.liveLyricsSessionRevision) { _, _ in
+                    .onChange(of: state.lyricsSessionRevision) { _, _ in
                         lastScrolledLineIndex = nil
                         scrollToCurrentLine(using: proxy, animated: false)
                     }
@@ -468,8 +468,8 @@ struct LyricsCanvasView: View {
     private func distance(from index: Int) -> Int {
         LyricsTimeline.presentationDistance(
             index: index,
-            currentIndex: state.liveCurrentLineIndex,
-            isSynchronized: state.liveLyricsAreSynchronized
+            currentIndex: state.currentLineIndex,
+            isSynchronized: state.lyricsAreSynchronized
         )
     }
 
@@ -481,13 +481,13 @@ struct LyricsCanvasView: View {
     ) -> some View {
         LyricLineView(
             line: line,
-            isActive: state.liveCurrentLineIndex == index,
+            isActive: state.currentLineIndex == index,
             distance: distance(from: index),
-            isSynchronized: state.liveLyricsAreSynchronized,
+            isSynchronized: state.lyricsAreSynchronized,
             preferences: state.preferences,
             availableWidth: availableWidth,
             visibleLayerCount: visibleLayerCount,
-            language: state.liveLyricsLanguage
+            language: state.isShowingSearchPreview ? nil : state.liveLyricsLanguage
         )
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
@@ -499,12 +499,12 @@ struct LyricsCanvasView: View {
         animated: Bool,
         force: Bool = false
     ) {
-        guard let currentIndex = state.liveCurrentLineIndex,
-              state.liveLyrics.indices.contains(currentIndex),
+        guard let currentIndex = state.currentLineIndex,
+              state.lyrics.indices.contains(currentIndex),
               force || lastScrolledLineIndex != currentIndex else { return }
 
         let action = {
-            proxy.scrollTo(state.liveLyrics[currentIndex].id, anchor: .center)
+            proxy.scrollTo(state.lyrics[currentIndex].id, anchor: .center)
             // Mark it only after asking the proxy to locate the row. If the
             // first request happens while LazyVStack is still materializing,
             // a later clock tick can retry the same target.
@@ -546,7 +546,7 @@ struct LyricsStateContentFirstView: View {
 
     var body: some View {
         Group {
-            if case .candidates(_, let candidates) = state.liveLyricsState {
+            if case .candidates(_, let candidates) = state.lyricsState {
                 candidateContent(candidates)
             } else {
                 statusContent
@@ -594,7 +594,7 @@ struct LyricsStateContentFirstView: View {
 
     @ViewBuilder
     private var primaryAction: some View {
-        switch state.liveLyricsState {
+        switch state.lyricsState {
         case .noLyrics, .noMatch, .failed:
             HStack(spacing: 8) {
                 Button("重新搜索歌词") { state.retryLyrics() }
@@ -623,7 +623,7 @@ struct LyricsStateContentFirstView: View {
     @ViewBuilder
     private var secondaryActions: some View {
         HStack(spacing: LyricsDesignTokens.Spacing.sm) {
-            switch state.liveLyricsState {
+            switch state.lyricsState {
             case .noLyrics, .noMatch, .failed:
                 manualLyricsQueryEntry
             default:
@@ -637,7 +637,7 @@ struct LyricsStateContentFirstView: View {
                 )
             }
 
-            if case .noLyrics = state.liveLyricsState {
+            if case .noLyrics = state.lyricsState {
                 Menu {
                     Button("导入本地音频 · ASR 草稿", systemImage: "waveform") {
                         state.importLocalAudioForASR()
@@ -646,7 +646,7 @@ struct LyricsStateContentFirstView: View {
                     Label("更多", systemImage: "ellipsis")
                 }
                 .menuStyle(.borderlessButton)
-            } else if case .noMatch = state.liveLyricsState {
+            } else if case .noMatch = state.lyricsState {
                 Menu {
                     Button("导入本地音频 · ASR 草稿", systemImage: "waveform") {
                         state.importLocalAudioForASR()
@@ -662,7 +662,7 @@ struct LyricsStateContentFirstView: View {
     }
 
     private var stateIcon: String {
-        switch state.liveLyricsState {
+        switch state.lyricsState {
         case .loading:
             return "magnifyingglass"
         case .noLyrics:
@@ -713,7 +713,7 @@ struct LyricsStateContentFirstView: View {
     }
 
     private var stateTitle: String {
-        switch state.liveLyricsState {
+        switch state.lyricsState {
         case .loading:
             return "正在搜索歌词"
         case .noLyrics:
@@ -749,7 +749,7 @@ struct LyricsStateContentFirstView: View {
     }
 
     private var stateDetail: String {
-        switch state.liveLyricsState {
+        switch state.lyricsState {
         case .loading:
             return "正在为当前歌曲查找可用歌词。"
         case .noLyrics:

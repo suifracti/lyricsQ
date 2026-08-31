@@ -1236,19 +1236,22 @@ private struct AppleMusicImmersiveV3LyricsViewport: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        // PlaybackState publishes time at a high cadence. Resolve the live
-        // document once for this render pass instead of asking each status /
-        // scroll layer to repeat track-identity validation independently.
-        let lines = state.liveLyrics
-        let synchronized = state.liveLyricsAreSynchronized
+        // PlaybackState publishes time at a high cadence. Resolve the active
+        // main-window document once for this render pass. Catalog selections
+        // use the preview session; live-only projections belong to secondary
+        // windows and must not keep the previous track's lyrics on screen.
+        let lines = state.lyrics
+        let synchronized = state.lyricsAreSynchronized
         let currentIndex = LyricsTimeline.activeLineIndex(
             lines: lines,
             time: state.currentTime,
             isSynchronized: synchronized
         )
-        let language = state.liveLyricsLanguage
-        let trackStableKey = state.currentTrackIdentity?.stableKey
-        let artistDisplay = state.currentTrack.artist
+        let language = state.isShowingSearchPreview ? nil : state.liveLyricsLanguage
+        let trackStableKey = state.isShowingSearchPreview
+            ? TrackIdentity(track: state.displayedTrack).stableKey
+            : state.currentTrackIdentity?.stableKey
+        let artistDisplay = state.displayedTrack.artist
 
 #if DEBUG
         let nowIso = ISO8601DateFormatter().string(from: Date())
@@ -1300,7 +1303,7 @@ private struct AppleMusicImmersiveV3LyricsViewport: View {
     }
 
     private var emptyTitle: String {
-        switch state.liveLyricsState {
+        switch state.lyricsState {
         case .loading: return "正在获取歌词…"
         case .failed: return "歌词暂不可用"
         case .noLyrics, .noSelection, .noMatch: return "暂无歌词"
@@ -1311,7 +1314,7 @@ private struct AppleMusicImmersiveV3LyricsViewport: View {
     }
 
     private var emptyDetail: String {
-        switch state.liveLyricsState {
+        switch state.lyricsState {
         case .failed(_, let failure): return failure.userFacingMessage
         case .noLyrics, .noMatch: return "可从右上角工具菜单重试自动补全"
         case .noSelection: return "当前会话未选择歌词版本；可从右上角重新搜索"
@@ -1367,9 +1370,9 @@ private struct AppleMusicImmersiveV3LyricsViewport: View {
                     )
                 }
                 .scrollIndicators(.hidden)
-                // A new live session is a direct document replacement.  Its
+                // A new active session is a direct document replacement. Its
                 // old rows must not animate into a different track.
-                .id("lyrics-document-\(state.liveLyricsSessionRevision)")
+                .id("lyrics-document-\(state.lyricsSessionRevision)")
 
                 Group {
                     if synchronized {
@@ -1409,7 +1412,7 @@ private struct AppleMusicImmersiveV3LyricsViewport: View {
                         animated: true
                     )
                 }
-                .onChange(of: state.liveLyricsSessionRevision) { _, _ in
+                .onChange(of: state.lyricsSessionRevision) { _, _ in
                     scrollToCurrentLine(
                         using: proxy,
                         lines: lines,
@@ -1472,7 +1475,7 @@ private struct AppleMusicImmersiveV3LyricsViewport: View {
         if let timestamp = LyricsTimeline.validSeekTimestamp(
             for: line,
             isSynchronized: synchronized,
-            duration: state.currentTrack.duration
+            duration: state.displayedTrack.duration
         ) {
             Button {
                 state.seek(to: timestamp, source: "v3-lyric-line")
