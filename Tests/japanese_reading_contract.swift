@@ -15,6 +15,38 @@ struct JapaneseReadingContract {
         let romaji: String
     }
 
+    struct CandidateIsolationEngine: JapaneseNBestMorphologyEngine {
+        func tokenize(_ text: String) throws -> [JapaneseMorphologyToken] {
+            [
+                token("前", "マエ"),
+                token("過去", "カコ"),
+                token("形", "カタ")
+            ]
+        }
+
+        func tokenizations(
+            _ text: String,
+            maximumCount: Int
+        ) throws -> [[JapaneseMorphologyToken]] {
+            [[
+                // This deliberately differs from the baseline. Context
+                // ranking must not leak it into an unrelated token.
+                token("前", "ゼン"),
+                token("過去", "カコ"),
+                token("形", "ケイ")
+            ]]
+        }
+
+        private func token(_ original: String, _ reading: String) -> JapaneseMorphologyToken {
+            JapaneseMorphologyToken(
+                originalText: original,
+                readingKatakana: reading,
+                lemma: original,
+                partOfSpeech: "fixture"
+            )
+        }
+    }
+
     static func main() {
         let fixtures = [
             Fixture(text: "言われた", surfaces: ["言わ", "れ", "た"], lemmas: ["言う", "れる", "た"], kana: "いわれた", romaji: "iwareta"),
@@ -82,6 +114,50 @@ struct JapaneseReadingContract {
             "context phrase stopped working when followed by mixed-script lyrics"
         )
 
+        // Context v2 must resolve lyric-specific inflections and compound
+        // suffix readings without moving okurigana into the kanji ruby.
+        let wandering = JapaneseReadingPipeline.analyzeContextually(
+            originalText: "しるべもなく彷徨って"
+        )
+        precondition(
+            wandering.kanaText == "しるべもなくさまよって",
+            "context v2 did not resolve 彷徨って: \(wandering.kanaText ?? "<nil>")"
+        )
+        let wanderingRuby = wandering.tokens.flatMap {
+            JapaneseReadingPipeline.rubyTokens(for: $0)
+        }
+        precondition(wanderingRuby.first(where: { $0.surface == "彷徨" })?.ruby == "さまよ")
+        precondition(wanderingRuby.first(where: { $0.surface == "って" })?.ruby == nil)
+
+        let pastTense = JapaneseReadingPipeline.analyzeContextually(
+            originalText: "過去形にならない"
+        )
+        precondition(
+            pastTense.kanaText == "かこけいにならない",
+            "context v2 did not rank the grammatical 形 reading: \(pastTense.kanaText ?? "<nil>")"
+        )
+        precondition(pastTense.tokens.first(where: { $0.originalText == "形" })?.kana == "けい")
+        let isolatedCandidate = JapaneseReadingPipeline.analyzeContextually(
+            originalText: "前過去形",
+            engine: CandidateIsolationEngine()
+        )
+        precondition(
+            isolatedCandidate.kanaText == "まえかこけい",
+            "N-best candidate leaked into an unrelated token: \(isolatedCandidate.kanaText ?? "<nil>")"
+        )
+
+        // 探る is already read correctly by morphology. Ruby excludes the
+        // visible okurigana, so the combined display remains さぐ + る.
+        let searchFeeling = JapaneseReadingPipeline.analyzeContextually(
+            originalText: "探る感覚に似てる"
+        )
+        precondition(searchFeeling.kanaText == "さぐるかんかくににてる")
+        let searchRuby = searchFeeling.tokens.flatMap {
+            JapaneseReadingPipeline.rubyTokens(for: $0)
+        }
+        precondition(searchRuby.first(where: { $0.surface == "探" })?.ruby == "さぐ")
+        precondition(searchRuby.first(where: { $0.surface == "る" })?.ruby == nil)
+
         // These are the exact lines that previously lost ruby in the V3
         // screenshots.  A line-level reading must be complete enough for the
         // view to derive per-kanji ruby tokens, not merely return a partial
@@ -126,9 +202,41 @@ struct JapaneseReadingContract {
         precondition(official.originalText == "言われた")
         precondition(official.kanaText == "いわれた")
         precondition(official.romajiText == "iwareta")
-        precondition(official.tokens.count == 1)
+        precondition(official.tokens.map(\.originalText) == ["言わ", "れ", "た"])
         precondition(official.tokens[0].source == .providerOfficial)
         precondition(official.tokens[0].confidence == 1.0)
+
+        // Provider kana is authoritative for the full line, but ruby still
+        // needs morphology-sized tokens. A source line must never become one
+        // detached whole-line annotation merely because its kana came from a
+        // provider.
+        let officialRuby = official.tokens.flatMap {
+            JapaneseReadingPipeline.rubyTokens(for: $0)
+        }
+        precondition(
+            officialRuby.map(\.surface) == ["言", "わ", "れ", "た"],
+            "provider kana collapsed ruby into a whole-line token: \(officialRuby.map(\.surface))"
+        )
+        precondition(officialRuby.map(\.ruby) == ["い", nil, nil, nil])
+
+        // A provider may intentionally disagree with IPADIC for a name-like
+        // token. The projection must still use the provider span without
+        // assigning that span to the following particle or verb.
+        let providerMan = JapaneseReadingPipeline.analyze(
+            originalText: "満を持して",
+            providerKana: "マンヲジシテ"
+        )
+        precondition(providerMan.tokens.first(where: { $0.originalText == "満" })?.kana == "まん")
+        precondition(providerMan.tokens.first(where: { $0.originalText == "持" })?.kana == "じ")
+
+        let lineOnlyProvider = JapaneseReadingPipeline.analyze(
+            originalText: "言われた",
+            providerKana: "あいうえお"
+        )
+        precondition(
+            !lineOnlyProvider.isTokenAligned,
+            "unprovable provider boundaries must not be offered to ruby rendering"
+        )
 
         // A romaji value in a provider's kana field is not a confirmed kana
         // layer. It must fail closed rather than being rendered as ruby.
@@ -146,6 +254,15 @@ struct JapaneseReadingContract {
         precondition(symbolProvider.source != .providerOfficial)
         precondition(symbolProvider.kanaText == "いわれた")
 
+        let katakana = JapaneseReadingPipeline.analyze(originalText: "イマジネーション")
+        let katakanaRuby = katakana.tokens.flatMap {
+            JapaneseReadingPipeline.rubyTokens(for: $0)
+        }
+        precondition(
+            katakanaRuby.map(\.kanaSurface) == ["いまじねーしょん"],
+            "katakana did not retain a hiragana display surface"
+        )
+
         // An unresolvable Han token fails closed.  It must never receive a
         // Chinese/Unicode fallback reading and must not enter alignment.
         let unknown = JapaneseReadingPipeline.analyze(originalText: "𩸽定食")
@@ -158,6 +275,39 @@ struct JapaneseReadingContract {
         // not to its old finite dictionary as the primary engine.
         precondition(JapaneseKanaGenerator.kanaPreservingOriginal("水曜日の約束") == "すいようびのやくそく")
         precondition(JapaneseKanaGenerator.kanaPreservingOriginal("𩸽定食") == nil)
+
+        // Phase 2.3 Strict Particle Alignment & Non-Particle Fail-Closed Contracts:
+        // 1. Positive: Morphologically confirmed particles (へ->え, を->お, は->わ) align correctly.
+        let pos1 = JapaneseReadingPipeline.analyze(originalText: "何処へ続いていても", providerKana: "どこえつづいていても")
+        precondition(pos1.isTokenAligned, "何処へ続いていても failed alignment with どこえつづいていても")
+        precondition(pos1.tokens.count == 7, "何処へ続いていても token count mismatch")
+
+        let pos2 = JapaneseReadingPipeline.analyze(originalText: "星を", providerKana: "ほしお")
+        precondition(pos2.isTokenAligned, "星を failed alignment with ほしお")
+        precondition(pos2.tokens.count == 2, "星を token count mismatch")
+
+        let pos3 = JapaneseReadingPipeline.analyze(originalText: "私は", providerKana: "わたしわ")
+        precondition(pos3.isTokenAligned, "私は failed alignment with わたしわ")
+        precondition(pos3.tokens.count == 2, "私は token count mismatch")
+
+        let pos4 = JapaneseReadingPipeline.analyze(originalText: "海へ", providerKana: "うみえ")
+        precondition(pos4.isTokenAligned, "海へ failed alignment with うみえ")
+
+        // 2. Negative: Non-particle tokens with internal は/へ/を must NOT accept pronunciation variants (strict fail-closed).
+        let neg1 = JapaneseReadingPipeline.analyze(originalText: "はなたば", providerKana: "わなたば")
+        precondition(!neg1.isTokenAligned, "Non-particle はなたば must not align with わなたば")
+
+        let neg2 = JapaneseReadingPipeline.analyze(originalText: "へや", providerKana: "えや")
+        precondition(!neg2.isTokenAligned, "Non-particle へや must not align with えや")
+
+        let neg3 = JapaneseReadingPipeline.analyze(originalText: "おっと", providerKana: "をっと")
+        precondition(!neg3.isTokenAligned, "Non-particle おっと must not align with をっと")
+
+        let neg4 = JapaneseReadingPipeline.analyze(originalText: "はい", providerKana: "わい")
+        precondition(!neg4.isTokenAligned, "Non-particle はい must not align with わい")
+
+        let neg5 = JapaneseReadingPipeline.analyze(originalText: "へそ", providerKana: "えそ")
+        precondition(!neg5.isTokenAligned, "Non-particle へそ must not align with えそ")
 
         print("japanese reading contract passed")
     }

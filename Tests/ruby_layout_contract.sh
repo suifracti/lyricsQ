@@ -20,7 +20,8 @@ require() {
 
 require "$MODELS" 'struct LyricRubyToken' 'line-level ruby token model'
 require "$MODELS" 'rubyTokens' 'ruby token storage on lyric lines'
-require "$ENRICHER" 'reading\?\.tokens' 'ruby tokens come from morphology'
+require "$ENRICHER" 'reading\.tokens' 'ruby tokens come from morphology'
+require "$ENRICHER" 'reading\.isTokenAligned' 'line-only readings cannot become whole-line ruby'
 require "$ENRICHER" 'rubyTokens:' 'enrichment preserves/generated ruby tokens'
 require "$ALIGN" 'rubyTokens' 'alignment preserves ruby tokens'
 
@@ -33,6 +34,10 @@ require "$LINE" 'rubyFontSize' 'responsive ruby size'
 require "$LINE" '0\.5[0-9]' 'ruby is approximately half-to-sixty-percent of base'
 require "$LINE" 'fixedSize\(horizontal: true' 'ruby overhang is not compressed'
 require "$LINE" 'baseSize' 'base width drives token layout'
+require "$LINE" 'annotationOverhang' 'wide ruby uses bounded visual overhang'
+require "$LINE" 'katakanaAnnotationTracking' 'katakana annotation has dedicated optical tracking'
+require "$LINE" 'groupEdgeReserve' 'ruby overhang is reserved at morphology-group edges'
+require "$LINE" '\.padding\(\.horizontal, groupEdgeReserve\)' 'ruby overhang cannot collide with adjacent groups'
 
 # Visual hierarchy and rhythm.
 require "$LINE" 'rubyOpacity' 'ruby contrast hierarchy'

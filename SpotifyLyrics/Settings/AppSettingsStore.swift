@@ -47,7 +47,7 @@ public enum V3ArtworkPresentation: String, CaseIterable, Codable, Identifiable, 
     public var detail: String {
         switch self {
         case .ambient: return "抽取封面的低频色彩，前景保留完整封面"
-        case .stage: return "完整封面融入背景，不再重复显示前景封面"
+        case .stage: return "以单张专辑封面构成全景舞台，左下融入控制，右侧悬浮歌词"
         case .classic: return "保留原来的局部放大封面背景"
         }
     }
@@ -149,6 +149,7 @@ public final class AppSettingsStore: ObservableObject {
         public static let v3ArtworkPosition = "v3.artworkPosition"
         public static let v3ArtworkSizeScale = "v3.artworkSizeScale"
         public static let v3InstrumentalPureImmersion = "v3.instrumentalPureImmersion"
+        public static let classicCompanionPresentation = "mainWindow.classicCompanionPresentation.v1"
     }
 
     public static let currentSettingsVersion = 1
@@ -170,6 +171,15 @@ public final class AppSettingsStore: ObservableObject {
 
     @Published public var mainWindowLayoutStyleRawValue: String {
         didSet { defaults.set(mainWindowLayoutStyleRawValue, forKey: Key.mainWindowLayoutStyle) }
+    }
+
+    @Published public var classicCompanionPresentationRawValue: String {
+        didSet {
+            defaults.set(
+                classicCompanionPresentationRawValue,
+                forKey: Key.classicCompanionPresentation
+            )
+        }
     }
 
     @Published public var automaticCompactLyricsFocus: Bool {
@@ -345,7 +355,7 @@ public final class AppSettingsStore: ObservableObject {
         }
         let blurDefaults: [V3ArtworkPresentation: Double] = [
             .ambient: 58.0,
-            .stage: 12.0,
+            .stage: 0.0,
             .classic: 36.0
         ]
         for presentation in V3ArtworkPresentation.allCases {
@@ -359,6 +369,15 @@ public final class AppSettingsStore: ObservableObject {
         self.v3InstrumentalPureImmersion = defaults.object(forKey: Key.v3InstrumentalPureImmersion) as? Bool ?? true
         let storedLayout = defaults.string(forKey: Key.mainWindowLayoutStyle)
             ?? MainWindowLayoutStyle.appleMusicImmersiveV3.rawValue
+        let storedClassicPresentation = defaults.string(forKey: Key.classicCompanionPresentation)
+        let classicPresentation = storedClassicPresentation
+            ?? Self.migratedClassicCompanionPresentation(
+                defaults: defaults,
+                storedLayout: storedLayout
+            )
+        if storedClassicPresentation == nil {
+            defaults.set(classicPresentation, forKey: Key.classicCompanionPresentation)
+        }
         // The old focus surface is now the narrow projection of the adaptive
         // classic family. Preserve the maintained split stable ID while
         // migrating the obsolete raw selection without touching source data.
@@ -367,6 +386,7 @@ public final class AppSettingsStore: ObservableObject {
             : storedLayout
         if layout != storedLayout {
             defaults.set(layout, forKey: Key.mainWindowLayoutStyle)
+            defaults.set(classicPresentation, forKey: Key.classicCompanionPresentation)
             defaults.set(
                 MainWindowLayoutStyle.immersiveSplit.presentationStableID,
                 forKey: PresentationSelectionStore.runtimeKey(for: .mainWindow)
@@ -378,6 +398,7 @@ public final class AppSettingsStore: ObservableObject {
         settingsCenterPresentationRawValue = defaults.string(forKey: Key.settingsCenterPresentation)
             ?? SettingsCenterPresentationID.recommended.rawValue
         mainWindowLayoutStyleRawValue = layout
+        classicCompanionPresentationRawValue = classicPresentation
         automaticCompactLyricsFocus = defaults.object(forKey: Key.automaticCompactLyricsFocus) as? Bool ?? false
         connectSpotifyOnLaunch = defaults.object(forKey: Key.connectSpotifyOnLaunch) as? Bool ?? true
         autoSearchLyricsOnTrackChange = defaults.object(forKey: Key.autoSearchLyricsOnTrackChange) as? Bool ?? true
@@ -416,8 +437,37 @@ public final class AppSettingsStore: ObservableObject {
         }
     }
 
+    /// Recovers the old focus choice from either its legacy layout value or
+    /// the presentation catalog. The latter matters for users who already ran
+    /// the earlier V1 fusion migration, which rewrote the runtime layout to
+    /// immersiveSplit while retaining the catalog selection.
+    private static func migratedClassicCompanionPresentation(
+        defaults: UserDefaults,
+        storedLayout: String
+    ) -> String {
+        if storedLayout == MainWindowLayoutStyle.lyricsFocus.rawValue {
+            return ClassicCompanionPresentation.lyricsFocus.rawValue
+        }
+
+        if let data = defaults.data(forKey: PresentationSelectionStore.storageKey),
+           let selections = try? JSONDecoder().decode([String: String].self, from: data),
+           selections[PresentationCategory.mainWindow.rawValue] == "mainWindow.lyricsFocus.v1" {
+            return ClassicCompanionPresentation.lyricsFocus.rawValue
+        }
+
+        return ClassicCompanionPresentation.automatic.rawValue
+    }
+
     var mainWindowLayoutStyle: MainWindowLayoutStyle {
         MainWindowLayoutStyle(rawValue: mainWindowLayoutStyleRawValue) ?? .appleMusicImmersiveV3
+    }
+
+    var classicCompanionPresentation: ClassicCompanionPresentation {
+        get {
+            ClassicCompanionPresentation(rawValue: classicCompanionPresentationRawValue)
+                ?? .automatic
+        }
+        set { classicCompanionPresentationRawValue = newValue.rawValue }
     }
 
     public var settingsCenterPresentation: SettingsCenterPresentationID {
@@ -587,7 +637,9 @@ public final class AppSettingsStore: ObservableObject {
         case .mainWindow:
             let rawValue: String
             switch stableID {
-            case "mainWindow.lyricsFocus.v1": rawValue = MainWindowLayoutStyle.lyricsFocus.rawValue
+            case "mainWindow.lyricsFocus.v1":
+                rawValue = MainWindowLayoutStyle.immersiveSplit.rawValue
+                classicCompanionPresentation = .lyricsFocus
             case "mainWindow.immersiveSplit.v2": rawValue = MainWindowLayoutStyle.immersiveSplit.rawValue
             case "mainWindow.appleMusicImmersiveV3.v3": rawValue = MainWindowLayoutStyle.appleMusicImmersiveV3.rawValue
             case "mainWindow.directionD.v4": rawValue = MainWindowLayoutStyle.directionDV4.rawValue
@@ -621,7 +673,9 @@ public final class AppSettingsStore: ObservableObject {
         case .mainWindow:
             let rawValue: String
             switch stableID {
-            case "mainWindow.lyricsFocus.v1": rawValue = MainWindowLayoutStyle.lyricsFocus.rawValue
+            case "mainWindow.lyricsFocus.v1":
+                rawValue = MainWindowLayoutStyle.immersiveSplit.rawValue
+                classicCompanionPresentation = .lyricsFocus
             case "mainWindow.immersiveSplit.v2": rawValue = MainWindowLayoutStyle.immersiveSplit.rawValue
             case "mainWindow.appleMusicImmersiveV3.v3": rawValue = MainWindowLayoutStyle.appleMusicImmersiveV3.rawValue
             case "mainWindow.directionD.v4": rawValue = MainWindowLayoutStyle.directionDV4.rawValue

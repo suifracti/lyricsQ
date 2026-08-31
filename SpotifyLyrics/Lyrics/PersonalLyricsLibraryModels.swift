@@ -1,0 +1,711 @@
+import Foundation
+
+// MARK: - Personal Lyrics Library Entry (Read Model Projection)
+
+public struct PersonalLyricsLibraryEntry: Identifiable, Equatable, Sendable, Codable {
+    public var id: String { trackStableKey }
+
+    public let trackStableKey: String
+    public let spotifyTrackID: String?
+    public let spotifyURI: String?
+    public let isrc: String?
+    public let title: String
+    public let artist: String
+    public let album: String?
+    public let duration: Double
+    public let artworkURL: URL?
+
+    public let lyricsVersionCount: Int
+    public let translationVersionCount: Int
+    public let readingVersionCount: Int
+    public let timingVersionCount: Int
+
+    public let hasLockedLyrics: Bool
+    public let hasLockedTranslation: Bool
+    public let hasManualLyrics: Bool
+    public let hasManualTranslation: Bool
+    public let hasReading: Bool
+    public let hasFineTiming: Bool
+
+    public let lastModifiedAt: Date
+
+    public let activeLyricsVersionID: UUID?
+    public let activeTranslationVersionID: UUID?
+    public let activeReadingVersionIDs: [String: UUID]
+    public let activeTimingVersionID: UUID?
+
+    public init(
+        trackStableKey: String,
+        spotifyTrackID: String?,
+        spotifyURI: String? = nil,
+        isrc: String? = nil,
+        title: String,
+        artist: String,
+        album: String?,
+        duration: Double = 0,
+        artworkURL: URL?,
+        lyricsVersionCount: Int,
+        translationVersionCount: Int,
+        readingVersionCount: Int,
+        timingVersionCount: Int,
+        hasLockedLyrics: Bool,
+        hasLockedTranslation: Bool,
+        hasManualLyrics: Bool,
+        hasManualTranslation: Bool,
+        hasReading: Bool,
+        hasFineTiming: Bool,
+        lastModifiedAt: Date,
+        activeLyricsVersionID: UUID?,
+        activeTranslationVersionID: UUID?,
+        activeReadingVersionIDs: [String: UUID] = [:],
+        activeTimingVersionID: UUID? = nil
+    ) {
+        self.trackStableKey = trackStableKey
+        self.spotifyTrackID = spotifyTrackID
+        self.spotifyURI = spotifyURI
+        self.isrc = isrc
+        self.title = title
+        self.artist = artist
+        self.album = album
+        self.duration = duration
+        self.artworkURL = artworkURL
+        self.lyricsVersionCount = lyricsVersionCount
+        self.translationVersionCount = translationVersionCount
+        self.readingVersionCount = readingVersionCount
+        self.timingVersionCount = timingVersionCount
+        self.hasLockedLyrics = hasLockedLyrics
+        self.hasLockedTranslation = hasLockedTranslation
+        self.hasManualLyrics = hasManualLyrics
+        self.hasManualTranslation = hasManualTranslation
+        self.hasReading = hasReading
+        self.hasFineTiming = hasFineTiming
+        self.lastModifiedAt = lastModifiedAt
+        self.activeLyricsVersionID = activeLyricsVersionID
+        self.activeTranslationVersionID = activeTranslationVersionID
+        self.activeReadingVersionIDs = activeReadingVersionIDs
+        self.activeTimingVersionID = activeTimingVersionID
+    }
+}
+
+// MARK: - Track Detail Items
+
+public struct PersonalLyricsVersionItem: Identifiable, Equatable, Sendable, Codable {
+    public let id: UUID
+    public let parentVersionID: UUID?
+    public let source: String
+    public let providerSourceID: String
+    public let language: String
+    public let isSynced: Bool
+    public let lineCount: Int
+    public let isMachineGenerated: Bool
+    public let isManuallyEdited: Bool
+    public let isLocked: Bool
+    public let isCurrent: Bool
+    public let confidence: Double
+    public let createdAt: Date
+    public let updatedAt: Date
+
+    public init(
+        id: UUID,
+        parentVersionID: UUID?,
+        source: String,
+        providerSourceID: String,
+        language: String,
+        isSynced: Bool,
+        lineCount: Int,
+        isMachineGenerated: Bool,
+        isManuallyEdited: Bool,
+        isLocked: Bool,
+        isCurrent: Bool,
+        confidence: Double,
+        createdAt: Date,
+        updatedAt: Date
+    ) {
+        self.id = id
+        self.parentVersionID = parentVersionID
+        self.source = source
+        self.providerSourceID = providerSourceID
+        self.language = language
+        self.isSynced = isSynced
+        self.lineCount = lineCount
+        self.isMachineGenerated = isMachineGenerated
+        self.isManuallyEdited = isManuallyEdited
+        self.isLocked = isLocked
+        self.isCurrent = isCurrent
+        self.confidence = confidence
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+    }
+}
+
+public struct PersonalTranslationVersionItem: Identifiable, Equatable, Sendable, Codable {
+    public let id: UUID
+    public let lyricsVersionID: UUID
+    public let parentVersionID: UUID?
+    public let sourceKind: String
+    public let targetLanguage: String
+    public let lineCount: Int
+    public let isMachineGenerated: Bool
+    public let isManuallyEdited: Bool
+    public let isLocked: Bool
+    public let isArchived: Bool
+    public let isCurrent: Bool
+    public let status: String
+    public let confidence: Double
+    public let engineID: String
+    public let createdAt: Date
+    public let updatedAt: Date
+
+    public init(
+        id: UUID,
+        lyricsVersionID: UUID,
+        parentVersionID: UUID?,
+        sourceKind: String,
+        targetLanguage: String,
+        lineCount: Int,
+        isMachineGenerated: Bool,
+        isManuallyEdited: Bool,
+        isLocked: Bool,
+        isArchived: Bool,
+        isCurrent: Bool,
+        status: String,
+        confidence: Double,
+        engineID: String,
+        createdAt: Date,
+        updatedAt: Date
+    ) {
+        self.id = id
+        self.lyricsVersionID = lyricsVersionID
+        self.parentVersionID = parentVersionID
+        self.sourceKind = sourceKind
+        self.targetLanguage = targetLanguage
+        self.lineCount = lineCount
+        self.isMachineGenerated = isMachineGenerated
+        self.isManuallyEdited = isManuallyEdited
+        self.isLocked = isLocked
+        self.isArchived = isArchived
+        self.isCurrent = isCurrent
+        self.status = status
+        self.confidence = confidence
+        self.engineID = engineID
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+    }
+}
+
+public struct PersonalReadingVersionItem: Identifiable, Equatable, Sendable, Codable {
+    public let id: UUID
+    public let lyricsVersionID: UUID
+    public let parentVersionID: UUID?
+    public let representationID: String
+    public let sourceKind: String
+    public let language: String
+    public let lineCount: Int
+    public let isMachineGenerated: Bool
+    public let isManuallyEdited: Bool
+    public let isCurrent: Bool
+    public let isLocked: Bool
+    public let isArchived: Bool
+    public let engineID: String
+    public let createdAt: Date
+    public let updatedAt: Date
+
+    public init(
+        id: UUID,
+        lyricsVersionID: UUID,
+        parentVersionID: UUID?,
+        representationID: String,
+        sourceKind: String,
+        language: String,
+        lineCount: Int,
+        isMachineGenerated: Bool,
+        isManuallyEdited: Bool,
+        isCurrent: Bool,
+        isLocked: Bool,
+        isArchived: Bool,
+        engineID: String,
+        createdAt: Date,
+        updatedAt: Date
+    ) {
+        self.id = id
+        self.lyricsVersionID = lyricsVersionID
+        self.parentVersionID = parentVersionID
+        self.representationID = representationID
+        self.sourceKind = sourceKind
+        self.language = language
+        self.lineCount = lineCount
+        self.isMachineGenerated = isMachineGenerated
+        self.isManuallyEdited = isManuallyEdited
+        self.isCurrent = isCurrent
+        self.isLocked = isLocked
+        self.isArchived = isArchived
+        self.engineID = engineID
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+    }
+}
+
+public struct PersonalTimingVersionItem: Identifiable, Equatable, Sendable, Codable {
+    public let id: UUID
+    public let lyricsVersionID: UUID
+    public let source: String
+    public let granularity: String
+    public let isCurrent: Bool
+    public let createdAt: Date
+
+    public init(
+        id: UUID,
+        lyricsVersionID: UUID,
+        source: String,
+        granularity: String,
+        isCurrent: Bool,
+        createdAt: Date
+    ) {
+        self.id = id
+        self.lyricsVersionID = lyricsVersionID
+        self.source = source
+        self.granularity = granularity
+        self.isCurrent = isCurrent
+        self.createdAt = createdAt
+    }
+}
+
+public struct PersonalLyricsLibraryTrackDetail: Equatable, Sendable, Codable {
+    public let entry: PersonalLyricsLibraryEntry
+    public let lyricsVersions: [PersonalLyricsVersionItem]
+    public let translationVersions: [PersonalTranslationVersionItem]
+    public let readingVersions: [PersonalReadingVersionItem]
+    public let timingVersions: [PersonalTimingVersionItem]
+
+    public init(
+        entry: PersonalLyricsLibraryEntry,
+        lyricsVersions: [PersonalLyricsVersionItem],
+        translationVersions: [PersonalTranslationVersionItem],
+        readingVersions: [PersonalReadingVersionItem],
+        timingVersions: [PersonalTimingVersionItem]
+    ) {
+        self.entry = entry
+        self.lyricsVersions = lyricsVersions
+        self.translationVersions = translationVersions
+        self.readingVersions = readingVersions
+        self.timingVersions = timingVersions
+    }
+}
+
+// MARK: - Export / Import Package Specification v1
+
+public struct PersonalLyricsLibraryPackage: Equatable, Sendable, Codable {
+    public static let formatVersion = 1
+    public static let appVersion = "1.0"
+
+    public struct Manifest: Equatable, Sendable, Codable {
+        public let formatVersion: Int
+        public let appVersion: String
+        public let exportedAt: Date
+        public let packageType: String // "track_single" or "library_export"
+
+        public init(
+            formatVersion: Int = PersonalLyricsLibraryPackage.formatVersion,
+            appVersion: String = PersonalLyricsLibraryPackage.appVersion,
+            exportedAt: Date = Date(),
+            packageType: String = "track_single"
+        ) {
+            self.formatVersion = formatVersion
+            self.appVersion = appVersion
+            self.exportedAt = exportedAt
+            self.packageType = packageType
+        }
+    }
+
+    public struct PackageTrack: Equatable, Sendable, Codable {
+        public let stableKey: String
+        public let spotifyID: String?
+        public let spotifyURI: String?
+        public let isrc: String?
+        public let title: String
+        public let artist: String
+        public let album: String
+        public let duration: Double
+        public let artworkURL: String?
+
+        public init(
+            stableKey: String,
+            spotifyID: String?,
+            spotifyURI: String?,
+            isrc: String?,
+            title: String,
+            artist: String,
+            album: String,
+            duration: Double,
+            artworkURL: String?
+        ) {
+            self.stableKey = stableKey
+            self.spotifyID = spotifyID
+            self.spotifyURI = spotifyURI
+            self.isrc = isrc
+            self.title = title
+            self.artist = artist
+            self.album = album
+            self.duration = duration
+            self.artworkURL = artworkURL
+        }
+    }
+
+    public struct PackageLyricsVersion: Equatable, Sendable, Codable {
+        public let id: UUID
+        public let trackStableKey: String
+        public let parentVersionID: UUID?
+        public let source: String
+        public let providerSourceID: String
+        public let language: String
+        public let isSynced: Bool
+        public let rawText: String
+        public let contentHash: String
+        public let isMachineGenerated: Bool
+        public let isManuallyEdited: Bool
+        public let isLocked: Bool
+        public let confidence: Double
+        public let createdAt: Date
+        public let updatedAt: Date
+        public let lines: [PackageLyricLine]
+
+        public init(
+            id: UUID,
+            trackStableKey: String,
+            parentVersionID: UUID?,
+            source: String,
+            providerSourceID: String,
+            language: String,
+            isSynced: Bool,
+            rawText: String,
+            contentHash: String,
+            isMachineGenerated: Bool,
+            isManuallyEdited: Bool,
+            isLocked: Bool,
+            confidence: Double,
+            createdAt: Date,
+            updatedAt: Date,
+            lines: [PackageLyricLine]
+        ) {
+            self.id = id
+            self.trackStableKey = trackStableKey
+            self.parentVersionID = parentVersionID
+            self.source = source
+            self.providerSourceID = providerSourceID
+            self.language = language
+            self.isSynced = isSynced
+            self.rawText = rawText
+            self.contentHash = contentHash
+            self.isMachineGenerated = isMachineGenerated
+            self.isManuallyEdited = isManuallyEdited
+            self.isLocked = isLocked
+            self.confidence = confidence
+            self.createdAt = createdAt
+            self.updatedAt = updatedAt
+            self.lines = lines
+        }
+    }
+
+    public struct PackageLyricLine: Equatable, Sendable, Codable {
+        public let lineIndex: Int
+        public let startTime: Double?
+        public let endTime: Double?
+        public let originalText: String
+        public let kanaText: String?
+        public let romajiText: String?
+        public let translationText: String?
+
+        public init(
+            lineIndex: Int,
+            startTime: Double?,
+            endTime: Double?,
+            originalText: String,
+            kanaText: String?,
+            romajiText: String?,
+            translationText: String?
+        ) {
+            self.lineIndex = lineIndex
+            self.startTime = startTime
+            self.endTime = endTime
+            self.originalText = originalText
+            self.kanaText = kanaText
+            self.romajiText = romajiText
+            self.translationText = translationText
+        }
+    }
+
+    public struct PackageTranslationVersion: Equatable, Sendable, Codable {
+        public let id: UUID
+        public let lyricsVersionID: UUID
+        public let parentVersionID: UUID?
+        public let sourceKind: String
+        public let targetLanguage: String
+        public let model: String
+        public let sourceContentHash: String
+        public let isMachineGenerated: Bool
+        public let isManuallyEdited: Bool
+        public let isLocked: Bool
+        public let isArchived: Bool
+        public let status: String
+        public let confidence: Double
+        public let engineID: String
+        public let promptPresetID: String
+        public let createdAt: Date
+        public let updatedAt: Date
+        public let lines: [PackageTranslationLine]
+
+        public init(
+            id: UUID,
+            lyricsVersionID: UUID,
+            parentVersionID: UUID?,
+            sourceKind: String,
+            targetLanguage: String,
+            model: String,
+            sourceContentHash: String,
+            isMachineGenerated: Bool,
+            isManuallyEdited: Bool,
+            isLocked: Bool,
+            isArchived: Bool,
+            status: String,
+            confidence: Double,
+            engineID: String,
+            promptPresetID: String,
+            createdAt: Date,
+            updatedAt: Date,
+            lines: [PackageTranslationLine]
+        ) {
+            self.id = id
+            self.lyricsVersionID = lyricsVersionID
+            self.parentVersionID = parentVersionID
+            self.sourceKind = sourceKind
+            self.targetLanguage = targetLanguage
+            self.model = model
+            self.sourceContentHash = sourceContentHash
+            self.isMachineGenerated = isMachineGenerated
+            self.isManuallyEdited = isManuallyEdited
+            self.isLocked = isLocked
+            self.isArchived = isArchived
+            self.status = status
+            self.confidence = confidence
+            self.engineID = engineID
+            self.promptPresetID = promptPresetID
+            self.createdAt = createdAt
+            self.updatedAt = updatedAt
+            self.lines = lines
+        }
+    }
+
+    public struct PackageTranslationLine: Equatable, Sendable, Codable {
+        public let lineIndex: Int
+        public let translatedText: String
+
+        public init(lineIndex: Int, translatedText: String) {
+            self.lineIndex = lineIndex
+            self.translatedText = translatedText
+        }
+    }
+
+    public struct PackageReadingVersion: Equatable, Sendable, Codable {
+        public let id: UUID
+        public let lyricsVersionID: UUID
+        public let parentVersionID: UUID?
+        public let sourceContentHash: String
+        public let engineID: String
+        public let representationID: String
+        public let sourceKind: String
+        public let language: String
+        public let isMachineGenerated: Bool
+        public let isManuallyEdited: Bool
+        public let isCurrent: Bool
+        public let isLocked: Bool
+        public let isArchived: Bool
+        public let confidence: Double
+        public let createdAt: Date
+        public let updatedAt: Date
+        public let lines: [PackageReadingLine]
+
+        public init(
+            id: UUID,
+            lyricsVersionID: UUID,
+            parentVersionID: UUID?,
+            sourceContentHash: String,
+            engineID: String,
+            representationID: String,
+            sourceKind: String,
+            language: String,
+            isMachineGenerated: Bool,
+            isManuallyEdited: Bool,
+            isCurrent: Bool,
+            isLocked: Bool,
+            isArchived: Bool,
+            confidence: Double,
+            createdAt: Date,
+            updatedAt: Date,
+            lines: [PackageReadingLine]
+        ) {
+            self.id = id
+            self.lyricsVersionID = lyricsVersionID
+            self.parentVersionID = parentVersionID
+            self.sourceContentHash = sourceContentHash
+            self.engineID = engineID
+            self.representationID = representationID
+            self.sourceKind = sourceKind
+            self.language = language
+            self.isMachineGenerated = isMachineGenerated
+            self.isManuallyEdited = isManuallyEdited
+            self.isCurrent = isCurrent
+            self.isLocked = isLocked
+            self.isArchived = isArchived
+            self.confidence = confidence
+            self.createdAt = createdAt
+            self.updatedAt = updatedAt
+            self.lines = lines
+        }
+    }
+
+    public struct PackageReadingLine: Equatable, Sendable, Codable {
+        public let lineIndex: Int
+        public let originalText: String
+        public let readingText: String?
+        public let tokensJSON: String
+        public let language: String
+        public let source: String
+
+        public init(
+            lineIndex: Int,
+            originalText: String,
+            readingText: String?,
+            tokensJSON: String,
+            language: String,
+            source: String
+        ) {
+            self.lineIndex = lineIndex
+            self.originalText = originalText
+            self.readingText = readingText
+            self.tokensJSON = tokensJSON
+            self.language = language
+            self.source = source
+        }
+    }
+
+    public struct PackageTimingVersion: Equatable, Sendable, Codable {
+        public let id: UUID
+        public let lyricsVersionID: UUID
+        public let source: String
+        public let granularity: String
+        public let sourceContentHash: String
+        public let spansPayload: String
+        public let createdAt: Date
+
+        public init(
+            id: UUID,
+            lyricsVersionID: UUID,
+            source: String,
+            granularity: String,
+            sourceContentHash: String,
+            spansPayload: String,
+            createdAt: Date
+        ) {
+            self.id = id
+            self.lyricsVersionID = lyricsVersionID
+            self.source = source
+            self.granularity = granularity
+            self.sourceContentHash = sourceContentHash
+            self.spansPayload = spansPayload
+            self.createdAt = createdAt
+        }
+    }
+
+    public let manifest: Manifest
+    public let track: PackageTrack
+    public let lyricsVersions: [PackageLyricsVersion]
+    public let translationVersions: [PackageTranslationVersion]
+    public let readingVersions: [PackageReadingVersion]
+    public let timingVersions: [PackageTimingVersion]
+
+    public init(
+        manifest: Manifest = Manifest(),
+        track: PackageTrack,
+        lyricsVersions: [PackageLyricsVersion],
+        translationVersions: [PackageTranslationVersion],
+        readingVersions: [PackageReadingVersion],
+        timingVersions: [PackageTimingVersion]
+    ) {
+        self.manifest = manifest
+        self.track = track
+        self.lyricsVersions = lyricsVersions
+        self.translationVersions = translationVersions
+        self.readingVersions = readingVersions
+        self.timingVersions = timingVersions
+    }
+}
+
+// MARK: - Import Preview Model
+
+public struct PersonalLibraryImportPreview: Equatable, Sendable, Codable {
+    public let trackTitle: String
+    public let trackArtist: String
+    public let trackStableKey: String
+
+    public let lyricsToAdd: Int
+    public let lyricsToSkip: Int
+    public let lyricsConflicts: [String]
+
+    public let translationsToAdd: Int
+    public let translationsToSkip: Int
+    public let translationsConflicts: [String]
+
+    public let readingsToAdd: Int
+    public let readingsToSkip: Int
+    public let readingsConflicts: [String]
+
+    public let timingsToAdd: Int
+    public let timingsToSkip: Int
+    public let timingsConflicts: [String]
+
+    public var hasConflicts: Bool {
+        !lyricsConflicts.isEmpty || !translationsConflicts.isEmpty || !readingsConflicts.isEmpty || !timingsConflicts.isEmpty
+    }
+
+    public var totalNewAssets: Int {
+        lyricsToAdd + translationsToAdd + readingsToAdd + timingsToAdd
+    }
+
+    public init(
+        trackTitle: String,
+        trackArtist: String,
+        trackStableKey: String,
+        lyricsToAdd: Int,
+        lyricsToSkip: Int,
+        lyricsConflicts: [String],
+        translationsToAdd: Int,
+        translationsToSkip: Int,
+        translationsConflicts: [String],
+        readingsToAdd: Int,
+        readingsToSkip: Int,
+        readingsConflicts: [String],
+        timingsToAdd: Int,
+        timingsToSkip: Int,
+        timingsConflicts: [String]
+    ) {
+        self.trackTitle = trackTitle
+        self.trackArtist = trackArtist
+        self.trackStableKey = trackStableKey
+        self.lyricsToAdd = lyricsToAdd
+        self.lyricsToSkip = lyricsToSkip
+        self.lyricsConflicts = lyricsConflicts
+        self.translationsToAdd = translationsToAdd
+        self.translationsToSkip = translationsToSkip
+        self.translationsConflicts = translationsConflicts
+        self.readingsToAdd = readingsToAdd
+        self.readingsToSkip = readingsToSkip
+        self.readingsConflicts = readingsConflicts
+        self.timingsToAdd = timingsToAdd
+        self.timingsToSkip = timingsToSkip
+        self.timingsConflicts = timingsConflicts
+    }
+
+    public var allConflicts: [String] {
+        lyricsConflicts + translationsConflicts + readingsConflicts + timingsConflicts
+    }
+}

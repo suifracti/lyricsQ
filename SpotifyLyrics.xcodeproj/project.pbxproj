@@ -26,6 +26,7 @@
 		110000122D83400100000001 /* TrackIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000122D83400100000000 /* TrackIdentity.swift */; };
 		110000132D83400100000001 /* LyricsModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000132D83400100000000 /* LyricsModels.swift */; };
 		110000142D83400100000001 /* LRCParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000142D83400100000000 /* LRCParser.swift */; };
+		120000022D83400100000001 /* TTMLParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 120000022D83400100000000 /* TTMLParser.swift */; };
 		110000152D83400100000001 /* LyricsMatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000152D83400100000000 /* LyricsMatcher.swift */; };
 		110000162D83400100000001 /* LocalLyricsProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000162D83400100000000 /* LocalLyricsProvider.swift */; };
 		110000172D83400100000001 /* LRCLIBLyricsProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000172D83400100000000 /* LRCLIBLyricsProvider.swift */; };
@@ -193,6 +194,15 @@
 		110003042D83400100000001 /* DirectionDExperimentalProductHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110003042D83400100000000 /* DirectionDExperimentalProductHost.swift */; };
 		110004002D83400100000001 /* DirectionDResponsiveLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110004002D83400100000000 /* DirectionDResponsiveLayout.swift */; };
 		110004012D83400100000001 /* DirectionDMainWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110004012D83400100000000 /* DirectionDMainWindowView.swift */; };
+		110005002D83400100000001 /* MenuBarLyricsController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110005002D83400100000000 /* MenuBarLyricsController.swift */; };
+		110005012D83400100000001 /* MenuBarLyricsPopoverView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110005012D83400100000000 /* MenuBarLyricsPopoverView.swift */; };
+		110006002D83400100000001 /* PersonalLyricsLibraryModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110006002D83400100000000 /* PersonalLyricsLibraryModels.swift */; };
+		110006012D83400100000001 /* PersonalLyricsLibraryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110006012D83400100000000 /* PersonalLyricsLibraryService.swift */; };
+		110006022D83400100000001 /* PersonalLyricsLibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110006022D83400100000000 /* PersonalLyricsLibraryView.swift */; };
+		110006032D83400100000001 /* ListeningHistoryModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110006032D83400100000000 /* ListeningHistoryModels.swift */; };
+		110006042D83400100000001 /* ListeningHistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110006042D83400100000000 /* ListeningHistoryView.swift */; };
+		110006052D83400100000001 /* ListeningStatisticsModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110006052D83400100000000 /* ListeningStatisticsModels.swift */; };
+		110006062D83400100000001 /* ListeningStatisticsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110006062D83400100000000 /* ListeningStatisticsView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -214,9 +224,12 @@
 		1100000F2D83400100000000 /* MockPlaybackProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MockPlaybackProvider.swift; sourceTree = "<group>"; };
 		110000102D83400100000000 /* ArtworkImageLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtworkImageLoader.swift; sourceTree = "<group>"; };
 		110000112D83400100000000 /* SpotifyLyrics.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = SpotifyLyrics.entitlements; sourceTree = "<group>"; };
+		110000112D83400100000001 /* SpotifyLyricsDebug.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = SpotifyLyricsDebug.entitlements; sourceTree = "<group>"; };
+		110000112D83400100000002 /* SpotifyLyricsRelease.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = SpotifyLyricsRelease.entitlements; sourceTree = "<group>"; };
 		110000122D83400100000000 /* TrackIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackIdentity.swift; sourceTree = "<group>"; };
 		110000132D83400100000000 /* LyricsModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricsModels.swift; sourceTree = "<group>"; };
 		110000142D83400100000000 /* LRCParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LRCParser.swift; sourceTree = "<group>"; };
+		120000022D83400100000000 /* TTMLParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TTMLParser.swift; sourceTree = "<group>"; };
 		110000152D83400100000000 /* LyricsMatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricsMatcher.swift; sourceTree = "<group>"; };
 		110000162D83400100000000 /* LocalLyricsProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalLyricsProvider.swift; sourceTree = "<group>"; };
 		110000172D83400100000000 /* LRCLIBLyricsProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LRCLIBLyricsProvider.swift; sourceTree = "<group>"; };
@@ -386,6 +399,15 @@
 		110003042D83400100000000 /* DirectionDExperimentalProductHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/Components/DirectionD/DirectionDExperimentalProductHost.swift; sourceTree = "<group>"; };
 		110004002D83400100000000 /* DirectionDResponsiveLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Design/DirectionD/DirectionDResponsiveLayout.swift; sourceTree = "<group>"; };
 		110004012D83400100000000 /* DirectionDMainWindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/Components/DirectionD/DirectionDMainWindowView.swift; sourceTree = "<group>"; };
+		110005002D83400100000000 /* MenuBarLyricsController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Windows/MenuBarLyricsController.swift; sourceTree = "<group>"; };
+		110005012D83400100000000 /* MenuBarLyricsPopoverView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/MenuBar/MenuBarLyricsPopoverView.swift; sourceTree = "<group>"; };
+		110006002D83400100000000 /* PersonalLyricsLibraryModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Lyrics/PersonalLyricsLibraryModels.swift; sourceTree = "<group>"; };
+		110006012D83400100000000 /* PersonalLyricsLibraryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Settings/PersonalLyricsLibraryService.swift; sourceTree = "<group>"; };
+		110006022D83400100000000 /* PersonalLyricsLibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/Settings/PersonalLyricsLibraryView.swift; sourceTree = "<group>"; };
+		110006032D83400100000000 /* ListeningHistoryModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Lyrics/ListeningHistoryModels.swift; sourceTree = "<group>"; };
+		110006042D83400100000000 /* ListeningHistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListeningHistoryView.swift; sourceTree = "<group>"; };
+		110006052D83400100000000 /* ListeningStatisticsModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Lyrics/ListeningStatisticsModels.swift; sourceTree = "<group>"; };
+		110006062D83400100000000 /* ListeningStatisticsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListeningStatisticsView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -439,12 +461,21 @@
 				1100007A2D83400100000000 /* CapsuleLyricsView.swift */,
 				1100007B2D83400100000000 /* CapsuleLyricsWindowPersistence.swift */,
 				1100007C2D83400100000000 /* CapsuleLyricsWindowController.swift */,
+				110005002D83400100000000 /* MenuBarLyricsController.swift */,
+				110005012D83400100000000 /* MenuBarLyricsPopoverView.swift */,
+				110006002D83400100000000 /* PersonalLyricsLibraryModels.swift */,
+				110006012D83400100000000 /* PersonalLyricsLibraryService.swift */,
+				110006022D83400100000000 /* PersonalLyricsLibraryView.swift */,
+				110006032D83400100000000 /* ListeningHistoryModels.swift */,
+				110006052D83400100000000 /* ListeningStatisticsModels.swift */,
 				110000F42D83400100000000 /* PresentationPreviewLabView.swift */,
 				110000F52D83400100000000 /* PresentationPreviewAdapters.swift */,
 				110000002D83400000000024 /* Providers */,
 				110000002D83400000000025 /* Lyrics */,
 				110000002D83400000000026 /* Search */,
 				110000112D83400100000000 /* SpotifyLyrics.entitlements */,
+				110000112D83400100000001 /* SpotifyLyricsDebug.entitlements */,
+				110000112D83400100000002 /* SpotifyLyricsRelease.entitlements */,
 				1100010A2D83400100000000 /* DebugSigning.xcconfig */,
 				1100010B2D83400100000000 /* Info-Additions.plist */,
 				110000002D83400000000020 /* Views */,
@@ -524,6 +555,8 @@
 				110000612D83400100000000 /* SettingsRootView.swift */,
 				110000F82D83400100000000 /* ExperienceLibrarySettingsView.swift */,
 				110000A82D83400100000000 /* ReadingSettingsView.swift */,
+				110006042D83400100000000 /* ListeningHistoryView.swift */,
+				110006062D83400100000000 /* ListeningStatisticsView.swift */,
 			);
 			path = Settings;
 			sourceTree = "<group>";
@@ -600,6 +633,7 @@
 				110000122D83400100000000 /* TrackIdentity.swift */,
 				110000132D83400100000000 /* LyricsModels.swift */,
 				110000142D83400100000000 /* LRCParser.swift */,
+				120000022D83400100000000 /* TTMLParser.swift */,
 				110000152D83400100000000 /* LyricsMatcher.swift */,
 				110000162D83400100000000 /* LocalLyricsProvider.swift */,
 				120000012D83400100000000 /* AMLLLyricsProvider.swift */,
@@ -832,6 +866,7 @@
 				110000122D83400100000001 /* TrackIdentity.swift in Sources */,
 				110000132D83400100000001 /* LyricsModels.swift in Sources */,
 				110000142D83400100000001 /* LRCParser.swift in Sources */,
+				120000022D83400100000001 /* TTMLParser.swift in Sources */,
 				110000152D83400100000001 /* LyricsMatcher.swift in Sources */,
 				110000162D83400100000001 /* LocalLyricsProvider.swift in Sources */,
 				120000012D83400100000001 /* AMLLLyricsProvider.swift in Sources */,
@@ -970,6 +1005,15 @@
 				110000862D83400100000001 /* FullScreenLyricsPresentation.swift in Sources */,
 				110000872D83400100000001 /* FullScreenLyricsView.swift in Sources */,
 				110000882D83400100000001 /* LyricsLanguageGate.swift in Sources */,
+				110005002D83400100000001 /* MenuBarLyricsController.swift in Sources */,
+				110005012D83400100000001 /* MenuBarLyricsPopoverView.swift in Sources */,
+				110006002D83400100000001 /* PersonalLyricsLibraryModels.swift in Sources */,
+				110006012D83400100000001 /* PersonalLyricsLibraryService.swift in Sources */,
+				110006022D83400100000001 /* PersonalLyricsLibraryView.swift in Sources */,
+				110006032D83400100000001 /* ListeningHistoryModels.swift in Sources */,
+				110006042D83400100000001 /* ListeningHistoryView.swift in Sources */,
+				110006052D83400100000001 /* ListeningStatisticsModels.swift in Sources */,
+				110006062D83400100000001 /* ListeningStatisticsView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -998,7 +1042,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				/* Empty identity: Automatic selects Apple Development / Mac Development. */
 				CODE_SIGN_IDENTITY = "";
-				CODE_SIGN_ENTITLEMENTS = SpotifyLyrics/SpotifyLyrics.entitlements;
+				CODE_SIGN_ENTITLEMENTS = SpotifyLyrics/SpotifyLyricsDebug.entitlements;
 				/* Avoid main stub + SpotifyLyrics.debug.dylib TCC identity split. */
 				ENABLE_DEBUG_DYLIB = NO;
 				COMBINE_HIDPI_IMAGES = YES;
@@ -1025,7 +1069,8 @@
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_IDENTITY = "-";
-				CODE_SIGN_ENTITLEMENTS = SpotifyLyrics/SpotifyLyrics.entitlements;
+				CODE_SIGN_ENTITLEMENTS = SpotifyLyrics/SpotifyLyricsRelease.entitlements;
+				CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;

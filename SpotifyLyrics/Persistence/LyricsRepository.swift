@@ -12,6 +12,7 @@ public enum LyricsRepositoryError: Error, Equatable, Sendable, LocalizedError {
     case unsupportedSchema(Int)
     case invalidData(String)
     case unavailable(String)
+    case dataIntegrityViolation(String)
 
     public var errorDescription: String? {
         switch self {
@@ -21,6 +22,7 @@ public enum LyricsRepositoryError: Error, Equatable, Sendable, LocalizedError {
         case .unsupportedSchema(let version): return "歌词数据库版本 \(version) 高于当前 App 支持版本"
         case .invalidData(let message): return "歌词数据库数据无效：\(message)"
         case .unavailable(let message): return "歌词数据库不可用：\(message)"
+        case .dataIntegrityViolation(let message): return "歌词数据完整性校验失败：\(message)"
         }
     }
 }
@@ -139,6 +141,9 @@ public protocol LyricsRepository: Sendable {
     func saveTrackMetadata(_ metadata: TrackMetadata) async throws
     func loadBest(track: Track, identity: TrackIdentity) async throws -> LyricsDocument?
     func loadBestStored(track: Track, identity: TrackIdentity) async throws -> StoredLyricsDocument?
+    func upsertListeningHistory(_ entry: ListeningHistoryEntry) async throws
+    func loadListeningHistory(limit: Int) async throws -> [ListeningHistoryEntry]
+    func loadListeningStatistics(for timeRange: ListeningStatisticsTimeRange) async throws -> ListeningStatistics
     func alignmentProvenanceAvailability(versionID: UUID) async -> AlignmentProvenanceAvailability
     func save(
         track: Track,
@@ -182,6 +187,19 @@ public extension LyricsRepository {
             sourceContentHash: LyricsPersistenceMapper.sourceContentHash(document: document),
             alignmentProvenanceAvailability: .unavailable
         )
+    }
+
+    func upsertListeningHistory(_ entry: ListeningHistoryEntry) async throws {
+        _ = entry
+    }
+
+    func loadListeningHistory(limit: Int) async throws -> [ListeningHistoryEntry] {
+        _ = limit
+        return []
+    }
+
+    func loadListeningStatistics(for timeRange: ListeningStatisticsTimeRange) async throws -> ListeningStatistics {
+        .empty(for: timeRange)
     }
 
     func saveTrackMetadata(_ metadata: TrackMetadata) async throws {

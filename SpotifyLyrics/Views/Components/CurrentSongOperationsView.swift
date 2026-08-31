@@ -31,36 +31,40 @@ struct CurrentSongOperationsView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            header
-            Divider()
-            lyricsSection
-            versionStatusSection
-            Divider()
-            languageSection
-            Divider()
-            readingSection
-            if !state.liveLyrics.isEmpty {
+        ScrollView(.vertical) {
+            VStack(alignment: .leading, spacing: 14) {
+                header
                 Divider()
-                translationSection
-            }
-            if showsAutomaticAlignmentSection {
+                lyricsSection
+                versionStatusSection
                 Divider()
-                automaticAlignmentSection
-            }
-            if hasAlignmentAction {
+                languageSection
                 Divider()
-                alignmentSection
+                readingSection
+                if !state.liveLyrics.isEmpty {
+                    Divider()
+                    translationSection
+                }
+                if showsAutomaticAlignmentSection {
+                    Divider()
+                    automaticAlignmentSection
+                }
+                if hasAlignmentAction {
+                    Divider()
+                    alignmentSection
+                }
+                if !notice.isEmpty {
+                    Text(notice)
+                        .font(.system(size: 11, design: .rounded))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
-            if !notice.isEmpty {
-                Text(notice)
-                    .font(.system(size: 11, design: .rounded))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+            .padding(18)
         }
-        .padding(18)
+        .scrollIndicators(.hidden)
         .frame(width: 360, alignment: .leading)
+        .frame(maxHeight: 560, alignment: .leading)
         .preferredColorScheme(.dark)
         .confirmationDialog(
             "删除当前翻译版本？",
@@ -505,7 +509,12 @@ struct CurrentSongOperationsView: View {
                     .foregroundStyle(autoAlignStatusColor)
                     .accessibilityIdentifier("autoAlign.status")
             }
-            if !autoAlign.statusMessage.isEmpty {
+            if let userFacingStatus = autoAlign.userFacingStatus {
+                Text(userFacingStatus.recoveryHint)
+                    .font(.system(size: 11, design: .rounded))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if !autoAlign.statusMessage.isEmpty {
                 Text(autoAlign.statusMessage)
                     .font(.system(size: 11, design: .rounded))
                     .foregroundStyle(.secondary)
@@ -556,6 +565,9 @@ struct CurrentSongOperationsView: View {
     }
 
     private var autoAlignStatusLabel: String {
+        if let userFacingStatus = autoAlign.userFacingStatus {
+            return userFacingStatus.title
+        }
         switch autoAlign.state {
         case .idle: return settings.automaticAlignmentEnabled ? "就绪" : "关闭"
         case .waitingForPlayback: return "等待播放"

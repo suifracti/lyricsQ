@@ -3,6 +3,9 @@ import AppKit
 
 private enum SettingsCategory: String, CaseIterable, Identifiable {
     case general = "通用"
+    case library = "我的歌词库"
+    case history = "最近播放"
+    case statistics = "听歌统计"
     case display = "歌词显示"
     case reading = "读音与文字"
     case spotify = "Spotify"
@@ -17,6 +20,9 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
     var systemImage: String {
         switch self {
         case .general: return "gearshape"
+        case .library: return "music.note.list"
+        case .history: return "clock.arrow.circlepath"
+        case .statistics: return "chart.bar"
         case .display: return "text.quote"
         case .reading: return "character.book.closed"
         case .spotify: return "waveform.circle"
@@ -89,19 +95,21 @@ private struct SettingsDetailView: View {
     var body: some View {
         Group {
             switch category {
-            case .general: GeneralSettingsView()
-            case .display: DisplaySettingsView()
-            case .reading: ReadingSettingsView()
-            case .spotify: SpotifySettingsView()
-            case .lyricsSources: LyricsSourcesSettingsView()
-            case .data: DataSettingsView()
-            case .ai: AISettingsView()
-            case .experienceLibrary: ExperienceLibrarySettingsView(selectionStore: settings.presentationSelections)
-            case .advanced: AdvancedSettingsView()
+            case .general: GeneralSettingsView().padding(28)
+            case .library: PersonalLyricsLibraryView()
+            case .history: ListeningHistoryView()
+            case .statistics: ListeningStatisticsView()
+            case .display: DisplaySettingsView().padding(28)
+            case .reading: ReadingSettingsView().padding(28)
+            case .spotify: SpotifySettingsView().padding(28)
+            case .lyricsSources: LyricsSourcesSettingsView().padding(28)
+            case .data: DataSettingsView().padding(28)
+            case .ai: AISettingsView().padding(28)
+            case .experienceLibrary: ExperienceLibrarySettingsView(selectionStore: settings.presentationSelections).padding(28)
+            case .advanced: AdvancedSettingsView().padding(28)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .padding(28)
     }
 }
 
@@ -131,15 +139,16 @@ private struct GeneralSettingsView: View {
 
             Section("主窗口") {
                 Picker("默认主窗口布局", selection: mainWindowLayoutSelection) {
-                    ForEach(MainWindowLayoutStyle.allCases) { layout in
-                        Text(layout == .immersiveSplit ? "\(layout.title)（deprecated candidate）" : layout.title)
-                            .tag(layout.rawValue)
+                    ForEach(MainWindowLayoutStyle.userSelectableCases) { layout in
+                        Text(layout.title).tag(layout.rawValue)
                     }
                 }
-                Text("沉浸分栏仅保留兼容入口，不作为推荐默认布局。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Text("V3 仍是默认布局；Direction D V4 作为独立可选版本保留。")
+                Picker("经典伴随呈现", selection: $settings.classicCompanionPresentationRawValue) {
+                    ForEach(ClassicCompanionPresentation.allCases) { presentation in
+                        Text(presentation.title).tag(presentation.rawValue)
+                    }
+                }
+                Text("经典伴随 V1 可按窗口宽度自适应，也可固定为沉浸分栏或歌词专注。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Toggle("小窗口自动进入歌词专注", isOn: $settings.automaticCompactLyricsFocus)

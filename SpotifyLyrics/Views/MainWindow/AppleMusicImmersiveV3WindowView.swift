@@ -98,6 +98,7 @@ struct AppleMusicImmersiveV3WindowView: View {
             minWidth: MainWindowResponsiveThresholds.technicalMinimumSize.width,
             minHeight: MainWindowResponsiveThresholds.technicalMinimumSize.height
         )
+        .ignoresSafeArea()
         .preferredColorScheme(.dark)
         .sheet(isPresented: $isAlignmentDetailsPresented) {
             if let report = state.liveLyricsState.alignmentReport {
@@ -108,21 +109,29 @@ struct AppleMusicImmersiveV3WindowView: View {
 
     @ViewBuilder
     private func layout(for geometry: GeometryProxy) -> some View {
-        switch MainWindowResponsiveMode.resolve(
-            width: geometry.size.width,
-            height: geometry.size.height,
-            automaticLyricsFocus: settings.automaticCompactLyricsFocus,
-            wideBreakpoint: MainWindowResponsiveThresholds.wideBreakpoint,
-            comfortableSize: MainWindowResponsiveThresholds.comfortableMinimumSize,
-            compactFocusWidth: MainWindowResponsiveThresholds.compactLyricsFocusWidth,
-            compactFocusHeight: MainWindowResponsiveThresholds.compactLyricsFocusHeight
-        ) {
-        case .wide, .medium:
-            adaptiveSplitLayout(in: geometry)
-        case .small:
-            smallLayout(in: geometry)
-        case .lyricsFocus:
-            compactLyricsFocusLayout(in: geometry)
+        if settings.v3ArtworkPresentation == .stage {
+            stageTheaterLayout(in: geometry)
+        } else {
+            switch MainWindowResponsiveMode.resolve(
+                width: geometry.size.width,
+                height: geometry.size.height,
+                automaticLyricsFocus: settings.automaticCompactLyricsFocus,
+                wideBreakpoint: MainWindowResponsiveThresholds.wideBreakpoint,
+                comfortableSize: MainWindowResponsiveThresholds.comfortableMinimumSize,
+                compactFocusWidth: MainWindowResponsiveThresholds.compactLyricsFocusWidth,
+                compactFocusHeight: MainWindowResponsiveThresholds.compactLyricsFocusHeight
+            ) {
+            case .wide, .medium:
+                adaptiveSplitLayout(in: geometry)
+            case .small:
+                // Keep the legacy enum value decodable for saved preview state,
+                // but render it through the same bounded split geometry. A second
+                // vertical poster composition makes live window resizing jump
+                // between unrelated coordinate systems.
+                adaptiveSplitLayout(in: geometry)
+            case .lyricsFocus:
+                compactLyricsFocusLayout(in: geometry)
+            }
         }
     }
 
@@ -183,15 +192,29 @@ struct AppleMusicImmersiveV3WindowView: View {
         )
         let position = settings.v3ArtworkPosition
         let trackAlignment: HorizontalAlignment = position == "center" ? .center : .leading
+        let isWide = metrics.contentWidth >= 1080
 
-        let trackCol = trackColumn(
-            width: metrics.artworkWidth,
-            availableHeight: metrics.availableHeight,
-            coverSize: metrics.coverSize,
-            alignment: trackAlignment,
-            compact: false,
-            progressDensity: .wide
-        )
+        let trackCol = Group {
+            if isWide {
+                trackColumn(
+                    width: metrics.artworkWidth,
+                    availableHeight: metrics.availableHeight,
+                    coverSize: metrics.coverSize,
+                    alignment: trackAlignment,
+                    compact: false,
+                    progressDensity: .wide
+                )
+            } else {
+                trackColumn(
+                    width: metrics.artworkWidth,
+                    availableHeight: metrics.availableHeight,
+                    coverSize: metrics.coverSize,
+                    alignment: trackAlignment,
+                    compact: false,
+                    progressDensity: .medium
+                )
+            }
+        }
         .frame(width: metrics.artworkWidth)
         .frame(maxHeight: .infinity)
 
@@ -217,6 +240,80 @@ struct AppleMusicImmersiveV3WindowView: View {
         )
         .padding(.horizontal, metrics.horizontalPadding)
         .padding(.vertical, metrics.verticalPadding)
+    }
+
+    private var currentArtworkAspectRatio: CGFloat {
+        if let image = ArtworkImageLoader.shared.cachedImage(for: state.currentTrack.artworkURL),
+           image.size.width > 0, image.size.height > 0 {
+            return image.size.width / image.size.height
+        }
+        return 1.0
+    }
+
+    private func stageTheaterLayout(in geometry: GeometryProxy) -> some View {
+        let canvasWidth = max(1, geometry.size.width)
+        let canvasHeight = max(1, geometry.size.height)
+        let position = settings.v3ArtworkPosition
+        let isRight = position == "right"
+        let isCenter = position == "center"
+
+        let artworkRect = V3ResponsiveGeometry.stageArtworkRect(
+            canvasSize: geometry.size,
+            artworkAspectRatio: currentArtworkAspectRatio,
+            position: position
+        )
+
+        let hudWidth = min(artworkRect.width - 32, 380)
+        let hudView = StageHUDView(state: state, width: hudWidth)
+
+        let lyricsWidth: CGFloat
+        if isCenter {
+            lyricsWidth = max(260, canvasWidth * 0.44)
+        } else if isRight {
+            lyricsWidth = max(220, artworkRect.minX - 32)
+        } else {
+            lyricsWidth = max(220, canvasWidth - artworkRect.maxX - 32)
+        }
+
+        let lyricsCol = lyricsColumn(width: lyricsWidth, compact: false)
+            .frame(width: lyricsWidth)
+            .frame(maxHeight: .infinity)
+
+        return ZStack(alignment: .topLeading) {
+            // Lyrics Overlay floating in the safe reading zone
+            if isRight {
+                HStack(spacing: 0) {
+                    lyricsCol
+                        .padding(.leading, 24)
+                    Spacer()
+                }
+                .frame(width: canvasWidth, height: canvasHeight)
+            } else if isCenter {
+                lyricsCol
+                    .frame(width: lyricsWidth)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
+                    .padding(.trailing, 24)
+            } else {
+                HStack(spacing: 0) {
+                    Spacer()
+                    lyricsCol
+                        .padding(.trailing, 24)
+                }
+                .frame(width: canvasWidth, height: canvasHeight)
+            }
+
+            // HUD Overlay anchored at the stage artwork base
+            VStack {
+                Spacer()
+                hudView
+            }
+            .frame(width: hudWidth, alignment: isRight ? .trailing : (isCenter ? .center : .leading))
+            .padding(.leading, isRight ? 0 : (isCenter ? 0 : artworkRect.minX + 16))
+            .padding(.trailing, isRight ? (canvasWidth - artworkRect.maxX + 16) : 0)
+            .padding(.bottom, max(20, canvasHeight - artworkRect.maxY + 16))
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: isCenter ? .bottom : (isRight ? .bottomTrailing : .bottomLeading))
+        }
+        .frame(width: canvasWidth, height: canvasHeight)
     }
 
     private func instrumentalPosterLayout(in geometry: GeometryProxy) -> some View {
@@ -305,7 +402,7 @@ struct AppleMusicImmersiveV3WindowView: View {
         coverSize: CGFloat,
         alignment: HorizontalAlignment,
         compact: Bool,
-        progressDensity: AppleMusicImmersiveV3ProgressDensity
+        progressDensity: AppleMusicImmersiveV3ProgressDensity = .medium
     ) -> some View {
         VStack(alignment: alignment, spacing: 0) {
             if showsForegroundArtwork {
@@ -618,7 +715,7 @@ struct AppleMusicImmersiveV3WindowView: View {
         Button {
             isVisualTuningPresented.toggle()
         } label: {
-            iconLabel("slider.horizontal.3", description: "V3 视觉与布局调节")
+            iconLabel("rectangle.3.group", description: "V3 视觉与布局调节")
         }
         .buttonStyle(.plain)
         .popover(isPresented: $isVisualTuningPresented, arrowEdge: .top) {
@@ -632,7 +729,7 @@ struct AppleMusicImmersiveV3WindowView: View {
 
     private var preferencesButton: some View {
         SettingsLink {
-            iconLabel("slider.horizontal.3", description: "显示设置")
+            iconLabel("gearshape", description: "显示设置")
         }
         .accessibilityLabel("显示设置")
     }
@@ -664,12 +761,18 @@ private enum AppleMusicImmersiveV3ProgressDensity: Equatable {
 
     var containerHeight: CGFloat {
         switch self {
-        case .wide: return 12
-        case .medium: return 11
-        case .small: return 9
-        case .focus: return 8
+        case .wide: return 24
+        case .medium: return 22
+        case .small: return 20
+        case .focus: return 20
         }
     }
+
+    /// The visible rail stays thin; this is the stable pointer and keyboard
+    /// target used while the window is being resized or the pointer is near
+    /// the controls. Keeping the hit target independent from rail thickness
+    /// prevents tiny controls from changing the surrounding composition.
+    var interactionHeight: CGFloat { containerHeight }
 
     var trackHeight: CGFloat {
         switch self {
@@ -782,7 +885,7 @@ private struct AppleMusicImmersiveV3PlaybackProgress: View {
         }
         .frame(
             width: density.isFocus ? LyricsDesignTokens.Progress.focusWidth : nil,
-            height: density.containerHeight
+            height: density.interactionHeight
         )
         .frame(maxWidth: density.isFocus ? nil : (maxWidth ?? .infinity))
         .animation(
@@ -868,6 +971,98 @@ private struct AppleMusicImmersiveV3TransportControls: View {
             .padding(.top, 4)
         }
         .frame(maxWidth: .infinity, alignment: alignment == .center ? .center : .leading)
+    }
+
+    private func formatTime(_ seconds: TimeInterval) -> String {
+        let minutes = Int(seconds) / 60
+        let remainder = Int(seconds) % 60
+        return String(format: "%02d:%02d", minutes, remainder)
+    }
+}
+
+private struct StageHUDView: View {
+    @ObservedObject var state: PlaybackState
+    let width: CGFloat
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // Title and Artist/Album
+            VStack(alignment: .leading, spacing: 4) {
+                Text(state.currentTrack.title)
+                    .font(.system(size: 24, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
+                    .lineLimit(2)
+                    .shadow(color: Color.black.opacity(0.55), radius: 6, x: 0, y: 2)
+
+                Text("\(state.currentTrack.artist) — \(state.currentTrack.album)")
+                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.82))
+                    .lineLimit(1)
+                    .shadow(color: Color.black.opacity(0.45), radius: 4, x: 0, y: 1)
+            }
+
+            // Transport Buttons + Progress in a sleek horizontal HUD
+            VStack(spacing: 6) {
+                HStack(spacing: 12) {
+                    V3TransportIconButton(
+                        systemImage: "backward.fill",
+                        label: "上一首",
+                        enabled: state.canControlSpotify
+                    ) {
+                        state.previousTrack()
+                    }
+
+                    Button {
+                        state.togglePlayPause()
+                    } label: {
+                        Image(systemName: state.isPlaying ? "pause.fill" : "play.fill")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .frame(width: 40, height: 40)
+                            .background(.ultraThinMaterial.opacity(0.80), in: Circle())
+                            .overlay(
+                                Circle()
+                                    .stroke(Color.white.opacity(0.24), lineWidth: 0.8)
+                            )
+                            .shadow(color: Color.black.opacity(0.25), radius: 8, y: 3)
+                    }
+                    .buttonStyle(V3BounceButtonStyle())
+                    .disabled(!state.canInteractWithPlayback)
+                    .opacity(state.canInteractWithPlayback ? 1 : 0.42)
+                    .accessibilityLabel(state.isPlaying ? "暂停" : "播放")
+
+                    V3TransportIconButton(
+                        systemImage: "forward.fill",
+                        label: "下一首",
+                        enabled: state.canControlSpotify
+                    ) {
+                        state.nextTrack()
+                    }
+
+                    Spacer()
+                }
+
+                HStack(spacing: 8) {
+                    Text(formatTime(state.currentTime))
+                        .font(.system(size: 10, weight: .medium, design: .rounded).monospacedDigit())
+                        .foregroundStyle(.white.opacity(0.70))
+                        .shadow(color: Color.black.opacity(0.40), radius: 3, y: 1)
+
+                    AppleMusicImmersiveV3PlaybackProgress(
+                        state: state,
+                        density: .small,
+                        maxWidth: .infinity
+                    )
+
+                    Text(formatTime(state.currentTrack.duration))
+                        .font(.system(size: 10, weight: .medium, design: .rounded).monospacedDigit())
+                        .foregroundStyle(.white.opacity(0.70))
+                        .shadow(color: Color.black.opacity(0.40), radius: 3, y: 1)
+                }
+            }
+            .padding(.top, 4)
+        }
+        .frame(maxWidth: width, alignment: .leading)
     }
 
     private func formatTime(_ seconds: TimeInterval) -> String {
@@ -1041,33 +1236,33 @@ private struct AppleMusicImmersiveV3LyricsViewport: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        // PlaybackState publishes time at a high cadence. Resolve the live
-        // document once for this render pass instead of asking each status /
-        // scroll layer to repeat track-identity validation independently.
-        let lines = state.liveLyrics
-        let synchronized = state.liveLyricsAreSynchronized
+        // PlaybackState publishes time at a high cadence. Resolve the active
+        // main-window document once for this render pass. Catalog selections
+        // use the preview session; live-only projections belong to secondary
+        // windows and must not keep the previous track's lyrics on screen.
+        let lines = state.lyrics
+        let synchronized = state.lyricsAreSynchronized
         let currentIndex = LyricsTimeline.activeLineIndex(
             lines: lines,
             time: state.currentTime,
             isSynchronized: synchronized
         )
-        let language = state.liveLyricsLanguage
-        let trackStableKey = state.currentTrackIdentity?.stableKey
-        let artistDisplay = state.currentTrack.artist
+        let language = state.isShowingSearchPreview ? nil : state.liveLyricsLanguage
+        let trackStableKey = state.isShowingSearchPreview
+            ? TrackIdentity(track: state.displayedTrack).stableKey
+            : state.currentTrackIdentity?.stableKey
+        let artistDisplay = state.displayedTrack.artist
 
-        VStack(alignment: .leading, spacing: LyricsDesignTokens.Spacing.xs) {
-            if !lines.isEmpty {
-                let isInst = lines.first?.originalText.contains("纯音乐") == true
-                    || lines.first?.originalText.contains("没有填词") == true
-                AppleMusicImmersiveV3LyricProgressStatus(
-                    mode: synchronized ? .synchronized : .plainText,
-                    currentIndex: synchronized ? currentIndex : nil,
-                    isInstrumental: isInst,
-                    pureImmersion: settings.v3InstrumentalPureImmersion
-                )
-                .padding(.leading, 2)
-            }
+#if DEBUG
+        let nowIso = ISO8601DateFormatter().string(from: Date())
+        let playbackTrackID = TrackIdentity.canonicalSpotifyTrackID(state.currentTrack.spotifyId) ?? state.currentTrack.spotifyId ?? "none"
+        let renderToken = lines.isEmpty ? "none" : (state.lyricsSession.debugLyricsBindingToken ?? "none")
+        let versionID = state.lyricsSession.activeLyricsVersionID?.uuidString ?? "none"
+        let sessionGen = state.lyricsSession.revision
+        print("[RuntimeLyricsRendered] timestamp=\(nowIso) sessionGeneration=\(sessionGen) playbackTrackID=\(playbackTrackID) renderLyricsBindingToken=\(renderToken) lyricsVersionID=\(versionID) activeLineIndex=\(currentIndex ?? -1)")
+#endif
 
+        return VStack(alignment: .leading, spacing: LyricsDesignTokens.Spacing.xs) {
             if lines.isEmpty {
                 if lyricsFocus {
                     focusEmptyState
@@ -1108,7 +1303,7 @@ private struct AppleMusicImmersiveV3LyricsViewport: View {
     }
 
     private var emptyTitle: String {
-        switch state.liveLyricsState {
+        switch state.lyricsState {
         case .loading: return "正在获取歌词…"
         case .failed: return "歌词暂不可用"
         case .noLyrics, .noSelection, .noMatch: return "暂无歌词"
@@ -1119,7 +1314,7 @@ private struct AppleMusicImmersiveV3LyricsViewport: View {
     }
 
     private var emptyDetail: String {
-        switch state.liveLyricsState {
+        switch state.lyricsState {
         case .failed(_, let failure): return failure.userFacingMessage
         case .noLyrics, .noMatch: return "可从右上角工具菜单重试自动补全"
         case .noSelection: return "当前会话未选择歌词版本；可从右上角重新搜索"
@@ -1175,9 +1370,9 @@ private struct AppleMusicImmersiveV3LyricsViewport: View {
                     )
                 }
                 .scrollIndicators(.hidden)
-                // A new live session is a direct document replacement.  Its
+                // A new active session is a direct document replacement. Its
                 // old rows must not animate into a different track.
-                .id("lyrics-document-\(state.liveLyricsSessionRevision)")
+                .id("lyrics-document-\(state.lyricsSessionRevision)")
 
                 Group {
                     if synchronized {
@@ -1217,7 +1412,7 @@ private struct AppleMusicImmersiveV3LyricsViewport: View {
                         animated: true
                     )
                 }
-                .onChange(of: state.liveLyricsSessionRevision) { _, _ in
+                .onChange(of: state.lyricsSessionRevision) { _, _ in
                     scrollToCurrentLine(
                         using: proxy,
                         lines: lines,
@@ -1272,13 +1467,15 @@ private struct AppleMusicImmersiveV3LyricsViewport: View {
             preferences: state.preferences,
             language: language,
             trackStableKey: trackStableKey,
-            artistDisplay: artistDisplay
+            artistDisplay: artistDisplay,
+            currentTime: state.currentTime,
+            presentationClock: state.presentationClock
         )
         .environmentObject(settings)
         if let timestamp = LyricsTimeline.validSeekTimestamp(
             for: line,
             isSynchronized: synchronized,
-            duration: state.currentTrack.duration
+            duration: state.displayedTrack.duration
         ) {
             Button {
                 state.seek(to: timestamp, source: "v3-lyric-line")
@@ -1456,6 +1653,8 @@ private struct AppleMusicImmersiveV3LyricRow: View {
     let language: String?
     let trackStableKey: String?
     let artistDisplay: String?
+    var currentTime: TimeInterval = 0
+    var presentationClock: LyricsPresentationClock = LyricsPresentationClock()
     @EnvironmentObject private var settings: AppSettingsStore
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -1563,7 +1762,7 @@ private struct AppleMusicImmersiveV3LyricRow: View {
     }
 
     private var reliableRubyTokens: [LyricRubyToken]? {
-        guard let tokens = line.rubyTokens,
+        guard storedKanaText == nil, let tokens = line.rubyTokens,
               tokens.contains(where: { $0.hasDisplayRuby }) else {
             return nil
         }
@@ -1576,21 +1775,30 @@ private struct AppleMusicImmersiveV3LyricRow: View {
             originalText: effectiveOriginalText,
             providerKana: kana
         )
+        guard reading.isTokenAligned else {
+            // Keep the provider kana available to the independent/replacement
+            // modes, but never turn an unbounded line reading into one ruby
+            // annotation spanning the whole sentence.
+            return nil
+        }
         let tokens = reading.tokens.flatMap { JapaneseReadingPipeline.rubyTokens(for: $0) }
         return tokens.contains(where: { $0.hasDisplayRuby }) ? tokens : nil
     }
 
     private var automaticRubyTokens: [LyricRubyToken]? {
-        guard let reading = automaticReading else { return nil }
+        guard storedKanaText == nil, let reading = automaticReading, reading.isTokenAligned else { return nil }
         let tokens = reading.tokens.flatMap { JapaneseReadingPipeline.rubyTokens(for: $0) }
         return tokens.contains(where: { $0.hasDisplayRuby }) ? tokens : nil
     }
 
     private var inlineRubyTokens: [LyricRubyToken]? {
-        // Prefer the local morphology result for the visual mapping. Provider
-        // kana can be line-level or carry a wrong particle reading; it remains
-        // a fallback for names and lines the local engine cannot resolve.
-        automaticRubyTokens ?? providerRubyTokens ?? reliableRubyTokens
+        // A provider reading that has been proven against the local morphology
+        // boundaries is authoritative for the visible ruby. This matters for
+        // ambiguous kanji such as 満, where isolated MeCab may choose a name
+        // reading while the lyric source provides the phrase reading まん.
+        // Unprojectable provider and automatic line readings return nil above;
+        // they remain available only as independent line-level kana.
+        providerRubyTokens ?? automaticRubyTokens ?? reliableRubyTokens
     }
 
     private var shouldRenderInlineRuby: Bool {
@@ -1727,17 +1935,59 @@ private struct AppleMusicImmersiveV3LyricRow: View {
                 .shadow(color: Color.black.opacity(0.2), radius: 8, x: 0, y: 3)
             } else if shouldRenderInlineRuby,
                let kana = displayKanaText {
-                RubyLineView(
-                    originalText: effectiveOriginalText,
-                    kanaText: kana,
-                    tokens: inlineRubyTokens,
-                    baseFont: .system(size: baseSize, weight: rowWeight, design: .rounded),
-                    rubyFont: .system(size: rubySize, weight: .regular, design: .rounded),
-                    baseColor: .white,
-                    rubyColor: .white.opacity(rubyOpacity),
-                    rubySpacing: 1,
-                    tokenVerticalSpacing: 3
+                #if DEBUG
+                let _ = Self.logRubyDecisionIfNeeded(
+                    isActive: isActive,
+                    line: line,
+                    shouldRenderInlineRuby: true,
+                    storedKana: storedKanaText,
+                    displayKana: displayKanaText,
+                    rubyTokens: inlineRubyTokens,
+                    layout: line.timedSpans.flatMap { precomputedTimedRubyLayout(for: line, spans: $0) }
                 )
+                #endif
+                if isActive, let timedSpans = line.timedSpans, !timedSpans.isEmpty,
+                   let rubyLayout = precomputedTimedRubyLayout(for: line, spans: timedSpans) {
+                    #if DEBUG
+                    let _ = Self.logRowModeIfNeeded(mode: "timedRuby", width: readableLineWidth, lineWidth: 0)
+                    #endif
+                    TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: !presentationClock.isPlaying)) { _ in
+                        let presentationTime = presentationClock.presentationTime(at: ProcessInfo.processInfo.systemUptime)
+                        RubyLineView(
+                            originalText: effectiveOriginalText,
+                            kanaText: kana,
+                            tokens: inlineRubyTokens,
+                            timedLayout: rubyLayout,
+                            currentTime: presentationTime,
+                            baseFont: .system(size: baseSize, weight: rowWeight, design: .rounded),
+                            rubyFont: .system(size: rubySize, weight: .regular, design: .rounded),
+                            baseColor: .white,
+                            rubyColor: .white.opacity(rubyOpacity),
+                            rubySpacing: 1,
+                            tokenVerticalSpacing: 3,
+                            maxWidth: readableLineWidth
+                        )
+                    }
+                    .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    #if DEBUG
+                    if isActive {
+                        let _ = Self.logRowModeIfNeeded(mode: "staticRuby", width: readableLineWidth, lineWidth: 0)
+                    }
+                    #endif
+                    RubyLineView(
+                        originalText: effectiveOriginalText,
+                        kanaText: kana,
+                        tokens: inlineRubyTokens,
+                        baseFont: .system(size: baseSize, weight: rowWeight, design: .rounded),
+                        rubyFont: .system(size: rubySize, weight: .regular, design: .rounded),
+                        baseColor: .white,
+                        rubyColor: .white.opacity(rubyOpacity),
+                        rubySpacing: 1,
+                        tokenVerticalSpacing: 3,
+                        maxWidth: readableLineWidth
+                    )
+                }
             } else if preferences.showOriginal, preferences.kanaDisplayMode == .kanaReplacement, shouldShowKana,
                       let kana = displayKanaText {
                 KanaReplacementLineView(
@@ -1748,13 +1998,47 @@ private struct AppleMusicImmersiveV3LyricRow: View {
                     baseFont: .system(size: baseSize, weight: rowWeight, design: .rounded),
                     annotationFont: .system(size: rubySize, weight: .regular, design: .rounded),
                     baseColor: .white,
-                    annotationColor: .white.opacity(rubyOpacity)
+                    annotationColor: .white.opacity(rubyOpacity),
+                    maxWidth: readableLineWidth
                 )
             } else if preferences.showOriginal {
-                Text(semanticDisplayText)
-                    .font(.system(size: baseSize, weight: rowWeight, design: .rounded))
-                    .foregroundStyle(.white)
+                #if DEBUG
+                let _ = Self.logRubyDecisionIfNeeded(
+                    isActive: isActive,
+                    line: line,
+                    shouldRenderInlineRuby: false,
+                    storedKana: storedKanaText,
+                    displayKana: displayKanaText,
+                    rubyTokens: inlineRubyTokens,
+                    layout: nil
+                )
+                #endif
+                if isActive, let timedSpans = line.timedSpans, !timedSpans.isEmpty,
+                   let layout = precomputedTimedMultilineLayout(for: line, spans: timedSpans) {
+                    #if DEBUG
+                    let modeName = layout.isSingleLine ? "fineTiming" : "fineTimingMultiline"
+                    let _ = Self.logRowModeIfNeeded(mode: modeName, width: readableLineWidth, lineWidth: layout.maxLineWidth)
+                    #endif
+                    TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: !presentationClock.isPlaying)) { _ in
+                        let presentationTime = presentationClock.presentationTime(at: ProcessInfo.processInfo.systemUptime)
+                        AppleMusicImmersiveV3TimedRowView(
+                            layout: layout,
+                            currentTime: presentationTime,
+                            font: .system(size: baseSize, weight: rowWeight, design: .rounded)
+                        )
+                    }
                     .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    #if DEBUG
+                    if isActive {
+                        let _ = Self.logRowModeIfNeeded(mode: "fallbackWrap", width: readableLineWidth, lineWidth: 0)
+                    }
+                    #endif
+                    Text(semanticDisplayText)
+                        .font(.system(size: baseSize, weight: rowWeight, design: .rounded))
+                        .foregroundStyle(.white)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 if preferences.kanaDisplayMode == .independentLine, shouldShowKana,
                    let kana = displayKanaText {
                     Text(kana)
@@ -1801,6 +2085,140 @@ private struct AppleMusicImmersiveV3LyricRow: View {
             value: layoutSignature
         )
     }
+
+    private func precomputedTimedMultilineLayout(for line: LyricLine, spans: [TimedTextSpan]) -> TimedMultilineLayout? {
+        TimedTextComposer.computeMultilineLayout(
+            originalText: line.originalText,
+            spans: spans,
+            fontSize: baseSize,
+            weight: rowWeight.nsWeightValue,
+            design: "rounded",
+            availableWidth: readableLineWidth
+        )
+    }
+
+    private func precomputedTimedRubyLayout(for line: LyricLine, spans: [TimedTextSpan]) -> TimedRubyLayout? {
+        TimedTextComposer.computeTimedRubyLayout(
+            originalText: line.originalText,
+            spans: spans,
+            rubyTokens: inlineRubyTokens,
+            fontSize: baseSize,
+            weight: rowWeight.nsWeightValue,
+            design: "rounded"
+        )
+    }
+
+    #if DEBUG
+    private static var lastDecisionLogTime: TimeInterval = 0
+    private static func logRubyDecisionIfNeeded(
+        isActive: Bool,
+        line: LyricLine,
+        shouldRenderInlineRuby: Bool,
+        storedKana: String?,
+        displayKana: String?,
+        rubyTokens: [LyricRubyToken]?,
+        layout: TimedRubyLayout?
+    ) {
+        guard isActive else { return }
+        let now = ProcessInfo.processInfo.systemUptime
+        if now - lastDecisionLogTime >= 0.5 {
+            lastDecisionLogTime = now
+            let layoutStr = shouldRenderInlineRuby ? (layout != nil ? "ok" : "nil") : "bypassed_shouldRenderInlineRuby_false"
+            LyricsE2ELog.log("[V3TimedRubyDecision] text=\(line.originalText) shouldRenderInlineRuby=\(shouldRenderInlineRuby) storedKana=\(storedKana ?? "nil") displayKana=\(displayKana ?? "nil") rubyTokens=\(rubyTokens?.count.description ?? "nil") timedSpans=\(line.timedSpans?.count.description ?? "nil") readingSurfaceText=\(line.readingSurfaceText ?? "nil") timedRubyLayout=\(layoutStr)")
+        }
+    }
+
+    private static var lastModeLogTime: TimeInterval = 0
+    private static func logRowModeIfNeeded(mode: String, width: CGFloat, lineWidth: CGFloat) {
+        let now = ProcessInfo.processInfo.systemUptime
+        if now - lastModeLogTime >= 0.5 {
+            lastModeLogTime = now
+            LyricsE2ELog.log("[V3TimedRow] mode=\(mode) width=\(String(format: "%.1f", width)) lineWidth=\(String(format: "%.1f", lineWidth))")
+        }
+    }
+    #endif
+}
+
+private struct AppleMusicImmersiveV3TimedRowView: View {
+    let layout: TimedMultilineLayout
+    let currentTime: TimeInterval
+    let font: Font
+
+    var body: some View {
+        #if DEBUG
+        let firstFrac = layout.lines.first?.fillFraction(at: currentTime) ?? 0
+        let _ = Self.logTimedRowIfNeeded(text: layout.originalText, time: currentTime, fraction: firstFrac)
+        #endif
+
+        if layout.isSingleLine, let singleLine = layout.lines.first {
+            let fraction = singleLine.fillFraction(at: currentTime)
+            Text(singleLine.text)
+                .font(font)
+                .foregroundColor(.white.opacity(0.42))
+                .overlay(
+                    GeometryReader { geo in
+                        Text(singleLine.text)
+                            .font(font)
+                            .foregroundColor(.white)
+                            .frame(width: geo.size.width, height: geo.size.height, alignment: .leading)
+                            .mask(alignment: .leading) {
+                                Rectangle()
+                                    .frame(
+                                        width: max(0, geo.size.width * CGFloat(fraction)),
+                                        height: geo.size.height
+                                    )
+                            }
+                    }
+                )
+        } else {
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(layout.lines, id: \.lineIndex) { visualLine in
+                    let fraction = visualLine.fillFraction(at: currentTime)
+                    Text(visualLine.text)
+                        .font(font)
+                        .foregroundColor(.white.opacity(0.42))
+                        .overlay(
+                            GeometryReader { geo in
+                                Text(visualLine.text)
+                                    .font(font)
+                                    .foregroundColor(.white)
+                                    .frame(width: geo.size.width, height: geo.size.height, alignment: .leading)
+                                    .mask(alignment: .leading) {
+                                        Rectangle()
+                                            .frame(
+                                                width: max(0, geo.size.width * CGFloat(fraction)),
+                                                height: geo.size.height
+                                            )
+                                    }
+                            }
+                        )
+                }
+            }
+        }
+    }
+
+    #if DEBUG
+    private static var lastLogTime: TimeInterval = 0
+    private static func logTimedRowIfNeeded(text: String, time: TimeInterval, fraction: Double) {
+        let now = ProcessInfo.processInfo.systemUptime
+        if now - lastLogTime >= 0.5 {
+            lastLogTime = now
+            LyricsE2ELog.log("[V3TimedRow] active=true text=\(text.prefix(16)) time=\(String(format: "%.3f", time)) frac=\(String(format: "%.3f", fraction))")
+        }
+    }
+    #endif
+}
+
+private extension Font.Weight {
+    var nsWeightValue: CGFloat {
+        switch self {
+        case .heavy, .black: return 0.56
+        case .bold: return 0.4
+        case .semibold: return 0.3
+        case .medium: return 0.23
+        default: return 0.0
+        }
+    }
 }
 
 private struct V3VisualTuningPopoverView: View {
@@ -1825,7 +2243,7 @@ private struct V3VisualTuningPopoverView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("V3 视觉与布局调节调参面板")
+            Text("V3 视觉与布局")
                 .font(.system(size: 13, weight: .bold, design: .rounded))
                 .foregroundStyle(.primary)
 
@@ -1871,25 +2289,27 @@ private struct V3VisualTuningPopoverView: View {
                 }
             }
 
-            VStack(alignment: .leading, spacing: 6) {
-                HStack {
-                    Text(settings.v3ArtworkPresentation.artworkSizeControlTitle)
-                        .font(.system(size: 12, weight: .medium))
-                    Spacer()
-                    Text("\(sizePresetName) · \(Int(settings.v3ArtworkSizeScale * 100))%")
-                        .font(.system(size: 11, weight: .bold).monospacedDigit())
-                        .foregroundStyle(.secondary)
-                }
-                Slider(value: $settings.v3ArtworkSizeScale, in: 0.8...1.4, step: 0.05)
+            if settings.v3ArtworkPresentation != .stage {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        Text(settings.v3ArtworkPresentation.artworkSizeControlTitle)
+                            .font(.system(size: 12, weight: .medium))
+                        Spacer()
+                        Text("\(sizePresetName) · \(Int(settings.v3ArtworkSizeScale * 100))%")
+                            .font(.system(size: 11, weight: .bold).monospacedDigit())
+                            .foregroundStyle(.secondary)
+                    }
+                    Slider(value: $settings.v3ArtworkSizeScale, in: 0.8...1.4, step: 0.05)
 
-                HStack(spacing: 0) {
-                    sizePresetButton("精巧 80%", val: 0.80)
-                    Spacer()
-                    sizePresetButton("标准 100%", val: 1.00)
-                    Spacer()
-                    sizePresetButton("大图 120%", val: 1.20)
-                    Spacer()
-                    sizePresetButton("巨幕 140%", val: 1.40)
+                    HStack(spacing: 0) {
+                        sizePresetButton("精巧 80%", val: 0.80)
+                        Spacer()
+                        sizePresetButton("标准 100%", val: 1.00)
+                        Spacer()
+                        sizePresetButton("大图 120%", val: 1.20)
+                        Spacer()
+                        sizePresetButton("巨幕 140%", val: 1.40)
+                    }
                 }
             }
 

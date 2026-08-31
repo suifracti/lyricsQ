@@ -21,6 +21,7 @@ xcuserdata/
 .env.*
 *.pem
 *.p12
+spotify_lyrics_artwork_cache/
 
 ## Local archives, reference checkouts, and large experiment inputs
 artifacts/

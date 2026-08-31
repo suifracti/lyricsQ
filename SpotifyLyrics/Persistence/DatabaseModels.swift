@@ -145,9 +145,9 @@ public struct DatabaseLyricLineRecord: Equatable, Sendable {
         startTime: TimeInterval?,
         endTime: TimeInterval?,
         originalText: String,
-        kanaText: String?,
-        romajiText: String?,
-        translationText: String?
+        kanaText: String? = nil,
+        romajiText: String? = nil,
+        translationText: String? = nil
     ) {
         self.lyricsVersionID = lyricsVersionID
         self.lineIndex = lineIndex
@@ -157,6 +157,81 @@ public struct DatabaseLyricLineRecord: Equatable, Sendable {
         self.kanaText = kanaText
         self.romajiText = romajiText
         self.translationText = translationText
+    }
+}
+
+public struct DatabaseLyricsTimingVersionRecord: Equatable, Sendable {
+    public let id: UUID
+    public let lyricsVersionID: UUID
+    public let source: String
+    public let granularity: String
+    public let sourceContentHash: String
+    public let spansPayload: String
+    public let createdAt: Date
+
+    public init(
+        id: UUID,
+        lyricsVersionID: UUID,
+        source: String,
+        granularity: String,
+        sourceContentHash: String,
+        spansPayload: String,
+        createdAt: Date
+    ) {
+        self.id = id
+        self.lyricsVersionID = lyricsVersionID
+        self.source = source
+        self.granularity = granularity
+        self.sourceContentHash = sourceContentHash
+        self.spansPayload = spansPayload
+        self.createdAt = createdAt
+    }
+}
+
+public struct LineTimingPayload: Codable, Sendable, Equatable {
+    public let lineIndex: Int
+    public let performerID: String?
+    public let spans: [TimedTextSpan]
+
+    public init(lineIndex: Int, performerID: String? = nil, spans: [TimedTextSpan]) {
+        self.lineIndex = lineIndex
+        self.performerID = performerID
+        self.spans = spans
+    }
+}
+
+public struct DocumentTimingPayload: Codable, Sendable, Equatable {
+    public let lines: [LineTimingPayload]
+
+    public init(lines: [LineTimingPayload]) {
+        self.lines = lines
+    }
+
+    public static func encode(_ lines: [LyricLine]) -> String? {
+        var payloads: [LineTimingPayload] = []
+        for (idx, line) in lines.enumerated() {
+            if let spans = line.timedSpans, !spans.isEmpty {
+                payloads.append(LineTimingPayload(lineIndex: idx, performerID: line.performerID, spans: spans))
+            }
+        }
+        guard !payloads.isEmpty else { return nil }
+        let doc = DocumentTimingPayload(lines: payloads)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        guard let data = try? encoder.encode(doc) else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    public static func decode(_ json: String) -> [Int: (performerID: String?, spans: [TimedTextSpan])]? {
+        guard let data = json.data(using: .utf8),
+              let doc = try? JSONDecoder().decode(DocumentTimingPayload.self, from: data) else {
+            return nil
+        }
+        var result: [Int: (performerID: String?, spans: [TimedTextSpan])] = [:]
+        for line in doc.lines {
+            result[line.lineIndex] = (line.performerID, line.spans)
+        }
+        return result
     }
 }
 

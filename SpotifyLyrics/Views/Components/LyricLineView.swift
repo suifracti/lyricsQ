@@ -290,6 +290,10 @@ struct KanaReplacementLineView: View {
     let annotationFont: Font
     let baseColor: Color
     let annotationColor: Color
+    /// Optional readable measure supplied by V3. Legacy callers keep the
+    /// intrinsic-width behavior, while the main window can force the flow
+    /// layout to reflow before a narrow resize clips the line.
+    var maxWidth: CGFloat? = nil
 
     private var displayTokens: [LyricRubyToken] {
         guard let tokens, !tokens.isEmpty else {
@@ -313,7 +317,7 @@ struct KanaReplacementLineView: View {
     }
 
     var body: some View {
-        RubyTokenFlowLayout(horizontalSpacing: 0, verticalSpacing: 5) {
+        RubyTokenFlowLayout(horizontalSpacing: 0, verticalSpacing: 5, maxWidth: maxWidth) {
             ForEach(Array(displayTokenGroups.enumerated()), id: \.offset) { _, group in
                 HStack(alignment: .lastTextBaseline, spacing: 0) {
                     ForEach(group) { token in
@@ -329,6 +333,7 @@ struct KanaReplacementLineView: View {
                 }
             }
         }
+        .frame(maxWidth: maxWidth ?? .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(originalText)
     }
@@ -450,6 +455,8 @@ struct RubyLineView: View {
     let originalText: String
     let kanaText: String
     let tokens: [LyricRubyToken]?
+    var timedLayout: TimedRubyLayout? = nil
+    var currentTime: TimeInterval? = nil
     let baseFont: Font
     let rubyFont: Font
     let baseColor: Color
@@ -458,6 +465,9 @@ struct RubyLineView: View {
     /// changing the established V2/focus presentation defaults.
     var rubySpacing: CGFloat = 2
     var tokenVerticalSpacing: CGFloat = 5
+    /// Optional readable measure supplied by V3. The token flow remains
+    /// intrinsic for legacy/focus callers when this is nil.
+    var maxWidth: CGFloat? = nil
 
     private var displayTokens: [LyricRubyToken] {
         guard let tokens, !tokens.isEmpty else {
@@ -476,26 +486,86 @@ struct RubyLineView: View {
         rubyTokenGroups(displayTokens)
     }
 
+    private var displayTimedTokenGroups: [[TimedRubyToken]] {
+        guard let timedLayout else { return [] }
+        return rubyTimedTokenGroups(timedLayout.tokens)
+    }
+
     var body: some View {
-        RubyTokenFlowLayout(horizontalSpacing: 0, verticalSpacing: tokenVerticalSpacing) {
-            ForEach(Array(displayTokenGroups.enumerated()), id: \.offset) { _, group in
-                HStack(alignment: .lastTextBaseline, spacing: 0) {
-                    ForEach(group) { token in
-                        RubyTokenBlock(
-                            token: token,
-                            baseFont: baseFont,
-                            rubyFont: rubyFont,
-                            baseColor: baseColor,
-                            rubyColor: rubyColor,
-                            rubySpacing: rubySpacing
-                        )
+        RubyTokenFlowLayout(horizontalSpacing: 0, verticalSpacing: tokenVerticalSpacing, maxWidth: maxWidth) {
+            if timedLayout != nil, currentTime != nil {
+                ForEach(Array(displayTimedTokenGroups.enumerated()), id: \.offset) { _, group in
+                    let groupEdgeReserve: CGFloat = group.count > 1
+                        && group.filter(\.hasRuby).count == 1 ? 5 : 0
+                    HStack(alignment: .lastTextBaseline, spacing: 0) {
+                        ForEach(group) { timedToken in
+                            RubyTokenBlock(
+                                token: nil,
+                                timedToken: timedToken,
+                                currentTime: currentTime,
+                                baseFont: baseFont,
+                                rubyFont: rubyFont,
+                                baseColor: baseColor,
+                                rubyColor: rubyColor,
+                                rubySpacing: rubySpacing,
+                                annotationOverhang: timedToken.hasRuby ? groupEdgeReserve : 0
+                            )
+                        }
                     }
+                    .padding(.horizontal, groupEdgeReserve)
+                }
+            } else {
+                ForEach(Array(displayTokenGroups.enumerated()), id: \.offset) { _, group in
+                    let groupEdgeReserve: CGFloat = group.count > 1
+                        && group.filter(\.hasRuby).count == 1 ? 5 : 0
+                    HStack(alignment: .lastTextBaseline, spacing: 0) {
+                        ForEach(group) { token in
+                            RubyTokenBlock(
+                                token: token,
+                                timedToken: nil,
+                                currentTime: nil,
+                                baseFont: baseFont,
+                                rubyFont: rubyFont,
+                                baseColor: baseColor,
+                                rubyColor: rubyColor,
+                                rubySpacing: rubySpacing,
+                                annotationOverhang: token.hasRuby ? groupEdgeReserve : 0
+                            )
+                        }
+                    }
+                    .padding(.horizontal, groupEdgeReserve)
                 }
             }
         }
+        .frame(maxWidth: maxWidth ?? .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(originalText)
+        #if DEBUG
+        .onAppear {
+            if let currentTime, let timedLayout {
+                let firstFrac = timedLayout.tokens.first?.fillFraction(at: currentTime) ?? 0
+                Self.logTimedRubyRowIfNeeded(text: originalText, time: currentTime, fraction: firstFrac)
+            }
+        }
+        .onChange(of: currentTime) { newTime in
+            if let newTime, let timedLayout {
+                let firstFrac = timedLayout.tokens.first?.fillFraction(at: newTime) ?? 0
+                Self.logTimedRubyRowIfNeeded(text: originalText, time: newTime, fraction: firstFrac)
+            }
+        }
+        #endif
     }
+
+    #if DEBUG
+    private static var lastTimedRubyLogTime: TimeInterval = 0
+    private static func logTimedRubyRowIfNeeded(text: String, time: TimeInterval, fraction: Double) {
+        let now = ProcessInfo.processInfo.systemUptime
+        if now - lastTimedRubyLogTime >= 0.5 {
+            lastTimedRubyLogTime = now
+            LyricsE2ELog.log("[V3TimedRubyRow] active=true text=\(text) time=\(String(format: "%.3f", time)) frac=\(String(format: "%.3f", fraction))")
+        }
+    }
+    #endif
 }
 
 /// Builder IDs reserve the high digits for the morphology token and the low
@@ -518,30 +588,103 @@ private func rubyTokenGroups(_ tokens: [LyricRubyToken]) -> [[LyricRubyToken]] {
     return groups
 }
 
+private func rubyTimedTokenGroups(_ tokens: [TimedRubyToken]) -> [[TimedRubyToken]] {
+    var groups: [[TimedRubyToken]] = []
+    var currentKey: Int?
+
+    for token in tokens {
+        let key = token.id / 10_000
+        if currentKey == key, !groups.isEmpty {
+            groups[groups.count - 1].append(token)
+        } else {
+            groups.append([token])
+            currentKey = key
+        }
+    }
+    return groups
+}
+
 private struct RubyTokenBlock: View {
-    let token: LyricRubyToken
+    let token: LyricRubyToken?
+    let timedToken: TimedRubyToken?
+    let currentTime: TimeInterval?
     let baseFont: Font
     let rubyFont: Font
     let baseColor: Color
     let rubyColor: Color
     let rubySpacing: CGFloat
+    let annotationOverhang: CGFloat
+
+    private let katakanaAnnotationTracking: CGFloat = 0.35
+
+    private var surface: String {
+        timedToken?.surface ?? token?.surface ?? ""
+    }
+
+    private var displayRuby: String? {
+        timedToken?.displayRubyText ?? token?.displayRubyText
+    }
+
+    private var hasRuby: Bool {
+        timedToken?.hasRuby ?? token?.hasRuby ?? false
+    }
+
+    private var isKatakanaAnnotation: Bool {
+        !hasRuby && surface.unicodeScalars.contains { scalar in
+            (0x30A1...0x30FA).contains(scalar.value)
+        }
+    }
 
     var body: some View {
-        RubyTokenBlockLayout(rubySpacing: rubySpacing) {
-            if let ruby = token.displayRubyText {
+        let fillFraction: Double = {
+            if let timedToken, let currentTime {
+                return timedToken.fillFraction(at: currentTime)
+            }
+            return 1.0
+        }()
+
+        RubyTokenBlockLayout(
+            rubySpacing: rubySpacing,
+            annotationOverhang: annotationOverhang
+        ) {
+            if let ruby = displayRuby {
                 Text(ruby)
                     .font(rubyFont)
+                    .tracking(isKatakanaAnnotation ? katakanaAnnotationTracking : 0)
                     .foregroundStyle(rubyColor)
                     .lineLimit(1)
                     // A long reading must overhang its base, not be squeezed.
                     .fixedSize(horizontal: true, vertical: false)
             }
 
-            Text(token.surface)
-                .font(baseFont)
-                .foregroundStyle(baseColor)
-                .lineLimit(1)
-                .fixedSize(horizontal: true, vertical: false)
+            if timedToken != nil, currentTime != nil {
+                Text(surface)
+                    .font(baseFont)
+                    .foregroundColor(baseColor.opacity(0.42))
+                    .overlay(
+                        GeometryReader { geo in
+                            Text(surface)
+                                .font(baseFont)
+                                .foregroundColor(baseColor)
+                                .frame(width: geo.size.width, height: geo.size.height, alignment: .leading)
+                                .mask(alignment: .leading) {
+                                    Rectangle()
+                                        .frame(
+                                            width: max(0, geo.size.width * CGFloat(fillFraction)),
+                                            height: geo.size.height
+                                        )
+                                }
+                        }
+                    )
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+            } else {
+                Text(surface)
+                    .font(baseFont)
+                    .foregroundStyle(baseColor)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+            }
         }
     }
 }
@@ -573,12 +716,38 @@ extension LyricRubyToken {
     }
 }
 
+extension TimedRubyToken {
+    var displayRubyText: String? {
+        if hasRuby, let ruby {
+            return JapaneseRomanizer.displayKana(ruby)
+        }
+
+        guard surface.unicodeScalars.contains(where: { scalar in
+            (0x30A1...0x30FA).contains(scalar.value)
+        }) else {
+            return nil
+        }
+
+        let reading = JapaneseRomanizer.displayKana(kanaSurface ?? surface)
+        guard !reading.isEmpty, reading != surface else { return nil }
+        return reading
+    }
+
+    var hasDisplayRuby: Bool {
+        displayRubyText != nil
+    }
+}
+
 /// Places ruby above the base text and measures the wider child as part of the
 /// token box. A reading such as `こころ` therefore remains fully visible and
 /// is centered over the one-character base `心`, while the base's last text
 /// baseline is explicitly exported to its parent.
 private struct RubyTokenBlockLayout: Layout {
     let rubySpacing: CGFloat
+    /// Lets a long kanji reading extend a few points beyond its base advance.
+    /// This keeps visible okurigana attached to the kanji while retaining
+    /// enough width to prevent adjacent annotations from colliding.
+    let annotationOverhang: CGFloat
 
     func sizeThatFits(
         proposal: ProposedViewSize,
@@ -588,7 +757,10 @@ private struct RubyTokenBlockLayout: Layout {
         guard let base = subviews.last else { return .zero }
         let baseSize = baseSize(for: base)
         let rubySize = subviews.dropLast().first.map { readingSize(for: $0) } ?? .zero
-        let contentWidth = max(baseSize.width, rubySize.width)
+        let contentWidth = max(
+            baseSize.width,
+            rubySize.width - max(0, annotationOverhang * 2)
+        )
         let rubyHeight = rubySize.height
         let height = rubyHeight > 0
             ? rubyHeight + rubySpacing + baseSize.height
@@ -606,13 +778,16 @@ private struct RubyTokenBlockLayout: Layout {
         let baseSize = baseSize(for: base)
         let ruby = subviews.dropLast().first
         let rubyDimensions: CGSize = ruby.map { readingSize(for: $0) } ?? CGSize.zero
-        let contentWidth = max(baseSize.width, rubyDimensions.width)
+        let contentWidth = max(
+            baseSize.width,
+            rubyDimensions.width - max(0, annotationOverhang * 2)
+        )
         let baseY = ruby == nil ? bounds.minY : bounds.minY + rubyDimensions.height + rubySpacing
 
         if let ruby {
             ruby.place(
                 at: CGPoint(
-                    x: bounds.midX - rubyDimensions.width / 2,
+                    x: bounds.minX + contentWidth / 2 - rubyDimensions.width / 2,
                     y: bounds.minY
                 ),
                 anchor: .topLeading,
@@ -662,6 +837,7 @@ private struct RubyTokenBlockLayout: Layout {
 private struct RubyTokenFlowLayout: Layout {
     let horizontalSpacing: CGFloat
     let verticalSpacing: CGFloat
+    let maxWidth: CGFloat?
 
     private struct Item {
         let index: Int
@@ -689,7 +865,7 @@ private struct RubyTokenFlowLayout: Layout {
     ) -> CGSize {
         let width = proposedWidth(proposal, subviews: subviews)
         let rows = makeRows(width: width, subviews: subviews)
-        let contentWidth = proposal.width ?? rows.map(\.width).max() ?? 0
+        let contentWidth = width > 0 ? width : rows.map(\.width).max() ?? 0
         let contentHeight = rows.reduce(0) { partial, row in
             partial + row.height
         } + CGFloat(max(0, rows.count - 1)) * verticalSpacing
@@ -721,8 +897,20 @@ private struct RubyTokenFlowLayout: Layout {
     }
 
     private func proposedWidth(_ proposal: ProposedViewSize, subviews: Subviews) -> CGFloat {
-        if let width = proposal.width, width.isFinite, width > 0 {
-            return width
+        let proposalWidth = proposal.width.flatMap { width in
+            width.isFinite && width > 0 ? width : nil
+        }
+        let explicitWidth = maxWidth.flatMap { width in
+            width.isFinite && width > 0 ? width : nil
+        }
+        if let proposalWidth, let explicitWidth {
+            return min(proposalWidth, explicitWidth)
+        }
+        if let proposalWidth {
+            return proposalWidth
+        }
+        if let explicitWidth {
+            return explicitWidth
         }
         return subviews.reduce(0) { partial, subview in
             partial + subview.sizeThatFits(.unspecified).width

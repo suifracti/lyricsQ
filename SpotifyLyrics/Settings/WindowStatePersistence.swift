@@ -35,6 +35,12 @@ public final class WindowStatePersistence {
         mainWindow = window
         mainSettings = settings
         if !alreadyAttached {
+            if !window.styleMask.contains(.fullSizeContentView) {
+                window.styleMask.insert(.fullSizeContentView)
+            }
+            window.titlebarAppearsTransparent = true
+            window.titleVisibility = .hidden
+            window.isMovableByWindowBackground = true
             restoreFrameIfNeeded(window: window, settings: settings)
             applyWindowLevel(window: window, keepOnTop: settings.keepMainWindowOnTop)
             let center = NotificationCenter.default
@@ -70,6 +76,11 @@ public final class WindowStatePersistence {
     }
 
     private func restoreFrameIfNeeded(window: NSWindow, settings: AppSettingsStore) {
+        #if DEBUG
+        if ProcessInfo.processInfo.environment["SPOTIFYLYRICS_WINDOW_SIZE"] != nil {
+            return
+        }
+        #endif
         guard settings.restoreWindowState,
               let value = settings.savedWindowFrame else { return }
         let frame = NSRectFromString(value)
@@ -97,6 +108,14 @@ struct WindowStateAccessor: NSViewRepresentable {
     func updateNSView(_ nsView: NSView, context: Context) {
         DispatchQueue.main.async {
             guard let window = nsView.window else { return }
+            #if DEBUG
+            if let envSize = ProcessInfo.processInfo.environment["SPOTIFYLYRICS_WINDOW_SIZE"] {
+                let parts = envSize.split(separator: "x")
+                if parts.count == 2, let w = Double(parts[0]), let h = Double(parts[1]) {
+                    window.setFrame(NSRect(x: window.frame.origin.x, y: window.frame.origin.y, width: CGFloat(w), height: CGFloat(h)), display: true)
+                }
+            }
+            #endif
             WindowStatePersistence.shared.attach(window: window, settings: settings)
         }
     }

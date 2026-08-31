@@ -4,7 +4,7 @@ import SQLite3
 /// Forward-only SQLite schema migrations. The repository calls this from its
 /// actor, so no migration work runs on MainActor.
 public enum DatabaseMigrator {
-    public static let currentVersion = 6
+    public static let currentVersion = 8
     public static let v4MigrationID = "track-identity-v4-initial"
     private static let waterSourceStableKey = "spotify-id:spotify:track:5mqkkcsrujqyakvolven0w|metadata:水曜日の約束|kawasakirio|水曜日の約束|171"
     private static let waterCanonicalStableKey = "spotify-id:5mqkkcsrujqyakvolven0w|metadata:水曜日の約束|kawasakirio|水曜日の約束|171"
@@ -54,7 +54,7 @@ public enum DatabaseMigrator {
             } else {
                 try validateV4(database)
             }
-            // v5 and v6 are additive local schemas. A formal v4 database is
+            // v5, v6, v7 are additive local schemas. A formal v4 database is
             // intentionally left untouched when the caller has not opted in
             // to a disposable copy.
             if version >= 4, version < 5, allowV4Migration,
@@ -68,6 +68,16 @@ public enum DatabaseMigrator {
                try hasTable(database, name: "lyric_lines") {
                 try migrateV6(database)
                 version = 6
+            }
+            if version >= 6, version < 7,
+               try hasTable(database, name: "lyrics_versions") {
+                try migrateV7(database)
+                version = 7
+            }
+            if version >= 7, version < 8,
+               try hasTable(database, name: "tracks") {
+                try migrateV8(database)
+                version = 8
             }
         } catch let error as LyricsRepositoryError {
             // A corrupt/partially readable SQLite file must be reported as a
@@ -567,6 +577,67 @@ public enum DatabaseMigrator {
 
             try execute(database, sql: "INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (6, strftime('%s','now'));")
             try execute(database, sql: "PRAGMA user_version = 6;")
+            try execute(database, sql: "COMMIT;")
+        } catch {
+            _ = try? execute(database, sql: "ROLLBACK;")
+            throw error
+        }
+    }
+
+    /// Word / Syllable timing versions are immutable attachments that bind to
+    /// an existing lyrics_version_id and base source_content_hash.
+    private static func migrateV7(_ database: OpaquePointer) throws {
+        try execute(database, sql: "BEGIN IMMEDIATE TRANSACTION;")
+        do {
+            try execute(database, sql: """
+                CREATE TABLE IF NOT EXISTS lyrics_timing_versions (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    lyrics_version_id TEXT NOT NULL,
+                    source TEXT NOT NULL,
+                    granularity TEXT NOT NULL,
+                    source_content_hash TEXT NOT NULL,
+                    spans_payload TEXT NOT NULL,
+                    created_at REAL NOT NULL,
+                    FOREIGN KEY (lyrics_version_id) REFERENCES lyrics_versions(id) ON DELETE CASCADE
+                );
+
+                CREATE INDEX IF NOT EXISTS lyrics_timing_versions_lookup
+                    ON lyrics_timing_versions(lyrics_version_id, source_content_hash, created_at);
+                """)
+            try execute(database, sql: "INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (7, strftime('%s','now'));")
+            try execute(database, sql: "PRAGMA user_version = 7;")
+            try execute(database, sql: "COMMIT;")
+        } catch {
+            _ = try? execute(database, sql: "ROLLBACK;")
+            throw error
+        }
+    }
+
+    /// Listening history stores only playback sessions observed by this app.
+    /// It is independent from lyrics versions and can be added without
+    /// changing any existing lyrics tables.
+    private static func migrateV8(_ database: OpaquePointer) throws {
+        try execute(database, sql: "BEGIN IMMEDIATE TRANSACTION;")
+        do {
+            try execute(database, sql: """
+                CREATE TABLE IF NOT EXISTS listening_history_sessions (
+                    session_id TEXT PRIMARY KEY NOT NULL,
+                    track_stable_key TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    artist TEXT NOT NULL,
+                    album TEXT NOT NULL,
+                    started_at REAL NOT NULL,
+                    last_observed_at REAL NOT NULL,
+                    observed_playback_duration REAL NOT NULL DEFAULT 0,
+                    track_duration REAL,
+                    completion_ratio REAL
+                );
+
+                CREATE INDEX IF NOT EXISTS listening_history_recent
+                    ON listening_history_sessions(last_observed_at DESC, started_at DESC);
+                """)
+            try execute(database, sql: "INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (8, strftime('%s','now'));")
+            try execute(database, sql: "PRAGMA user_version = 8;")
             try execute(database, sql: "COMMIT;")
         } catch {
             _ = try? execute(database, sql: "ROLLBACK;")

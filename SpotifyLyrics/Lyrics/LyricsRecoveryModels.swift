@@ -186,8 +186,11 @@ public enum LyricsLayerEnricher {
             }
             let kana = layers.kanaText ?? reading?.kanaText
             let romaji = layers.romajiText ?? reading?.romajiText
-            let rubyTokens = line.rubyTokens
-                ?? reading?.tokens.flatMap { JapaneseReadingPipeline.rubyTokens(for: $0) }
+            let generatedRubyTokens: [LyricRubyToken]? = {
+                guard let reading, reading.isTokenAligned else { return nil }
+                return reading.tokens.flatMap { JapaneseReadingPipeline.rubyTokens(for: $0) }
+            }()
+            let rubyTokens = line.rubyTokens ?? generatedRubyTokens
             layers.applyAutomatic(kana: kana, romaji: romaji)
             return LyricLine(
                 id: line.id,
@@ -197,7 +200,11 @@ public enum LyricsLayerEnricher {
                 translationText: layers.translationText,
                 romajiText: layers.romajiText,
                 kanaText: layers.kanaText,
-                rubyTokens: rubyTokens
+                rubyTokens: rubyTokens,
+                performerID: line.performerID,
+                timedSpans: line.timedSpans,
+                readingRepresentationID: line.readingRepresentationID,
+                readingSurfaceText: line.readingSurfaceText
             )
         }
     }

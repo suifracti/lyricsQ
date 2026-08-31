@@ -25,6 +25,11 @@ public final class ArtworkImageLoader {
         self.session = URLSession(configuration: config)
     }
 
+    public func cachedImage(for url: URL?) -> NSImage? {
+        guard let url else { return nil }
+        return cache.object(forKey: url as NSURL)
+    }
+
     public func image(for url: URL?) async -> NSImage? {
         guard let url else { return nil }
         let key = url as NSURL

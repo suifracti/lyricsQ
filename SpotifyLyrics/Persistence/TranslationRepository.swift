@@ -65,13 +65,6 @@ public protocol TranslationRepository: Sendable {
     func archiveTranslation(versionID: UUID, archived: Bool) async throws
 }
 
-public extension TranslationRepository {
-    /// Compatibility defaults keep lightweight contract repositories source
-    /// compatible; SQLite provides the real state transition.
-    func adoptTranslation(versionID: UUID) async throws { _ = versionID }
-    func archiveTranslation(versionID: UUID, archived: Bool) async throws { _ = versionID; _ = archived }
-}
-
 public actor UnavailableTranslationRepository: TranslationRepository {
     public init() {}
 

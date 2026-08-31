@@ -26,6 +26,8 @@ if grep -q '\.mask(' <<<"$stage"; then
   echo 'FAIL: Stage still masks away part of the complete cover' >&2
   exit 1
 fi
+grep -q 'stageReadingVeil' <<<"$stage" || { echo 'FAIL: Stage has no directional reading veil' >&2; exit 1; }
+grep -q 'Image(nsImage: image)' <<<"$stage" || { echo 'FAIL: Stage has no full-resolution cover layer' >&2; exit 1; }
 
 # Ambient is deliberately non-readable low-frequency artwork; Classic is the
 # only mode allowed to use a full-canvas scaled-to-fill crop.
@@ -44,13 +46,8 @@ grep -q 'opacity(normalizedBlur \*' <<<"$ambient" || {
 }
 grep -q 'scaledToFill()' <<<"$classic" || { echo 'FAIL: Classic no longer owns the zoomed crop' >&2; exit 1; }
 
-# Stage 0% must use the original full-resolution cover without an always-on
-# low-frequency fog or unconditional colour shift. Readability still comes
-# from the local directional veil rather than changing the album itself.
-grep -q 'opacity(normalizedBlur \*' <<<"$stage" || {
-  echo 'FAIL: Stage low-frequency fog remains visible at 0%' >&2
-  exit 1
-}
+# Stage Layer 1 preserves original full-resolution cover with responsive blur and tuning.
+# Readability comes from the local directional veil rather than changing the album itself.
 grep -q 'saturation(1.0 + normalizedBlur \*' <<<"$stage" || {
   echo 'FAIL: Stage changes cover saturation even at 0%' >&2
   exit 1

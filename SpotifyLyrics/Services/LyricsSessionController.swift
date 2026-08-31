@@ -5,6 +5,9 @@ import Foundation
 public final class LyricsSessionController: ObservableObject {
     @Published public private(set) var state: LyricsLoadState = .idle
     @Published public private(set) var lyrics: [LyricLine] = []
+#if DEBUG
+    @Published public private(set) var debugLyricsBindingToken: String?
+#endif
     @Published public private(set) var isSynchronized = true
     /// Session-only explicit absence. It never creates or deletes a database
     /// version and invalidates all in-flight Provider work.
@@ -92,6 +95,9 @@ public final class LyricsSessionController: ObservableObject {
         persistenceStatusMessage = nil
         activeSearchQuery = searchQueryOverride
         lyrics = []
+#if DEBUG
+        debugLyricsBindingToken = nil
+#endif
         isSynchronized = true
         isNoSelection = false
         state = .loading(identity)
@@ -119,7 +125,8 @@ public final class LyricsSessionController: ObservableObject {
                     try await repository.prepare()
                     repositoryReady = true
                     storedAliases = (try? await repository.loadAliases(stableKey: identity.stableKey)) ?? []
-                    if let cached = try await repository.loadBestStored(track: track, identity: identity) {
+                    if !forceRefresh,
+                       let cached = try await repository.loadBestStored(track: track, identity: identity) {
                         cachedReference = cached
                         LyricsE2ELog.log(
                             "SESSION persistence hit rev=\(requestRevision) source=\(cached.document.source) provider=\(cached.document.providerSourceID ?? "") lines=\(cached.document.lines.count) sync=\(cached.document.isSynchronized)"
@@ -555,9 +562,16 @@ public final class LyricsSessionController: ObservableObject {
             language: inferredLanguage
         )
         lyrics = enriched.lines
+        let bindingToken = LyricsPersistenceMapper.sourceContentHash(document: enriched)
+#if DEBUG
+        debugLyricsBindingToken = bindingToken
+#endif
         isSynchronized = enriched.isSynchronized
-        activeSourceContentHash = LyricsPersistenceMapper.sourceContentHash(document: enriched)
+        activeSourceContentHash = bindingToken
         if enriched.lines.isEmpty {
+#if DEBUG
+            debugLyricsBindingToken = nil
+#endif
             state = .noLyrics(identity)
             LyricsE2ELog.log("SESSION apply empty -> noLyrics source=\(enriched.source)")
         } else if enriched.isSynchronized {
@@ -568,6 +582,18 @@ public final class LyricsSessionController: ObservableObject {
             state = .alignmentQueued(identity, enriched)
             LyricsE2ELog.log("SESSION apply alignmentQueued source=\(enriched.source) lines=\(enriched.lines.count) first=\(enriched.lines.first?.originalText ?? "")")
         }
+#if DEBUG
+        let nowIso = ISO8601DateFormatter().string(from: Date())
+        let reqSid = TrackIdentity.canonicalSpotifyTrackID(identity.spotifyTrackID) ?? identity.spotifyTrackID ?? "none"
+        let docSid = TrackIdentity.canonicalSpotifyTrackID(enriched.spotifyTrackID) ?? enriched.spotifyTrackID ?? "none"
+        let docBindingToken = debugLyricsBindingToken ?? "none"
+        let verId = activeLyricsVersionID?.uuidString ?? "none"
+        var totalSpans = 0
+        for l in enriched.lines {
+            totalSpans += l.timedSpans?.count ?? 0
+        }
+        print("[RuntimeLyricsAdopted] timestamp=\(nowIso) sessionGeneration=\(revision) requestSpotifyTrackID=\(reqSid) requestLyricsIdentity=\(identity.stableKey) adoptedDocumentSpotifyTrackID=\(docSid) adoptedDocumentBindingToken=\(docBindingToken) lyricsVersionID=\(verId) source=\(enriched.source.rawValue) lineCount=\(enriched.lines.count) timedSpanCount=\(totalSpans)")
+#endif
     }
 
     private func apply(
@@ -584,6 +610,9 @@ public final class LyricsSessionController: ObservableObject {
         case .match(let document):
             guard document.identity == identity else {
                 lyrics = []
+#if DEBUG
+                debugLyricsBindingToken = nil
+#endif
                 state = .failed(identity, .unknown("歌词身份与当前歌曲不一致"))
                 LyricsE2ELog.log("SESSION match identity mismatch")
                 return
@@ -591,24 +620,56 @@ public final class LyricsSessionController: ObservableObject {
             applyLoadedDocument(document, identity: identity)
         case .candidates(let candidates):
             lyrics = []
+#if DEBUG
+            debugLyricsBindingToken = nil
+#endif
             isSynchronized = true
             state = .candidates(identity, candidates)
             LyricsE2ELog.log("SESSION candidates count=\(candidates.count)")
+#if DEBUG
+            let nowIso = ISO8601DateFormatter().string(from: Date())
+            let reqSid = TrackIdentity.canonicalSpotifyTrackID(identity.spotifyTrackID) ?? identity.spotifyTrackID ?? "none"
+            print("[RuntimeLyricsEmpty] timestamp=\(nowIso) sessionGeneration=\(revision) requestSpotifyTrackID=\(reqSid) requestLyricsIdentity=\(identity.stableKey) reason=candidates(\(candidates.count))")
+#endif
         case .noLyrics:
             lyrics = []
+#if DEBUG
+            debugLyricsBindingToken = nil
+#endif
             isSynchronized = true
             state = .noLyrics(identity)
             LyricsE2ELog.log("SESSION noLyrics")
+#if DEBUG
+            let nowIso = ISO8601DateFormatter().string(from: Date())
+            let reqSid = TrackIdentity.canonicalSpotifyTrackID(identity.spotifyTrackID) ?? identity.spotifyTrackID ?? "none"
+            print("[RuntimeLyricsEmpty] timestamp=\(nowIso) sessionGeneration=\(revision) requestSpotifyTrackID=\(reqSid) requestLyricsIdentity=\(identity.stableKey) reason=noLyrics")
+#endif
         case .noMatch:
             lyrics = []
+#if DEBUG
+            debugLyricsBindingToken = nil
+#endif
             isSynchronized = true
             state = .noMatch(identity)
             LyricsE2ELog.log("SESSION noMatch")
+#if DEBUG
+            let nowIso = ISO8601DateFormatter().string(from: Date())
+            let reqSid = TrackIdentity.canonicalSpotifyTrackID(identity.spotifyTrackID) ?? identity.spotifyTrackID ?? "none"
+            print("[RuntimeLyricsEmpty] timestamp=\(nowIso) sessionGeneration=\(revision) requestSpotifyTrackID=\(reqSid) requestLyricsIdentity=\(identity.stableKey) reason=noMatch")
+#endif
         case .failed(let failure):
             lyrics = []
+#if DEBUG
+            debugLyricsBindingToken = nil
+#endif
             isSynchronized = true
             state = .failed(identity, failure)
             LyricsE2ELog.log("SESSION failed \(failure)")
+#if DEBUG
+            let nowIso = ISO8601DateFormatter().string(from: Date())
+            let reqSid = TrackIdentity.canonicalSpotifyTrackID(identity.spotifyTrackID) ?? identity.spotifyTrackID ?? "none"
+            print("[RuntimeLyricsEmpty] timestamp=\(nowIso) sessionGeneration=\(revision) requestSpotifyTrackID=\(reqSid) requestLyricsIdentity=\(identity.stableKey) reason=failed")
+#endif
         }
     }
 
