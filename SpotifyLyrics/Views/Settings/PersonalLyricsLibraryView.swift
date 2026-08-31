@@ -120,6 +120,8 @@ public struct PersonalLyricsLibraryView: View {
                 .padding(.bottom, 6)
             }
 
+            syncFolderSection
+
             Divider()
 
             if service.entries.isEmpty && !service.isLoading {
@@ -147,6 +149,50 @@ public struct PersonalLyricsLibraryView: View {
             }
         }
         .frame(minWidth: 280)
+    }
+
+    private var syncFolderSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Label("同步文件夹", systemImage: "folder")
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
+                Button("选择") {
+                    service.selectSyncFolder()
+                }
+            }
+
+            if let folder = service.syncFolderURL {
+                Text(folder.path)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .truncationMode(.middle)
+
+                HStack(spacing: 8) {
+                    Button {
+                        service.syncNow()
+                    } label: {
+                        Label(
+                            service.isSyncing ? "检查中..." : "同步现在",
+                            systemImage: service.isSyncing ? "arrow.triangle.2.circlepath" : "arrow.triangle.2.circlepath"
+                        )
+                    }
+                    .disabled(service.isSyncing)
+
+                    Button("取消同步") {
+                        service.cancelSyncFolder()
+                    }
+                }
+            } else {
+                Text("尚未设置私人同步文件夹")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(Color(nsColor: .controlBackgroundColor).opacity(0.65))
     }
 }
 
