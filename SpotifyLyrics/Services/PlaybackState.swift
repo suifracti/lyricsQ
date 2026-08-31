@@ -454,6 +454,55 @@ public final class PlaybackState: ObservableObject {
 
     public var lyricsEditor: LyricsEditorSessionController { lyricsEditorSession }
 
+    /// Reads the saved lyric versions for the live track without changing the
+    /// current projection. Unsupported repositories fail closed as an empty
+    /// list so the caller cannot invent a version source.
+    public func loadCurrentLyricsVersions() async throws -> [StoredEditableLyricsVersion] {
+        guard hasLiveTrack,
+              let identity = currentTrackIdentity,
+              liveTrackIdentity == identity,
+              let repository = lyricsRepository as? any LyricsEditingRepository else {
+            return []
+        }
+        return try await repository.loadEditableVersions(track: currentTrack, identity: identity)
+    }
+
+    /// Persists and applies one existing version for the current track. The
+    /// document is loaded and identity-checked before the live session changes,
+    /// so repository failures leave the current lyrics untouched.
+    @discardableResult
+    public func adoptCurrentLyricsVersion(versionID: UUID) async throws -> Bool {
+        guard hasLiveTrack,
+              let identity = currentTrackIdentity,
+              liveTrackIdentity == identity,
+              let repository = lyricsRepository as? any LyricsEditingRepository else {
+            return false
+        }
+
+        let track = currentTrack
+        guard let stored = try await repository.loadEditableVersion(
+            versionID: versionID,
+            track: track,
+            identity: identity
+        ),
+        stored.document.identity == identity,
+        currentTrackIdentity == identity else {
+            return false
+        }
+
+        try await repository.adoptLyricsVersion(
+            trackStableKey: identity.stableKey,
+            lyricsVersionID: stored.record.id
+        )
+
+        guard currentTrackIdentity == identity else { return false }
+        applyLyricsEditorResult(
+            LyricsEditSaveResult(lyricsVersion: stored, translationVersion: nil),
+            identity: identity
+        )
+        return true
+    }
+
     public func prepareLyricsEditor() {
         guard canOpenLyricsEditor,
               let identity = lyricsSession.activeIdentity,

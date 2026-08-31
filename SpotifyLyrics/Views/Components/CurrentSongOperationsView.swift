@@ -15,6 +15,11 @@ struct CurrentSongOperationsView: View {
     @State private var pendingReadingDeletionID: UUID?
     @State private var showCandidatePreview = false
     @State private var showReadingEditor = false
+    @State private var showLyricsVersionPicker = false
+    @State private var lyricsVersions: [StoredEditableLyricsVersion] = []
+    @State private var isLoadingLyricsVersions = false
+    @State private var lyricsVersionMessage = ""
+    @State private var adoptingLyricsVersionID: UUID?
 
     private var snapshot: CurrentSongOperationSnapshot {
         CurrentSongOperationSnapshot(
@@ -116,6 +121,17 @@ struct CurrentSongOperationsView: View {
                 ReadingVersionEditorView(state: state, version: version)
             }
         }
+        .sheet(isPresented: $showLyricsVersionPicker) {
+            LyricsVersionPickerView(
+                versions: lyricsVersions,
+                currentVersionID: state.liveLyricsVersionID,
+                isLoading: isLoadingLyricsVersions,
+                message: lyricsVersionMessage,
+                adoptingVersionID: adoptingLyricsVersionID,
+                onAdopt: adoptLyricsVersion
+            )
+            .preferredColorScheme(.dark)
+        }
     }
 
     private var header: some View {
@@ -183,8 +199,13 @@ struct CurrentSongOperationsView: View {
                 .help("歌词版本操作")
             }
             if state.canOpenLyricsEditor {
-                Button("查看版本历史", systemImage: "clock.arrow.circlepath") {
-                    openEditor()
+                HStack(spacing: 12) {
+                    Button("选择歌词版本", systemImage: "checklist") {
+                        openLyricsVersionPicker()
+                    }
+                    Button("查看版本历史", systemImage: "clock.arrow.circlepath") {
+                        openEditor()
+                    }
                 }
                 .buttonStyle(.borderless)
                 .foregroundStyle(.secondary)
@@ -193,8 +214,7 @@ struct CurrentSongOperationsView: View {
     }
 
     /// The current-song popover keeps the status vocabulary visible without
-    /// pretending that every status is present on the current record. The
-    /// detailed version list remains in the shared editor/history surface.
+    /// pretending that every status is present on the current record.
     private var versionStatusSection: some View {
         VStack(alignment: .leading, spacing: 7) {
             HStack {
@@ -247,7 +267,7 @@ struct CurrentSongOperationsView: View {
             Button("编辑当前版本", systemImage: "pencil") { openEditor() }
                 .buttonStyle(.borderedProminent)
         case .chooseVersion:
-            Button("选择歌词版本", systemImage: "checklist") { state.retryLyrics() }
+            Button("选择歌词版本", systemImage: "checklist") { openLyricsVersionPicker() }
                 .buttonStyle(.bordered)
         case .importOrCreate:
             Menu("导入或创建", systemImage: "square.and.arrow.down") {
@@ -733,6 +753,52 @@ struct CurrentSongOperationsView: View {
         openWindow(id: "lyrics-editor")
     }
 
+    private func openLyricsVersionPicker() {
+        lyricsVersions = []
+        lyricsVersionMessage = ""
+        isLoadingLyricsVersions = true
+        showLyricsVersionPicker = true
+
+        let identity = state.currentTrackIdentity
+        Task { @MainActor in
+            do {
+                let versions = try await state.loadCurrentLyricsVersions()
+                guard state.currentTrackIdentity == identity else { return }
+                lyricsVersions = versions
+                if versions.isEmpty {
+                    lyricsVersionMessage = "没有已保存的歌词版本"
+                }
+            } catch {
+                guard state.currentTrackIdentity == identity else { return }
+                lyricsVersionMessage = "版本读取失败：\(error.localizedDescription)"
+            }
+            isLoadingLyricsVersions = false
+        }
+    }
+
+    private func adoptLyricsVersion(versionID: UUID) {
+        guard adoptingLyricsVersionID == nil else { return }
+        adoptingLyricsVersionID = versionID
+        lyricsVersionMessage = "正在采用歌词版本…"
+
+        let identity = state.currentTrackIdentity
+        Task { @MainActor in
+            do {
+                let adopted = try await state.adoptCurrentLyricsVersion(versionID: versionID)
+                guard state.currentTrackIdentity == identity else { return }
+                if adopted {
+                    showLyricsVersionPicker = false
+                } else {
+                    lyricsVersionMessage = "当前歌曲已变化，版本未采用"
+                }
+            } catch {
+                guard state.currentTrackIdentity == identity else { return }
+                lyricsVersionMessage = "版本采用失败：\(error.localizedDescription)"
+            }
+            adoptingLyricsVersionID = nil
+        }
+    }
+
     private func versionTitle(_ version: StoredTranslationVersion) -> String {
         let model = version.record.model.isEmpty ? version.record.sourceKind.rawValue : version.record.model
         if version.record.isDraft { return "候选 · \(model)" }
@@ -849,5 +915,106 @@ private struct TranslationCandidatePreviewView: View {
         guard let timestamp = line.timestamp else { return "#\(line.lineIndex + 1)" }
         let seconds = max(0, Int(timestamp.rounded(.down)))
         return String(format: "%02d:%02d", seconds / 60, seconds % 60)
+    }
+}
+
+private struct LyricsVersionPickerView: View {
+    let versions: [StoredEditableLyricsVersion]
+    let currentVersionID: UUID?
+    let isLoading: Bool
+    let message: String
+    let adoptingVersionID: UUID?
+    let onAdopt: (UUID) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Text("歌词版本")
+                    .font(.title3.weight(.semibold))
+                Spacer()
+                Button("关闭") { dismiss() }
+            }
+
+            Text("选择已有版本后会立即更新当前歌曲歌词；不会重新搜索或创建新版本。")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if isLoading {
+                ProgressView("正在读取已保存版本…")
+                    .frame(maxWidth: .infinity, alignment: .center)
+            } else if versions.isEmpty {
+                Text(message.isEmpty ? "没有已保存的歌词版本" : message)
+                    .font(.body)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.vertical, 28)
+            } else {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 10) {
+                        ForEach(versions, id: \.record.id) { version in
+                            versionRow(version)
+                        }
+                    }
+                }
+            }
+
+            if !message.isEmpty, !isLoading, !versions.isEmpty {
+                Text(message)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(20)
+        .frame(width: 520, height: 460)
+    }
+
+    private func versionRow(_ version: StoredEditableLyricsVersion) -> some View {
+        let isCurrent = version.record.id == currentVersionID
+        let source = LyricsSource(rawValue: version.record.source)?.displayName ?? version.record.source
+        let timing = version.record.isSynced ? "已同步" : "纯文本"
+        let kind = version.record.isManuallyEdited ? "人工编辑" : "来源版本"
+
+        return HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 8) {
+                    Text(source)
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    Text(timing)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text(kind)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Text("更新于 \(version.record.updatedAt.formatted(date: .abbreviated, time: .shortened))")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                if !version.record.providerSourceID.isEmpty {
+                    Text(version.record.providerSourceID)
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                }
+            }
+
+            Spacer(minLength: 8)
+
+            if isCurrent {
+                Label("当前版本", systemImage: "checkmark.circle.fill")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.green)
+            } else {
+                Button("采用此版本") { onAdopt(version.record.id) }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(adoptingVersionID != nil)
+            }
+        }
+        .padding(12)
+        .background(.quaternary.opacity(0.28), in: RoundedRectangle(cornerRadius: 10))
     }
 }

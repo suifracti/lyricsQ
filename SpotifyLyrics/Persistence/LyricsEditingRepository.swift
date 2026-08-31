@@ -143,6 +143,9 @@ public enum LyricsEditingRepositoryError: Error, Equatable, Sendable, LocalizedE
 public protocol LyricsEditingRepository: Sendable {
     func loadEditableVersions(track: Track, identity: TrackIdentity) async throws -> [StoredEditableLyricsVersion]
     func loadEditableVersion(versionID: UUID, track: Track, identity: TrackIdentity) async throws -> StoredEditableLyricsVersion?
+    /// Marks an existing lyrics version as the preferred persisted version for
+    /// its track without creating, deleting, or rewriting the version.
+    func adoptLyricsVersion(trackStableKey: String, lyricsVersionID: UUID) async throws
     /// Translation versions are loaded through the same repository boundary
     /// when the editor switches lyric source versions. The editor must never
     /// reach into SQLite or construct a second translation state source.
