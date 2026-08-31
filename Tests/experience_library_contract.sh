@@ -40,4 +40,13 @@ if grep -Eq 'snapshotKey|renderer signature|Observer 数量|Debug geometry|Apply
   exit 1
 fi
 
+SETTINGS="$ROOT/SpotifyLyrics/Views/Settings/SettingsRootView.swift"
+if grep -Eq 'ForEach\(SettingsCategory\.allCases\.filter \{ includeExperienceLibrary \|\| \$0 != \.experienceLibrary \}\)' "$SETTINGS"; then
+  echo "FAIL: experience library is still a top-level Settings item" >&2
+  exit 1
+fi
+grep -Eq 'ForEach\(SettingsCategory\.allCases\.filter \{ \$0 != \.experienceLibrary \}\)' "$SETTINGS"
+grep -q '打开体验版本库' "$SETTINGS"
+grep -q 'onOpenExperienceLibrary' "$SETTINGS"
+
 echo "experience library source contract: PASS"

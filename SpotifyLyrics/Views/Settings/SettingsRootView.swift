@@ -56,7 +56,7 @@ struct SettingsRootView: View {
     private func settingsShell(includeExperienceLibrary: Bool, title: String) -> some View {
         NavigationSplitView {
             List(selection: $selection) {
-                ForEach(SettingsCategory.allCases.filter { includeExperienceLibrary || $0 != .experienceLibrary }) { category in
+                ForEach(SettingsCategory.allCases.filter { $0 != .experienceLibrary }) { category in
                     Label(category.rawValue, systemImage: category.systemImage)
                         .tag(category)
                 }
@@ -77,7 +77,9 @@ struct SettingsRootView: View {
             .accessibilityIdentifier(settings.settingsCenterPresentation.rawValue)
             .frame(minWidth: 180)
         } detail: {
-            SettingsDetailView(category: selection)
+            SettingsDetailView(category: selection) {
+                selection = .experienceLibrary
+            }
                 .environmentObject(settings)
         }
         .onAppear {
@@ -91,6 +93,7 @@ struct SettingsRootView: View {
 private struct SettingsDetailView: View {
     @EnvironmentObject private var settings: AppSettingsStore
     let category: SettingsCategory
+    let onOpenExperienceLibrary: () -> Void
 
     var body: some View {
         Group {
@@ -106,7 +109,7 @@ private struct SettingsDetailView: View {
             case .data: DataSettingsView().padding(28)
             case .ai: AISettingsView().padding(28)
             case .experienceLibrary: ExperienceLibrarySettingsView(selectionStore: settings.presentationSelections).padding(28)
-            case .advanced: AdvancedSettingsView().padding(28)
+            case .advanced: AdvancedSettingsView(onOpenExperienceLibrary: onOpenExperienceLibrary).padding(28)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -1004,6 +1007,7 @@ private struct TranslationPromptPreviewView: View {
 private struct AdvancedSettingsView: View {
     @EnvironmentObject private var settings: AppSettingsStore
     @EnvironmentObject private var data: SettingsDataController
+    let onOpenExperienceLibrary: () -> Void
 
     private var appVersion: String {
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "开发构建"
@@ -1029,6 +1033,16 @@ private struct AdvancedSettingsView: View {
                 Text("会删除保存的窗口位置，下次打开使用系统默认位置。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+            }
+
+            Section("深入体验") {
+                Button("打开体验版本库", systemImage: "rectangle.on.rectangle") {
+                    onOpenExperienceLibrary()
+                }
+                Text("预览、应用或恢复主窗口、桌面歌词和其他呈现版本。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             Section("设置中心") {
