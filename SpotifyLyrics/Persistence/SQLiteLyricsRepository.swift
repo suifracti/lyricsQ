@@ -3403,6 +3403,18 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         )
     }
 
+    // MARK: - Export Standard Personal Data Package v1
+
+    public func exportPersonalDataPackage() throws -> PersonalDataPackage {
+        try prepare()
+        let entries = try loadPersonalLibraryEntries(searchQuery: nil)
+        let packages = try entries
+            .map { try exportPersonalLibraryPackage(stableKey: $0.trackStableKey) }
+            .sorted { $0.track.stableKey < $1.track.stableKey }
+
+        return PersonalDataPackage(tracks: packages)
+    }
+
     // MARK: - Preview Import Package
 
     public func previewImportPersonalLibraryPackage(_ package: PersonalLyricsLibraryPackage) throws -> PersonalLibraryImportPreview {
@@ -3505,6 +3517,30 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
             timingsToSkip: timingsToSkip,
             timingsConflicts: timingsConflicts
         )
+    }
+
+    // MARK: - Preview / Apply Standard Personal Data Package
+
+    public func previewImportPersonalDataPackage(_ package: PersonalDataPackage) throws -> PersonalDataImportPreview {
+        try package.validate()
+        let previews = try package.tracks.map { try previewImportPersonalLibraryPackage($0) }
+        return PersonalDataImportPreview(trackPreviews: previews)
+    }
+
+    public func importPersonalDataPackage(_ package: PersonalDataPackage) throws {
+        try package.validate()
+        let preview = try previewImportPersonalDataPackage(package)
+        guard !preview.hasConflicts else {
+            let conflicts = preview.trackPreviews.flatMap { $0.allConflicts }
+            throw LyricsRepositoryError.dataIntegrityViolation(
+                "存在冲突版本，无法导入个人数据包：" + conflicts.joined(separator: "; ")
+            )
+        }
+        guard !package.tracks.isEmpty else { return }
+
+        for trackPackage in package.tracks {
+            try importPersonalLibraryPackage(trackPackage)
+        }
     }
 
     // MARK: - Execute Import Package
