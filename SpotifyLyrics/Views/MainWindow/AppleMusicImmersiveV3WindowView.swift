@@ -100,6 +100,7 @@ struct AppleMusicImmersiveV3WindowView: View {
         )
         .ignoresSafeArea()
         .preferredColorScheme(.dark)
+        .environment(\.lyricAgentPresentationMap, LyricAgentPresentationMap(lines: state.lyrics))
         .sheet(isPresented: $isAlignmentDetailsPresented) {
             if let report = state.liveLyricsState.alignmentReport {
                 AlignmentPreviewView(report: report)
@@ -1657,6 +1658,7 @@ private struct AppleMusicImmersiveV3LyricRow: View {
     var presentationClock: LyricsPresentationClock = LyricsPresentationClock()
     @EnvironmentObject private var settings: AppSettingsStore
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.lyricAgentPresentationMap) private var agentPresentationMap
 
     private var layerCount: Int {
         let hasPinyin = isPinyinProjection && preferences.showPinyin
@@ -2074,6 +2076,7 @@ private struct AppleMusicImmersiveV3LyricRow: View {
             }
         }
         .frame(maxWidth: readableLineWidth, alignment: .leading)
+        .offset(x: CGFloat(agentPresentationMap.horizontalOffset(for: line.performerID)))
         .opacity(rowOpacity)
         .blur(radius: reduceMotion ? 0 : rowBlur)
         .animation(

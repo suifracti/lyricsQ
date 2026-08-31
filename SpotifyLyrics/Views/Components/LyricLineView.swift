@@ -1,5 +1,16 @@
 import SwiftUI
 
+private struct LyricAgentPresentationMapKey: EnvironmentKey {
+    static let defaultValue = LyricAgentPresentationMap(lines: [])
+}
+
+extension EnvironmentValues {
+    var lyricAgentPresentationMap: LyricAgentPresentationMap {
+        get { self[LyricAgentPresentationMapKey.self] }
+        set { self[LyricAgentPresentationMapKey.self] = newValue }
+    }
+}
+
 struct LyricLineView: View {
     let line: LyricLine
     let isActive: Bool
@@ -10,6 +21,7 @@ struct LyricLineView: View {
     let visibleLayerCount: Int
     let language: String?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.lyricAgentPresentationMap) private var agentPresentationMap
 
     init(
         line: LyricLine,
@@ -258,6 +270,7 @@ struct LyricLineView: View {
             // still receives the short opacity/layout transition below.
             .blur(radius: reduceMotion ? 0 : emphasis.blurRadius)
             .fixedSize(horizontal: false, vertical: true)
+            .offset(x: CGFloat(agentPresentationMap.horizontalOffset(for: line.performerID)))
             .animation(transitionAnimation, value: isActive)
             .animation(transitionAnimation, value: layoutSignature)
         }

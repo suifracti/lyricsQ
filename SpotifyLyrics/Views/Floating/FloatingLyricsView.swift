@@ -76,6 +76,7 @@ struct FloatingLyricsView: View {
             }
         }
         .preferredColorScheme(.dark)
+        .environment(\.lyricAgentPresentationMap, LyricAgentPresentationMap(lines: state.liveLyrics))
         .accessibilityElement(children: .contain)
         .accessibilityLabel("悬浮歌词")
     }

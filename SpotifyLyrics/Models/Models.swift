@@ -1266,6 +1266,45 @@ public struct LyricLine: Identifiable, Equatable, Hashable, Sendable {
     }
 }
 
+/// Presentation-only mapping for lyrics that explicitly carry multiple
+/// performer IDs. IDs remain opaque source identities; the bounded offsets are
+/// visual organization only and never imply a singer role or gender.
+public struct LyricAgentPresentationMap: Equatable, Sendable {
+    public let agentIDs: [String]
+
+    public var isActive: Bool {
+        agentIDs.count >= 2
+    }
+
+    public init(lines: [LyricLine]) {
+        agentIDs = Set(
+            lines.compactMap { line in
+                guard let performerID = line.performerID else { return nil }
+                let trimmed = performerID.trimmingCharacters(in: .whitespacesAndNewlines)
+                return trimmed.isEmpty ? nil : trimmed
+            }
+        ).sorted()
+    }
+
+    /// Returns a small visual offset while keeping every line's layout and
+    /// timing geometry unchanged. The offset is capped for documents with
+    /// more than three distinct opaque IDs.
+    public func horizontalOffset(for performerID: String?) -> Int {
+        guard isActive,
+              let performerID,
+              let normalizedID = normalizedID(performerID),
+              let index = agentIDs.firstIndex(of: normalizedID) else {
+            return 0
+        }
+        return min(index, 2) * 6
+    }
+
+    private func normalizedID(_ value: String) -> String? {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+}
+
 public enum LyricsDisplayMode: String, CaseIterable, Identifiable {
     case mainWindow = "主窗口"
     case floatingWindow = "悬浮歌词"
