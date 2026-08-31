@@ -143,6 +143,7 @@ public protocol LyricsRepository: Sendable {
     func loadBestStored(track: Track, identity: TrackIdentity) async throws -> StoredLyricsDocument?
     func upsertListeningHistory(_ entry: ListeningHistoryEntry) async throws
     func loadListeningHistory(limit: Int) async throws -> [ListeningHistoryEntry]
+    func loadListeningStatistics(for timeRange: ListeningStatisticsTimeRange) async throws -> ListeningStatistics
     func alignmentProvenanceAvailability(versionID: UUID) async -> AlignmentProvenanceAvailability
     func save(
         track: Track,
@@ -195,6 +196,10 @@ public extension LyricsRepository {
     func loadListeningHistory(limit: Int) async throws -> [ListeningHistoryEntry] {
         _ = limit
         return []
+    }
+
+    func loadListeningStatistics(for timeRange: ListeningStatisticsTimeRange) async throws -> ListeningStatistics {
+        .empty(for: timeRange)
     }
 
     func saveTrackMetadata(_ metadata: TrackMetadata) async throws {

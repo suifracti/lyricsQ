@@ -258,6 +258,79 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         return entries
     }
 
+    public func loadListeningStatistics(
+        for timeRange: ListeningStatisticsTimeRange
+    ) async throws -> ListeningStatistics {
+        try prepare()
+        let lowerBound = timeRange.lowerBound.timeIntervalSince1970
+
+        let summaryStatement = try prepare("""
+            SELECT COALESCE(SUM(observed_playback_duration), 0), COUNT(*)
+            FROM listening_history_sessions
+            WHERE last_observed_at >= ?;
+            """)
+        defer { sqlite3_finalize(summaryStatement) }
+        try bindDouble(lowerBound, at: 1, to: summaryStatement)
+        guard sqlite3_step(summaryStatement) == SQLITE_ROW else { throw lastError() }
+        let totalListeningTime = sqlite3_column_double(summaryStatement, 0)
+        let sessionCount = Int(sqlite3_column_int(summaryStatement, 1))
+
+        let songsStatement = try prepare("""
+            SELECT track_stable_key, MIN(title), MIN(artist),
+                   SUM(observed_playback_duration), COUNT(*)
+            FROM listening_history_sessions
+            WHERE last_observed_at >= ?
+            GROUP BY track_stable_key
+            ORDER BY SUM(observed_playback_duration) DESC, track_stable_key ASC
+            LIMIT 50;
+            """)
+        defer { sqlite3_finalize(songsStatement) }
+        try bindDouble(lowerBound, at: 1, to: songsStatement)
+        var topSongs: [ListeningStatisticsSong] = []
+        while sqlite3_step(songsStatement) == SQLITE_ROW {
+            guard let stableKey = columnText(songsStatement, index: 0),
+                  let title = columnText(songsStatement, index: 1),
+                  let artist = columnText(songsStatement, index: 2) else {
+                continue
+            }
+            topSongs.append(ListeningStatisticsSong(
+                stableKey: stableKey,
+                title: title,
+                artist: artist,
+                observedListeningTime: sqlite3_column_double(songsStatement, 3),
+                sessionCount: Int(sqlite3_column_int(songsStatement, 4))
+            ))
+        }
+
+        let artistsStatement = try prepare("""
+            SELECT artist, SUM(observed_playback_duration), COUNT(*)
+            FROM listening_history_sessions
+            WHERE last_observed_at >= ?
+            GROUP BY artist
+            ORDER BY SUM(observed_playback_duration) DESC, artist ASC
+            LIMIT 50;
+            """)
+        defer { sqlite3_finalize(artistsStatement) }
+        try bindDouble(lowerBound, at: 1, to: artistsStatement)
+        var topArtists: [ListeningStatisticsArtist] = []
+        while sqlite3_step(artistsStatement) == SQLITE_ROW {
+            guard let artist = columnText(artistsStatement, index: 0) else { continue }
+            topArtists.append(ListeningStatisticsArtist(
+                artist: artist,
+                observedListeningTime: sqlite3_column_double(artistsStatement, 1),
+                sessionCount: Int(sqlite3_column_int(artistsStatement, 2))
+            ))
+        }
+
+        return ListeningStatistics(
+            timeRange: timeRange,
+            totalListeningTime: totalListeningTime,
+            sessionCount: sessionCount,
+            topSongs: topSongs,
+            topArtists: topArtists
+        )
+    }
+
     public func loadAliases(stableKey: String) async throws -> [TrackAlias] {
         try loadTrackAliases(stableKey: stableKey).compactMap { record in
             guard let field = TrackAliasField(rawValue: record.field),

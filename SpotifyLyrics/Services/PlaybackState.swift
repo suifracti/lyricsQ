@@ -23,6 +23,7 @@ public final class PlaybackState: ObservableObject {
     @Published public private(set) var songSearchSelectionMessage = ""
     @Published public private(set) var searchPreviewTrack: Track?
     @Published public private(set) var listeningHistory: [ListeningHistoryEntry] = []
+    @Published public private(set) var listeningStatistics: ListeningStatistics?
 
     // Auxiliary display states remain available to the existing window manager.
     @Published public var showFloatingWindow = false
@@ -61,6 +62,7 @@ public final class PlaybackState: ObservableObject {
     private var listeningHistorySession: ListeningHistorySession?
     private var listeningHistoryWriteTask: Task<Void, Never>?
     private var listeningHistoryLoadTask: Task<Void, Never>?
+    private var listeningStatisticsLoadTask: Task<Void, Never>?
     private var searchPreviewGeneration: UInt64 = 0
     private var networkRecoveryMonitor: NWPathMonitor?
     private var networkWasSatisfied = false
@@ -706,6 +708,17 @@ public final class PlaybackState: ObservableObject {
             let entries = (try? await repository.loadListeningHistory(limit: 100)) ?? []
             guard !Task.isCancelled, let self else { return }
             self.listeningHistory = Self.mergeHistoryEntries(entries, with: self.listeningHistory)
+        }
+    }
+
+    public func refreshListeningStatistics(for timeRange: ListeningStatisticsTimeRange) {
+        listeningStatisticsLoadTask?.cancel()
+        listeningStatistics = nil
+        let repository = lyricsRepository
+        listeningStatisticsLoadTask = Task { @MainActor [weak self, repository] in
+            let statistics = try? await repository.loadListeningStatistics(for: timeRange)
+            guard !Task.isCancelled, let self else { return }
+            self.listeningStatistics = statistics ?? .empty(for: timeRange)
         }
     }
 

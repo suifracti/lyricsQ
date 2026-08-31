@@ -5,6 +5,7 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
     case general = "通用"
     case library = "我的歌词库"
     case history = "最近播放"
+    case statistics = "听歌统计"
     case display = "歌词显示"
     case reading = "读音与文字"
     case spotify = "Spotify"
@@ -21,6 +22,7 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
         case .general: return "gearshape"
         case .library: return "music.note.list"
         case .history: return "clock.arrow.circlepath"
+        case .statistics: return "chart.bar"
         case .display: return "text.quote"
         case .reading: return "character.book.closed"
         case .spotify: return "waveform.circle"
@@ -96,6 +98,7 @@ private struct SettingsDetailView: View {
             case .general: GeneralSettingsView().padding(28)
             case .library: PersonalLyricsLibraryView()
             case .history: ListeningHistoryView()
+            case .statistics: ListeningStatisticsView()
             case .display: DisplaySettingsView().padding(28)
             case .reading: ReadingSettingsView().padding(28)
             case .spotify: SpotifySettingsView().padding(28)

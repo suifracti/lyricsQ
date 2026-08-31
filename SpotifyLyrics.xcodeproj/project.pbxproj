@@ -201,6 +201,8 @@
 		110006022D83400100000001 /* PersonalLyricsLibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110006022D83400100000000 /* PersonalLyricsLibraryView.swift */; };
 		110006032D83400100000001 /* ListeningHistoryModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110006032D83400100000000 /* ListeningHistoryModels.swift */; };
 		110006042D83400100000001 /* ListeningHistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110006042D83400100000000 /* ListeningHistoryView.swift */; };
+		110006052D83400100000001 /* ListeningStatisticsModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110006052D83400100000000 /* ListeningStatisticsModels.swift */; };
+		110006062D83400100000001 /* ListeningStatisticsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110006062D83400100000000 /* ListeningStatisticsView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -404,6 +406,8 @@
 		110006022D83400100000000 /* PersonalLyricsLibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/Settings/PersonalLyricsLibraryView.swift; sourceTree = "<group>"; };
 		110006032D83400100000000 /* ListeningHistoryModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Lyrics/ListeningHistoryModels.swift; sourceTree = "<group>"; };
 		110006042D83400100000000 /* ListeningHistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListeningHistoryView.swift; sourceTree = "<group>"; };
+		110006052D83400100000000 /* ListeningStatisticsModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Lyrics/ListeningStatisticsModels.swift; sourceTree = "<group>"; };
+		110006062D83400100000000 /* ListeningStatisticsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListeningStatisticsView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -463,6 +467,7 @@
 				110006012D83400100000000 /* PersonalLyricsLibraryService.swift */,
 				110006022D83400100000000 /* PersonalLyricsLibraryView.swift */,
 				110006032D83400100000000 /* ListeningHistoryModels.swift */,
+				110006052D83400100000000 /* ListeningStatisticsModels.swift */,
 				110000F42D83400100000000 /* PresentationPreviewLabView.swift */,
 				110000F52D83400100000000 /* PresentationPreviewAdapters.swift */,
 				110000002D83400000000024 /* Providers */,
@@ -551,6 +556,7 @@
 				110000F82D83400100000000 /* ExperienceLibrarySettingsView.swift */,
 				110000A82D83400100000000 /* ReadingSettingsView.swift */,
 				110006042D83400100000000 /* ListeningHistoryView.swift */,
+				110006062D83400100000000 /* ListeningStatisticsView.swift */,
 			);
 			path = Settings;
 			sourceTree = "<group>";
@@ -1006,6 +1012,8 @@
 				110006022D83400100000001 /* PersonalLyricsLibraryView.swift in Sources */,
 				110006032D83400100000001 /* ListeningHistoryModels.swift in Sources */,
 				110006042D83400100000001 /* ListeningHistoryView.swift in Sources */,
+				110006052D83400100000001 /* ListeningStatisticsModels.swift in Sources */,
+				110006062D83400100000001 /* ListeningStatisticsView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
