@@ -7,6 +7,18 @@ import Combine
 public final class AutomaticAlignmentJobController: ObservableObject {
     public static let shared = AutomaticAlignmentJobController()
 
+    /// Presentation-only copy for the existing automatic-alignment status row.
+    /// It does not add a new alignment state or alter the capture pipeline.
+    public struct UserFacingStatus: Equatable, Sendable {
+        public let title: String
+        public let recoveryHint: String
+
+        public init(title: String, recoveryHint: String) {
+            self.title = title
+            self.recoveryHint = recoveryHint
+        }
+    }
+
     public enum State: String, Sendable, Equatable {
         case idle
         case waitingForPlayback
@@ -26,6 +38,7 @@ public final class AutomaticAlignmentJobController: ObservableObject {
     @Published public private(set) var lastError: String?
     @Published public private(set) var lastDecision: String?
     @Published public private(set) var activeIdentityKey: String?
+    @Published public private(set) var userFacingStatus: UserFacingStatus?
 
     private weak var playback: PlaybackState?
     private var jobTask: Task<Void, Never>?
@@ -33,6 +46,121 @@ public final class AutomaticAlignmentJobController: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
 
     private init() {}
+
+    private static let engineUnavailableStatus = UserFacingStatus(
+        title: "识别引擎或模型不可用",
+        recoveryHint: "请检查并准备识别引擎或模型后重试。"
+    )
+
+    private static let persistenceFailureStatus = UserFacingStatus(
+        title: "自动排轴结果未能保存",
+        recoveryHint: "当前歌词没有被自动覆盖；请稍后重试。"
+    )
+
+    private static func statusForCaptureFailure(
+        kind: LiveCaptureCoordinator.PartialAlignmentFailureKind?,
+        message: String?,
+        fallback: String
+    ) -> UserFacingStatus {
+        let source = [message, fallback]
+            .compactMap { $0 }
+            .joined(separator: " ")
+
+        if kind == .speechFailed,
+           source.contains("权限") || source.contains("授权") {
+            return UserFacingStatus(
+                title: "语音识别权限不足",
+                recoveryHint: "请前往系统设置允许语音识别权限后重试。"
+            )
+        }
+
+        if kind == .speechFailed,
+           source.contains("不可用") || source.contains("识别引擎") || source.contains("模型") {
+            return Self.engineUnavailableStatus
+        }
+
+        switch kind {
+        case .captureFailed, .noCompletedSession, .noWavSegments:
+            return UserFacingStatus(
+                title: "音频捕获失败",
+                recoveryHint: "请确认系统音频捕获条件和 Spotify 正在播放后重试。"
+            )
+        case .speechFailed, .emptyTranscript:
+            return UserFacingStatus(
+                title: "语音识别失败",
+                recoveryHint: "请继续播放清晰人声片段，或稍后重试。"
+            )
+        case .alignmentFailed:
+            return UserFacingStatus(
+                title: "自动排轴未收敛",
+                recoveryHint: "当前结果可靠性不足，不会自动采用；请继续播放收集更多证据或重试。"
+            )
+        case .insufficientSuggestions:
+            return UserFacingStatus(
+                title: "可靠建议不足",
+                recoveryHint: "请继续播放收集更多证据；未完成结果不会自动采用。"
+            )
+        case .noLyrics:
+            return UserFacingStatus(
+                title: "没有可对齐的歌词",
+                recoveryHint: "请先获取或导入纯文本歌词，再重试。"
+            )
+        case .noPlayback:
+            return UserFacingStatus(
+                title: "没有可用的播放会话",
+                recoveryHint: "请确认 Spotify 正在播放后重试。"
+            )
+        case .startIgnored:
+            return UserFacingStatus(
+                title: "捕获仍在进行中",
+                recoveryHint: "请等待当前任务结束后再重试。"
+            )
+        case .cancelled:
+            return UserFacingStatus(
+                title: "自动排轴已取消",
+                recoveryHint: "可在当前歌曲上重新尝试。"
+            )
+        case .unknown, .none:
+            return UserFacingStatus(
+                title: "自动排轴未完成",
+                recoveryHint: "请继续播放收集更多证据，或重试。"
+            )
+        }
+    }
+
+    private static func statusForQualityGate(reason: String) -> UserFacingStatus {
+        let title: String
+        switch reason {
+        case "weak_interpolation_present":
+            title = "可靠性检查拒绝了弱推断结果"
+        case "capture_or_occurrence_violation":
+            title = "可靠性检查拒绝了捕获范围结果"
+        case "non_monotonic":
+            title = "可靠性检查拒绝了不连续时间轴"
+        default:
+            title = "可靠性检查未通过"
+        }
+        return UserFacingStatus(
+            title: title,
+            recoveryHint: "当前结果可靠性不足，不会自动采用；请继续播放收集更多证据或重试。"
+        )
+    }
+
+    private static func statusForInsufficientEvidence(reason: String) -> UserFacingStatus {
+        let title: String
+        switch reason {
+        case "no_suggestions":
+            title = "尚未获得可靠时间建议"
+        case "insufficient_evidence":
+            title = "证据不足，等待更多片段"
+        default:
+            title = "等待更多排轴证据"
+        }
+        return UserFacingStatus(
+            title: title,
+            recoveryHint: "请继续播放；已有可靠部分会保留，未完成结果不会自动采用。"
+        )
+    }
 
     public func bind(playback: PlaybackState) {
         self.playback = playback
@@ -66,6 +194,7 @@ public final class AutomaticAlignmentJobController: ObservableObject {
         state = userInitiated ? .canceled : .idle
         statusMessage = userInitiated ? "已停止本次自动排轴" : ""
         activeIdentityKey = nil
+        userFacingStatus = nil
         LyricsE2ELog.log("AUTO_ALIGN cancel user=\(userInitiated)")
     }
 
@@ -73,6 +202,7 @@ public final class AutomaticAlignmentJobController: ObservableObject {
         cancelCurrentJob(userInitiated: false)
         state = .idle
         statusMessage = "准备重新尝试…"
+        userFacingStatus = nil
         scheduleEvaluate()
     }
 
@@ -128,6 +258,7 @@ public final class AutomaticAlignmentJobController: ObservableObject {
             }
             if state != .capturing && state != .aligning && state != .evaluating {
                 state = .idle
+                userFacingStatus = nil
                 if statusMessage.isEmpty == false && lastDecision == nil {
                     statusMessage = ""
                 }
@@ -183,6 +314,7 @@ public final class AutomaticAlignmentJobController: ObservableObject {
             if jobTask == nil {
                 state = .idle
                 statusMessage = ""
+                userFacingStatus = nil
             }
             return
         }
@@ -239,6 +371,7 @@ public final class AutomaticAlignmentJobController: ObservableObject {
         activeIdentityKey = identity.stableKey
         lastError = nil
         lastDecision = nil
+        userFacingStatus = nil
         state = .capturing
         statusMessage = "正在生成时间轴"
         LyricsE2ELog.log("AUTO_ALIGN start identity=\(identity.stableKey.prefix(32))")
@@ -290,15 +423,27 @@ public final class AutomaticAlignmentJobController: ObservableObject {
                 if kind == .cancelled || Task.isCancelled {
                     self.state = .canceled
                     self.statusMessage = "已取消"
+                    self.userFacingStatus = Self.statusForCaptureFailure(
+                        kind: .cancelled,
+                        message: handoff?.message,
+                        fallback: "已取消"
+                    )
                 } else if !engine.isAvailable {
                     self.state = .deferred
                     self.statusMessage = "自动排轴引擎尚未准备好"
                     self.lastError = "engine unavailable (\(SpeechEngineRegistry.activeEngineID.rawValue))"
+                    self.userFacingStatus = Self.engineUnavailableStatus
                     LyricsE2ELog.log("AUTO_ALIGN engine unavailable id=\(SpeechEngineRegistry.activeEngineID.rawValue)")
                 } else {
                     self.state = .deferred
                     self.statusMessage = "本次证据不足，等待继续播放"
                     self.lastDecision = "deferred"
+                    self.lastError = handoff?.message ?? kind?.rawValue
+                    self.userFacingStatus = Self.statusForCaptureFailure(
+                        kind: kind,
+                        message: handoff?.message,
+                        fallback: "未能生成建议时间"
+                    )
                 }
                 self.jobTask = nil
                 LyricsE2ELog.log("AUTO_ALIGN no report kind=\(kind?.rawValue ?? "nil")")
@@ -351,6 +496,10 @@ public final class AutomaticAlignmentJobController: ObservableObject {
             case .accumulate:
                 self.state = .accumulating
                 self.statusMessage = "已保存部分进度"
+                self.userFacingStatus = UserFacingStatus(
+                    title: "已保留部分可靠进度",
+                    recoveryHint: "请继续播放以收集更多证据；未完成结果不会自动采用。"
+                )
                 // Merge progress into session as partial explicit times (not full sync)
                 let partialDoc = AutomaticAlignmentProgressStore.applyProgress(progress, to: plain)
                 // Do not adopt as synchronized; only keep progress file for next run.
@@ -360,9 +509,11 @@ public final class AutomaticAlignmentJobController: ObservableObject {
                 self.state = .failed
                 self.statusMessage = "本次无法可靠完成"
                 self.lastError = gate.reason
+                self.userFacingStatus = Self.statusForQualityGate(reason: gate.reason)
             case .deferred:
                 self.state = .deferred
                 self.statusMessage = "等待继续播放"
+                self.userFacingStatus = Self.statusForInsufficientEvidence(reason: gate.reason)
             }
 
             self.jobTask = nil
@@ -452,6 +603,7 @@ public final class AutomaticAlignmentJobController: ObservableObject {
             state = .failed
             statusMessage = "无法保存自动排轴结果"
             lastError = "repository_unavailable"
+            userFacingStatus = Self.persistenceFailureStatus
             return
         }
 
@@ -471,6 +623,7 @@ public final class AutomaticAlignmentJobController: ObservableObject {
                 state = .failed
                 statusMessage = "本次无法可靠完成"
                 lastError = "save_\(saved.disposition)"
+                userFacingStatus = Self.persistenceFailureStatus
                 LyricsE2ELog.log("AUTO_ALIGN save rejected disposition=\(saved.disposition)")
                 return
             }
@@ -481,6 +634,7 @@ public final class AutomaticAlignmentJobController: ObservableObject {
                 state = .failed
                 statusMessage = "本次无法可靠完成"
                 lastError = "save_\(saved.disposition)"
+                userFacingStatus = Self.persistenceFailureStatus
                 LyricsE2ELog.log("AUTO_ALIGN save rejected disposition=\(saved.disposition)")
                 return
             }
@@ -492,11 +646,13 @@ public final class AutomaticAlignmentJobController: ObservableObject {
             )
             state = .completed
             statusMessage = "已完成"
+            userFacingStatus = nil
             LyricsE2ELog.log("AUTO_ALIGN completeAndAdopt version=\(versionID.uuidString.prefix(8))")
         } catch {
             state = .failed
             statusMessage = "本次无法可靠完成"
             lastError = error.localizedDescription
+            userFacingStatus = Self.persistenceFailureStatus
             LyricsE2ELog.log("AUTO_ALIGN save error=\(error.localizedDescription)")
         }
     }
@@ -511,6 +667,7 @@ public final class AutomaticAlignmentJobController: ObservableObject {
             statusMessage = ""
         }
         activeIdentityKey = nil
+        userFacingStatus = nil
         scheduleEvaluate()
     }
 
@@ -522,5 +679,3 @@ public final class AutomaticAlignmentJobController: ObservableObject {
         )
     }
 }
-
-

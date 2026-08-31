@@ -509,7 +509,12 @@ struct CurrentSongOperationsView: View {
                     .foregroundStyle(autoAlignStatusColor)
                     .accessibilityIdentifier("autoAlign.status")
             }
-            if !autoAlign.statusMessage.isEmpty {
+            if let userFacingStatus = autoAlign.userFacingStatus {
+                Text(userFacingStatus.recoveryHint)
+                    .font(.system(size: 11, design: .rounded))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if !autoAlign.statusMessage.isEmpty {
                 Text(autoAlign.statusMessage)
                     .font(.system(size: 11, design: .rounded))
                     .foregroundStyle(.secondary)
@@ -560,6 +565,9 @@ struct CurrentSongOperationsView: View {
     }
 
     private var autoAlignStatusLabel: String {
+        if let userFacingStatus = autoAlign.userFacingStatus {
+            return userFacingStatus.title
+        }
         switch autoAlign.state {
         case .idle: return settings.automaticAlignmentEnabled ? "就绪" : "关闭"
         case .waitingForPlayback: return "等待播放"
