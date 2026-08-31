@@ -183,6 +183,81 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         )
     }
 
+    public func upsertListeningHistory(_ entry: ListeningHistoryEntry) async throws {
+        try prepare()
+        let statement = try prepare("""
+            INSERT INTO listening_history_sessions(
+                session_id, track_stable_key, title, artist, album,
+                started_at, last_observed_at, observed_playback_duration,
+                track_duration, completion_ratio
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(session_id) DO UPDATE SET
+                track_stable_key = excluded.track_stable_key,
+                title = excluded.title,
+                artist = excluded.artist,
+                album = excluded.album,
+                started_at = MIN(listening_history_sessions.started_at, excluded.started_at),
+                last_observed_at = MAX(listening_history_sessions.last_observed_at, excluded.last_observed_at),
+                observed_playback_duration = MAX(
+                    listening_history_sessions.observed_playback_duration,
+                    excluded.observed_playback_duration
+                ),
+                track_duration = COALESCE(excluded.track_duration, listening_history_sessions.track_duration),
+                completion_ratio = COALESCE(excluded.completion_ratio, listening_history_sessions.completion_ratio);
+            """)
+        defer { sqlite3_finalize(statement) }
+        try bindText(entry.sessionID.uuidString, at: 1, to: statement)
+        try bindText(entry.stableKey, at: 2, to: statement)
+        try bindText(entry.title, at: 3, to: statement)
+        try bindText(entry.artist, at: 4, to: statement)
+        try bindText(entry.album, at: 5, to: statement)
+        try bindDouble(entry.startedAt.timeIntervalSince1970, at: 6, to: statement)
+        try bindDouble(entry.lastObservedAt.timeIntervalSince1970, at: 7, to: statement)
+        try bindDouble(entry.observedPlaybackDuration, at: 8, to: statement)
+        try bindDouble(entry.trackDuration, at: 9, to: statement)
+        try bindDouble(entry.completionRatio, at: 10, to: statement)
+        try stepDone(statement)
+    }
+
+    public func loadListeningHistory(limit: Int) async throws -> [ListeningHistoryEntry] {
+        try prepare()
+        let statement = try prepare("""
+            SELECT session_id, track_stable_key, title, artist, album,
+                   started_at, last_observed_at, observed_playback_duration,
+                   track_duration, completion_ratio
+            FROM listening_history_sessions
+            ORDER BY last_observed_at DESC, started_at DESC
+            LIMIT ?;
+            """)
+        defer { sqlite3_finalize(statement) }
+        try bindInt(max(1, min(limit, 500)), at: 1, to: statement)
+
+        var entries: [ListeningHistoryEntry] = []
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard let sessionIDText = columnText(statement, index: 0),
+                  let sessionID = UUID(uuidString: sessionIDText),
+                  let stableKey = columnText(statement, index: 1),
+                  let title = columnText(statement, index: 2),
+                  let artist = columnText(statement, index: 3),
+                  let album = columnText(statement, index: 4) else {
+                continue
+            }
+            entries.append(ListeningHistoryEntry(
+                sessionID: sessionID,
+                stableKey: stableKey,
+                title: title,
+                artist: artist,
+                album: album,
+                startedAt: Date(timeIntervalSince1970: sqlite3_column_double(statement, 5)),
+                lastObservedAt: Date(timeIntervalSince1970: sqlite3_column_double(statement, 6)),
+                observedPlaybackDuration: sqlite3_column_double(statement, 7),
+                trackDuration: columnDouble(statement, index: 8),
+                completionRatio: columnDouble(statement, index: 9)
+            ))
+        }
+        return entries
+    }
+
     public func loadAliases(stableKey: String) async throws -> [TrackAlias] {
         try loadTrackAliases(stableKey: stableKey).compactMap { record in
             guard let field = TrackAliasField(rawValue: record.field),

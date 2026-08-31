@@ -4,6 +4,7 @@ import AppKit
 private enum SettingsCategory: String, CaseIterable, Identifiable {
     case general = "通用"
     case library = "我的歌词库"
+    case history = "最近播放"
     case display = "歌词显示"
     case reading = "读音与文字"
     case spotify = "Spotify"
@@ -19,6 +20,7 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
         switch self {
         case .general: return "gearshape"
         case .library: return "music.note.list"
+        case .history: return "clock.arrow.circlepath"
         case .display: return "text.quote"
         case .reading: return "character.book.closed"
         case .spotify: return "waveform.circle"
@@ -93,6 +95,7 @@ private struct SettingsDetailView: View {
             switch category {
             case .general: GeneralSettingsView().padding(28)
             case .library: PersonalLyricsLibraryView()
+            case .history: ListeningHistoryView()
             case .display: DisplaySettingsView().padding(28)
             case .reading: ReadingSettingsView().padding(28)
             case .spotify: SpotifySettingsView().padding(28)

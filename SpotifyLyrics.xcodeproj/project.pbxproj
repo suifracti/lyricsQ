@@ -199,6 +199,8 @@
 		110006002D83400100000001 /* PersonalLyricsLibraryModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110006002D83400100000000 /* PersonalLyricsLibraryModels.swift */; };
 		110006012D83400100000001 /* PersonalLyricsLibraryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110006012D83400100000000 /* PersonalLyricsLibraryService.swift */; };
 		110006022D83400100000001 /* PersonalLyricsLibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110006022D83400100000000 /* PersonalLyricsLibraryView.swift */; };
+		110006032D83400100000001 /* ListeningHistoryModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110006032D83400100000000 /* ListeningHistoryModels.swift */; };
+		110006042D83400100000001 /* ListeningHistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110006042D83400100000000 /* ListeningHistoryView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -400,6 +402,8 @@
 		110006002D83400100000000 /* PersonalLyricsLibraryModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Lyrics/PersonalLyricsLibraryModels.swift; sourceTree = "<group>"; };
 		110006012D83400100000000 /* PersonalLyricsLibraryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Settings/PersonalLyricsLibraryService.swift; sourceTree = "<group>"; };
 		110006022D83400100000000 /* PersonalLyricsLibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/Settings/PersonalLyricsLibraryView.swift; sourceTree = "<group>"; };
+		110006032D83400100000000 /* ListeningHistoryModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Lyrics/ListeningHistoryModels.swift; sourceTree = "<group>"; };
+		110006042D83400100000000 /* ListeningHistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListeningHistoryView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -458,6 +462,7 @@
 				110006002D83400100000000 /* PersonalLyricsLibraryModels.swift */,
 				110006012D83400100000000 /* PersonalLyricsLibraryService.swift */,
 				110006022D83400100000000 /* PersonalLyricsLibraryView.swift */,
+				110006032D83400100000000 /* ListeningHistoryModels.swift */,
 				110000F42D83400100000000 /* PresentationPreviewLabView.swift */,
 				110000F52D83400100000000 /* PresentationPreviewAdapters.swift */,
 				110000002D83400000000024 /* Providers */,
@@ -545,6 +550,7 @@
 				110000612D83400100000000 /* SettingsRootView.swift */,
 				110000F82D83400100000000 /* ExperienceLibrarySettingsView.swift */,
 				110000A82D83400100000000 /* ReadingSettingsView.swift */,
+				110006042D83400100000000 /* ListeningHistoryView.swift */,
 			);
 			path = Settings;
 			sourceTree = "<group>";
@@ -998,6 +1004,8 @@
 				110006002D83400100000001 /* PersonalLyricsLibraryModels.swift in Sources */,
 				110006012D83400100000001 /* PersonalLyricsLibraryService.swift in Sources */,
 				110006022D83400100000001 /* PersonalLyricsLibraryView.swift in Sources */,
+				110006032D83400100000001 /* ListeningHistoryModels.swift in Sources */,
+				110006042D83400100000001 /* ListeningHistoryView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

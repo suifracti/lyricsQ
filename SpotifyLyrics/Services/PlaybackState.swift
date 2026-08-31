@@ -22,6 +22,7 @@ public final class PlaybackState: ObservableObject {
     @Published public private(set) var hasLiveTrack = false
     @Published public private(set) var songSearchSelectionMessage = ""
     @Published public private(set) var searchPreviewTrack: Track?
+    @Published public private(set) var listeningHistory: [ListeningHistoryEntry] = []
 
     // Auxiliary display states remain available to the existing window manager.
     @Published public var showFloatingWindow = false
@@ -57,6 +58,9 @@ public final class PlaybackState: ObservableObject {
     private var providerRefreshTask: Task<Void, Never>?
     private var persistencePreparationTask: Task<Void, Never>?
     private var searchPreviewTask: Task<Void, Never>?
+    private var listeningHistorySession: ListeningHistorySession?
+    private var listeningHistoryWriteTask: Task<Void, Never>?
+    private var listeningHistoryLoadTask: Task<Void, Never>?
     private var searchPreviewGeneration: UInt64 = 0
     private var networkRecoveryMonitor: NWPathMonitor?
     private var networkWasSatisfied = false
@@ -695,6 +699,49 @@ public final class PlaybackState: ObservableObject {
         return session.state.userFacingMessage
     }
 
+    public func refreshListeningHistory() {
+        listeningHistoryLoadTask?.cancel()
+        let repository = lyricsRepository
+        listeningHistoryLoadTask = Task { @MainActor [weak self, repository] in
+            let entries = (try? await repository.loadListeningHistory(limit: 100)) ?? []
+            guard !Task.isCancelled, let self else { return }
+            self.listeningHistory = Self.mergeHistoryEntries(entries, with: self.listeningHistory)
+        }
+    }
+
+    private func publishListeningHistory(_ entry: ListeningHistoryEntry) {
+        listeningHistory = Self.mergeHistoryEntries(listeningHistory, with: [entry])
+
+        let previousTask = listeningHistoryWriteTask
+        let repository = lyricsRepository
+        listeningHistoryWriteTask = Task { [previousTask, repository] in
+            _ = await previousTask?.value
+            try? await repository.upsertListeningHistory(entry)
+        }
+    }
+
+    private static func mergeHistoryEntries(
+        _ loaded: [ListeningHistoryEntry],
+        with current: [ListeningHistoryEntry]
+    ) -> [ListeningHistoryEntry] {
+        var entriesByID: [UUID: ListeningHistoryEntry] = [:]
+        for entry in loaded {
+            entriesByID[entry.sessionID] = entry
+        }
+        for entry in current {
+            entriesByID[entry.sessionID] = entry
+        }
+        return entriesByID.values.sorted { lhs, rhs in
+            if lhs.lastObservedAt != rhs.lastObservedAt {
+                return lhs.lastObservedAt > rhs.lastObservedAt
+            }
+            if lhs.startedAt != rhs.startedAt {
+                return lhs.startedAt > rhs.startedAt
+            }
+            return lhs.sessionID.uuidString > rhs.sessionID.uuidString
+        }
+    }
+
     public func startProvider() {
         startProvider(connectSpotify: true)
     }
@@ -705,6 +752,7 @@ public final class PlaybackState: ObservableObject {
         automaticSpotifyConnectionEnabled = connectSpotify
         startTimer()
         startNetworkRecoveryMonitor()
+        refreshListeningHistory()
         persistencePreparationTask = Task { [weak self, lyricsRepository] in
             do {
                 try await lyricsRepository.prepare()
@@ -1861,6 +1909,12 @@ public final class PlaybackState: ObservableObject {
         let nextTrack = Track(providerTrack: providerTrack)
         let nextIdentity = TrackIdentity(track: nextTrack)
         let identityChanged = !hasLiveTrack || lyricsSession.activeIdentity != nextIdentity
+        let observedAt = Date()
+
+        if let session = listeningHistorySession,
+           session.stableKey != nextIdentity.stableKey {
+            settleListeningHistorySession(at: observedAt)
+        }
 
         if identityChanged {
             alignmentTask?.cancel()
@@ -1910,6 +1964,22 @@ public final class PlaybackState: ObservableObject {
             AutomaticAlignmentJobController.shared.notifySeek(from: previousPosition, to: incoming)
         }
         resetPlaybackAnchor(to: snapshot.position)
+        if let session = listeningHistorySession,
+           session.stableKey == nextIdentity.stableKey {
+            updateListeningHistorySession(
+                at: observedAt,
+                position: snapshot.position,
+                isPlaying: snapshot.isPlaying
+            )
+        } else {
+            beginListeningHistorySession(
+                track: nextTrack,
+                identity: nextIdentity,
+                at: Date(),
+                position: snapshot.position,
+                isPlaying: snapshot.isPlaying
+            )
+        }
         if wasPlaying != snapshot.isPlaying || identityChanged {
             AutomaticAlignmentJobController.shared.notePlaybackContextChanged()
         }
@@ -1917,6 +1987,7 @@ public final class PlaybackState: ObservableObject {
 
     private func clearLiveTrackIfNeeded() {
         guard !isMockPreviewMode else { return }
+        pauseListeningHistorySession(at: Date())
         alignmentTask?.cancel()
         clearSearchPreview()
         let hadLiveState = hasLiveTrack || lyricsSession.activeIdentity != nil || !lyrics.isEmpty
@@ -1929,6 +2000,46 @@ public final class PlaybackState: ObservableObject {
         songSearchSelectionMessage = ""
         isPlaying = false
         resetPlaybackAnchor(to: 0)
+    }
+
+    private func beginListeningHistorySession(
+        track: Track,
+        identity: TrackIdentity,
+        at date: Date,
+        position: TimeInterval,
+        isPlaying: Bool
+    ) {
+        var session = ListeningHistorySession(track: track, identity: identity, startedAt: date)
+        session.observe(at: date, position: position, isPlaying: isPlaying)
+        listeningHistorySession = session
+        publishListeningHistory(session.entry)
+    }
+
+    private func updateListeningHistorySession(
+        at date: Date,
+        position: TimeInterval,
+        isPlaying: Bool
+    ) {
+        guard var session = listeningHistorySession else { return }
+        session.observe(at: date, position: position, isPlaying: isPlaying)
+        listeningHistorySession = session
+        publishListeningHistory(session.entry)
+    }
+
+    private func pauseListeningHistorySession(at date: Date) {
+        guard listeningHistorySession != nil else { return }
+        updateListeningHistorySession(
+            at: date,
+            position: currentTime,
+            isPlaying: false
+        )
+    }
+
+    private func settleListeningHistorySession(at date: Date) {
+        guard var session = listeningHistorySession else { return }
+        session.observe(at: date, position: currentTime, isPlaying: isPlaying)
+        listeningHistorySession = nil
+        publishListeningHistory(session.entry)
     }
 
     private func runProviderCommand(_ command: @escaping @MainActor (PlaybackProvider) async throws -> Void) {

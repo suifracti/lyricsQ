@@ -141,6 +141,8 @@ public protocol LyricsRepository: Sendable {
     func saveTrackMetadata(_ metadata: TrackMetadata) async throws
     func loadBest(track: Track, identity: TrackIdentity) async throws -> LyricsDocument?
     func loadBestStored(track: Track, identity: TrackIdentity) async throws -> StoredLyricsDocument?
+    func upsertListeningHistory(_ entry: ListeningHistoryEntry) async throws
+    func loadListeningHistory(limit: Int) async throws -> [ListeningHistoryEntry]
     func alignmentProvenanceAvailability(versionID: UUID) async -> AlignmentProvenanceAvailability
     func save(
         track: Track,
@@ -184,6 +186,15 @@ public extension LyricsRepository {
             sourceContentHash: LyricsPersistenceMapper.sourceContentHash(document: document),
             alignmentProvenanceAvailability: .unavailable
         )
+    }
+
+    func upsertListeningHistory(_ entry: ListeningHistoryEntry) async throws {
+        _ = entry
+    }
+
+    func loadListeningHistory(limit: Int) async throws -> [ListeningHistoryEntry] {
+        _ = limit
+        return []
     }
 
     func saveTrackMetadata(_ metadata: TrackMetadata) async throws {
