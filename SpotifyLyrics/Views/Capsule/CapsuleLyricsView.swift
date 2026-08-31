@@ -137,6 +137,7 @@ struct CapsuleLyricsView: View {
                     : .spring(response: 0.32, dampingFraction: 0.86, blendDuration: 0.04)),
             value: windowController.presentationState
         )
+        .environment(\.lyricAgentPresentationMap, LyricAgentPresentationMap(lines: state.liveLyrics))
         .accessibilityElement(children: .contain)
         .accessibilityLabel("顶部胶囊")
     }

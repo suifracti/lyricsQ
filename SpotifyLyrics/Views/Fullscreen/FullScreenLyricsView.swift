@@ -71,6 +71,7 @@ struct FullScreenLyricsView: View {
         }
         .ignoresSafeArea()
         .preferredColorScheme(.dark)
+        .environment(\.lyricAgentPresentationMap, LyricAgentPresentationMap(lines: state.liveLyrics))
         .accessibilityElement(children: .contain)
         .accessibilityLabel("全屏歌词")
     }

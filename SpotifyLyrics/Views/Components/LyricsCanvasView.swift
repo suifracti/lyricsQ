@@ -20,6 +20,7 @@ struct LyricsCanvasView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .id(state.lyricsSessionRevision)
+        .environment(\.lyricAgentPresentationMap, LyricAgentPresentationMap(lines: state.lyrics))
         .sheet(isPresented: $isAlignmentDetailsPresented) {
             if let report = state.lyricsState.alignmentReport {
                 AlignmentPreviewView(report: report)
