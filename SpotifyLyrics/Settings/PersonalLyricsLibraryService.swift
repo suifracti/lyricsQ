@@ -14,6 +14,10 @@ public final class PersonalLyricsLibraryService: ObservableObject {
     @Published public var pendingImportPackage: PersonalLyricsLibraryPackage?
     @Published public var showImportPreviewSheet = false
 
+    @Published public var dataImportPreview: PersonalDataImportPreview?
+    @Published public var pendingDataPackage: PersonalDataPackage?
+    @Published public var showDataImportPreviewSheet = false
+
     private let repository: SQLiteLyricsRepository
 
     public init(repository: SQLiteLyricsRepository = SQLiteLyricsRepository()) {
@@ -174,6 +178,31 @@ public final class PersonalLyricsLibraryService: ObservableObject {
         }
     }
 
+    public func exportPersonalData() {
+        Task {
+            do {
+                let package = try await repository.exportPersonalDataPackage()
+                let encoder = JSONEncoder()
+                encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+                encoder.dateEncodingStrategy = .iso8601
+                let data = try encoder.encode(package)
+
+                let savePanel = NSSavePanel()
+                savePanel.allowedContentTypes = [.json]
+                savePanel.nameFieldStringValue = "LyricIsland-Personal-Data-v1.lyricisland.json"
+                savePanel.title = "导出个人数据"
+                savePanel.message = "导出所有个人歌词、翻译、读音与逐字时间轴资产"
+
+                if savePanel.runModal() == .OK, let url = savePanel.url {
+                    try data.write(to: url, options: .atomic)
+                    self.statusMessage = "个人数据导出成功：" + url.lastPathComponent
+                }
+            } catch {
+                self.statusMessage = "个人数据导出失败：" + error.localizedDescription
+            }
+        }
+    }
+
     public func presentImportDialog() {
         let openPanel = NSOpenPanel()
         openPanel.allowedContentTypes = [.json]
@@ -201,6 +230,34 @@ public final class PersonalLyricsLibraryService: ObservableObject {
         }
     }
 
+    public func presentPersonalDataImportDialog() {
+        let openPanel = NSOpenPanel()
+        openPanel.allowedContentTypes = [.json]
+        openPanel.allowsMultipleSelection = false
+        openPanel.canChooseDirectories = false
+        openPanel.canChooseFiles = true
+        openPanel.title = "选择个人数据包"
+
+        if openPanel.runModal() == .OK, let url = openPanel.url {
+            Task {
+                do {
+                    let data = try Data(contentsOf: url)
+                    let decoder = JSONDecoder()
+                    decoder.dateDecodingStrategy = .iso8601
+                    let package = try decoder.decode(PersonalDataPackage.self, from: data)
+                    try package.validate()
+                    let preview = try await repository.previewImportPersonalDataPackage(package)
+
+                    self.pendingDataPackage = package
+                    self.dataImportPreview = preview
+                    self.showDataImportPreviewSheet = true
+                } catch {
+                    self.statusMessage = "读取个人数据包失败：" + error.localizedDescription
+                }
+            }
+        }
+    }
+
     public func confirmImport() {
         guard let package = pendingImportPackage else { return }
         Task {
@@ -217,9 +274,31 @@ public final class PersonalLyricsLibraryService: ObservableObject {
         }
     }
 
+    public func confirmPersonalDataImport() {
+        guard let package = pendingDataPackage else { return }
+        Task {
+            do {
+                try await repository.importPersonalDataPackage(package)
+                self.statusMessage = "成功导入 " + String(package.tracks.count) + " 首歌曲的个人资产"
+                self.pendingDataPackage = nil
+                self.dataImportPreview = nil
+                self.showDataImportPreviewSheet = false
+                refresh()
+            } catch {
+                self.statusMessage = "个人数据包导入失败：" + error.localizedDescription
+            }
+        }
+    }
+
     public func cancelImport() {
         self.pendingImportPackage = nil
         self.importPreview = nil
         self.showImportPreviewSheet = false
+    }
+
+    public func cancelPersonalDataImport() {
+        self.pendingDataPackage = nil
+        self.dataImportPreview = nil
+        self.showDataImportPreviewSheet = false
     }
 }

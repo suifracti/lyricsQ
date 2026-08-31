@@ -709,3 +709,101 @@ public struct PersonalLibraryImportPreview: Equatable, Sendable, Codable {
         lyricsConflicts + translationsConflicts + readingsConflicts + timingsConflicts
     }
 }
+
+// MARK: - Standard Personal Data Package v1
+
+public enum PersonalDataPackageError: Error, Equatable, Sendable, LocalizedError {
+    case unsupportedSchema(Int)
+    case invalidPackage(String)
+
+    public var errorDescription: String? {
+        switch self {
+        case .unsupportedSchema(let version):
+            return "个人数据包版本 " + String(version) + " 高于当前 App 支持版本"
+        case .invalidPackage(let message):
+            return "个人数据包无效：" + message
+        }
+    }
+}
+
+/// Stable, SQLite-independent envelope for transferring all personal lyrics assets.
+/// Each nested track package reuses the already-versioned single-track asset model.
+public struct PersonalDataPackage: Equatable, Sendable, Codable {
+    public static let currentSchemaVersion = 1
+
+    public struct Manifest: Equatable, Sendable, Codable {
+        public let schemaVersion: Int
+        public let createdAt: Date
+        public let appVersion: String
+        public let packageType: String
+
+        public init(
+            schemaVersion: Int = PersonalDataPackage.currentSchemaVersion,
+            createdAt: Date = Date(),
+            appVersion: String = PersonalLyricsLibraryPackage.appVersion,
+            packageType: String = "personal_data"
+        ) {
+            self.schemaVersion = schemaVersion
+            self.createdAt = createdAt
+            self.appVersion = appVersion
+            self.packageType = packageType
+        }
+    }
+
+    public let manifest: Manifest
+    public let tracks: [PersonalLyricsLibraryPackage]
+
+    public init(
+        manifest: Manifest = Manifest(),
+        tracks: [PersonalLyricsLibraryPackage]
+    ) {
+        self.manifest = manifest
+        self.tracks = tracks
+    }
+
+    public func validate() throws {
+        guard manifest.schemaVersion == Self.currentSchemaVersion else {
+            if manifest.schemaVersion > Self.currentSchemaVersion {
+                throw PersonalDataPackageError.unsupportedSchema(manifest.schemaVersion)
+            }
+            throw PersonalDataPackageError.invalidPackage("schemaVersion 必须为 " + String(Self.currentSchemaVersion))
+        }
+        guard manifest.packageType == "personal_data" else {
+            throw PersonalDataPackageError.invalidPackage("packageType 不受支持")
+        }
+
+        var stableKeys = Set<String>()
+        for trackPackage in tracks {
+            let stableKey = trackPackage.track.stableKey.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !stableKey.isEmpty else {
+                throw PersonalDataPackageError.invalidPackage("存在缺少 stable key 的歌曲")
+            }
+            guard stableKeys.insert(stableKey).inserted else {
+                throw PersonalDataPackageError.invalidPackage("存在重复的歌曲 stable key")
+            }
+            guard trackPackage.manifest.formatVersion == PersonalLyricsLibraryPackage.formatVersion else {
+                throw PersonalDataPackageError.invalidPackage("嵌套歌曲资产版本不受支持")
+            }
+        }
+    }
+}
+
+public struct PersonalDataImportPreview: Equatable, Sendable, Codable {
+    public let trackPreviews: [PersonalLibraryImportPreview]
+
+    public init(trackPreviews: [PersonalLibraryImportPreview]) {
+        self.trackPreviews = trackPreviews
+    }
+
+    public var trackCount: Int {
+        trackPreviews.count
+    }
+
+    public var hasConflicts: Bool {
+        trackPreviews.contains { $0.hasConflicts }
+    }
+
+    public var totalNewAssets: Int {
+        trackPreviews.reduce(0) { $0 + $1.totalNewAssets }
+    }
+}

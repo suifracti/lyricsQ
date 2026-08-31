@@ -13,6 +13,20 @@ public struct PersonalLyricsLibraryView: View {
                 .toolbar {
                     ToolbarItemGroup(placement: .primaryAction) {
                         Button {
+                            service.exportPersonalData()
+                        } label: {
+                            Label("导出个人数据", systemImage: "archivebox")
+                        }
+                        .help("导出全部个人歌词资产")
+
+                        Button {
+                            service.presentPersonalDataImportDialog()
+                        } label: {
+                            Label("导入个人数据", systemImage: "shippingbox")
+                        }
+                        .help("导入标准个人数据包并先查看冲突")
+
+                        Button {
                             service.presentImportDialog()
                         } label: {
                             Label("导入资产包", systemImage: "square.and.arrow.down")
@@ -51,6 +65,15 @@ public struct PersonalLyricsLibraryView: View {
                     service.confirmImport()
                 }, onCancel: {
                     service.cancelImport()
+                })
+            }
+        }
+        .sheet(isPresented: $service.showDataImportPreviewSheet) {
+            if let preview = service.dataImportPreview {
+                PersonalDataImportPreviewSheet(preview: preview, onConfirm: {
+                    service.confirmPersonalDataImport()
+                }, onCancel: {
+                    service.cancelPersonalDataImport()
                 })
             }
         }
@@ -671,5 +694,107 @@ public struct PersonalLibraryImportPreviewSheet: View {
         .padding(8)
         .background(Color.secondary.opacity(0.1))
         .cornerRadius(6)
+    }
+}
+
+// MARK: - Standard Personal Data Preview Sheet
+
+public struct PersonalDataImportPreviewSheet: View {
+    let preview: PersonalDataImportPreview
+    let onConfirm: () -> Void
+    let onCancel: () -> Void
+
+    public var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("导入个人数据预览")
+                .font(.headline)
+
+            Text("包含 " + String(preview.trackCount) + " 首歌曲，新增 " + String(preview.totalNewAssets) + " 项个人资产")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+
+            if preview.trackPreviews.isEmpty {
+                VStack(spacing: 8) {
+                    Image(systemName: "archivebox")
+                        .font(.system(size: 32))
+                        .foregroundStyle(.tertiary)
+                    Text("此数据包不包含个人歌词资产")
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, minHeight: 160)
+            } else {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 10) {
+                        ForEach(preview.trackPreviews, id: \.trackStableKey) { trackPreview in
+                            trackSummary(trackPreview)
+                        }
+                    }
+                }
+                .frame(minHeight: 180)
+            }
+
+            HStack {
+                Spacer()
+                Button("取消") {
+                    onCancel()
+                }
+                .keyboardShortcut(.cancelAction)
+
+                Button("确认导入") {
+                    onConfirm()
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(preview.hasConflicts || preview.totalNewAssets == 0)
+                .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(20)
+        .frame(minWidth: 520, minHeight: 360)
+    }
+
+    private func trackSummary(_ trackPreview: PersonalLibraryImportPreview) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(trackPreview.trackTitle + " — " + trackPreview.trackArtist)
+                .font(.subheadline.bold())
+
+            HStack(spacing: 12) {
+                summaryItem(title: "歌词", add: trackPreview.lyricsToAdd, skip: trackPreview.lyricsToSkip)
+                summaryItem(title: "翻译", add: trackPreview.translationsToAdd, skip: trackPreview.translationsToSkip)
+                summaryItem(title: "读音", add: trackPreview.readingsToAdd, skip: trackPreview.readingsToSkip)
+                summaryItem(title: "逐字时间轴", add: trackPreview.timingsToAdd, skip: trackPreview.timingsToSkip)
+            }
+
+            if trackPreview.hasConflicts {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("发现冲突，已阻止静默覆盖")
+                        .font(.caption.bold())
+                        .foregroundStyle(.red)
+                    ForEach(trackPreview.allConflicts, id: \.self) { conflict in
+                        Text("• " + conflict)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(8)
+                .background(Color.red.opacity(0.1))
+                .cornerRadius(6)
+            }
+        }
+        .padding(10)
+        .background(Color(nsColor: .controlBackgroundColor))
+        .cornerRadius(8)
+    }
+
+    private func summaryItem(title: String, add: Int, skip: Int) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .font(.caption.bold())
+            Text("新增: " + String(add) + " · 跳过: " + String(skip))
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
+        }
+        .padding(6)
+        .background(Color.secondary.opacity(0.1))
+        .cornerRadius(5)
     }
 }
