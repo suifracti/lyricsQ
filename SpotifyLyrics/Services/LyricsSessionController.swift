@@ -125,7 +125,8 @@ public final class LyricsSessionController: ObservableObject {
                     try await repository.prepare()
                     repositoryReady = true
                     storedAliases = (try? await repository.loadAliases(stableKey: identity.stableKey)) ?? []
-                    if let cached = try await repository.loadBestStored(track: track, identity: identity) {
+                    if !forceRefresh,
+                       let cached = try await repository.loadBestStored(track: track, identity: identity) {
                         cachedReference = cached
                         LyricsE2ELog.log(
                             "SESSION persistence hit rev=\(requestRevision) source=\(cached.document.source) provider=\(cached.document.providerSourceID ?? "") lines=\(cached.document.lines.count) sync=\(cached.document.isSynchronized)"
