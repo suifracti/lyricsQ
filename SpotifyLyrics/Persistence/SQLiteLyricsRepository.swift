@@ -3751,6 +3751,13 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
 
     // MARK: - Active / Locked Mutations
 
+    public func adoptLyricsVersion(trackStableKey: String, lyricsVersionID: UUID) throws {
+        try setPersonalLibraryActiveLyrics(
+            trackStableKey: trackStableKey,
+            lyricsVersionID: lyricsVersionID
+        )
+    }
+
     public func setPersonalLibraryActiveLyrics(trackStableKey: String, lyricsVersionID: UUID) throws {
         try prepare()
         let now = Date().timeIntervalSince1970
