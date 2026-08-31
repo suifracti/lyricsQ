@@ -18,10 +18,20 @@ public final class PersonalLyricsLibraryService: ObservableObject {
     @Published public var pendingDataPackage: PersonalDataPackage?
     @Published public var showDataImportPreviewSheet = false
 
-    private let repository: SQLiteLyricsRepository
+    @Published public private(set) var syncFolderURL: URL?
+    @Published public private(set) var isSyncing = false
 
-    public init(repository: SQLiteLyricsRepository = SQLiteLyricsRepository()) {
+    private let repository: SQLiteLyricsRepository
+    private let defaults: UserDefaults
+    private var pendingSyncFolderURL: URL?
+
+    public init(
+        repository: SQLiteLyricsRepository = SQLiteLyricsRepository(),
+        defaults: UserDefaults = .standard
+    ) {
         self.repository = repository
+        self.defaults = defaults
+        self.syncFolderURL = PersonalDataSyncStore.restoreFolderReference(defaults: defaults)
     }
 
     public func refresh() {
@@ -248,12 +258,84 @@ public final class PersonalLyricsLibraryService: ObservableObject {
                     try package.validate()
                     let preview = try await repository.previewImportPersonalDataPackage(package)
 
+                    self.pendingSyncFolderURL = nil
                     self.pendingDataPackage = package
                     self.dataImportPreview = preview
                     self.showDataImportPreviewSheet = true
                 } catch {
                     self.statusMessage = "读取个人数据包失败：" + error.localizedDescription
                 }
+            }
+        }
+    }
+
+    // MARK: - Private Folder Sync
+
+    public func selectSyncFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.canCreateDirectories = false
+        panel.title = "选择私人同步文件夹"
+        panel.message = "Lyric Island 将在此文件夹中保存一个个人数据包文件"
+
+        if panel.runModal() == .OK, let url = panel.url {
+            do {
+                try PersonalDataSyncStore.saveFolderReference(url, defaults: defaults)
+                syncFolderURL = url.standardizedFileURL
+                statusMessage = "已选择同步文件夹：" + url.path
+            } catch {
+                statusMessage = "选择同步文件夹失败：" + error.localizedDescription
+            }
+        }
+    }
+
+    public func cancelSyncFolder() {
+        PersonalDataSyncStore.clearFolderReference(defaults: defaults)
+        syncFolderURL = nil
+        pendingSyncFolderURL = nil
+        statusMessage = "已取消私人同步文件夹"
+    }
+
+    public func syncNow() {
+        guard !isSyncing else { return }
+        guard let folder = syncFolderURL ?? PersonalDataSyncStore.restoreFolderReference(defaults: defaults) else {
+            statusMessage = "请先选择同步文件夹"
+            return
+        }
+
+        syncFolderURL = folder
+        isSyncing = true
+        statusMessage = "正在检查同步文件夹..."
+
+        Task {
+            defer { self.isSyncing = false }
+            do {
+                let localPackage = try await repository.exportPersonalDataPackage()
+                let remotePackage = try PersonalDataSyncStore.withFolderAccess(folder) {
+                    try PersonalDataSyncStore.read(from: folder)
+                }
+
+                if let remotePackage {
+                    let preview = try await repository.previewImportPersonalDataPackage(remotePackage)
+                    if preview.hasConflicts || preview.totalNewAssets > 0 {
+                        self.pendingSyncFolderURL = folder
+                        self.pendingDataPackage = remotePackage
+                        self.dataImportPreview = preview
+                        self.showDataImportPreviewSheet = true
+                        self.statusMessage = "发现同步目录数据，请先查看导入预览"
+                    } else {
+                        self.statusMessage = "同步检查完成：没有可导入的新个人资产，未自动覆盖"
+                    }
+                } else {
+                    try PersonalDataSyncStore.withFolderAccess(folder) {
+                        try PersonalDataSyncStore.write(localPackage, to: folder)
+                    }
+                    self.statusMessage = "已将 " + String(localPackage.tracks.count) + " 首歌曲写入同步文件夹"
+                }
+            } catch {
+                self.statusMessage = "同步检查失败：" + error.localizedDescription
             }
         }
     }
@@ -276,10 +358,20 @@ public final class PersonalLyricsLibraryService: ObservableObject {
 
     public func confirmPersonalDataImport() {
         guard let package = pendingDataPackage else { return }
+        let syncFolder = pendingSyncFolderURL
         Task {
             do {
                 try await repository.importPersonalDataPackage(package)
-                self.statusMessage = "成功导入 " + String(package.tracks.count) + " 首歌曲的个人资产"
+                if let syncFolder {
+                    let mergedPackage = try await repository.exportPersonalDataPackage()
+                    try PersonalDataSyncStore.withFolderAccess(syncFolder) {
+                        try PersonalDataSyncStore.write(mergedPackage, to: syncFolder)
+                    }
+                    self.statusMessage = "同步完成：已导入并安全更新同步文件"
+                } else {
+                    self.statusMessage = "成功导入 " + String(package.tracks.count) + " 首歌曲的个人资产"
+                }
+                self.pendingSyncFolderURL = nil
                 self.pendingDataPackage = nil
                 self.dataImportPreview = nil
                 self.showDataImportPreviewSheet = false
@@ -297,6 +389,7 @@ public final class PersonalLyricsLibraryService: ObservableObject {
     }
 
     public func cancelPersonalDataImport() {
+        pendingSyncFolderURL = nil
         self.pendingDataPackage = nil
         self.dataImportPreview = nil
         self.showDataImportPreviewSheet = false

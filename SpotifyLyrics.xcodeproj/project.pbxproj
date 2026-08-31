@@ -203,6 +203,7 @@
 		110006042D83400100000001 /* ListeningHistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110006042D83400100000000 /* ListeningHistoryView.swift */; };
 		110006052D83400100000001 /* ListeningStatisticsModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110006052D83400100000000 /* ListeningStatisticsModels.swift */; };
 		110006062D83400100000001 /* ListeningStatisticsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110006062D83400100000000 /* ListeningStatisticsView.swift */; };
+		110006072D83400100000001 /* PersonalDataSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110006072D83400100000000 /* PersonalDataSync.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -408,6 +409,7 @@
 		110006042D83400100000000 /* ListeningHistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListeningHistoryView.swift; sourceTree = "<group>"; };
 		110006052D83400100000000 /* ListeningStatisticsModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Lyrics/ListeningStatisticsModels.swift; sourceTree = "<group>"; };
 		110006062D83400100000000 /* ListeningStatisticsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListeningStatisticsView.swift; sourceTree = "<group>"; };
+		110006072D83400100000000 /* PersonalDataSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersonalDataSync.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -729,6 +731,7 @@
 				1100005E2D83400100000000 /* LyricsProviderConfiguration.swift */,
 				1100005F2D83400100000000 /* WindowStatePersistence.swift */,
 				110000602D83400100000000 /* SettingsDataController.swift */,
+				110006072D83400100000000 /* PersonalDataSync.swift */,
 			);
 			path = Settings;
 			sourceTree = "<group>";
@@ -1014,6 +1017,7 @@
 				110006042D83400100000001 /* ListeningHistoryView.swift in Sources */,
 				110006052D83400100000001 /* ListeningStatisticsModels.swift in Sources */,
 				110006062D83400100000001 /* ListeningStatisticsView.swift in Sources */,
+				110006072D83400100000001 /* PersonalDataSync.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
