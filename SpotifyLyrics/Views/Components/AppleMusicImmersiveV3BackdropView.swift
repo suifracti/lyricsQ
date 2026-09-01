@@ -290,38 +290,18 @@ struct AppleMusicImmersiveV3BackdropView: View {
 
     @ViewBuilder
     private var stageReadingVeil: some View {
-        let isRight = settings.v3ArtworkPosition == "right"
-        let isCenter = settings.v3ArtworkPosition == "center"
-
-        if isRight {
-            LinearGradient(
-                stops: [
-                    .init(color: Color.black.opacity(0.55), location: 0.0),
-                    .init(color: Color.black.opacity(0.40), location: 0.40),
-                    .init(color: Color.black.opacity(0.12), location: 0.54),
-                    .init(color: .clear, location: 0.70)
-                ],
-                startPoint: .leading,
-                endPoint: .trailing
-            )
-        } else if isCenter {
-            LinearGradient(
-                colors: [Color.clear, Color.black.opacity(0.28)],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-        } else {
-            LinearGradient(
-                stops: [
-                    .init(color: .clear, location: 0.45),
-                    .init(color: Color.black.opacity(0.18), location: 0.58),
-                    .init(color: Color.black.opacity(0.48), location: 0.75),
-                    .init(color: Color.black.opacity(0.62), location: 1.0)
-                ],
-                startPoint: .leading,
-                endPoint: .trailing
-            )
-        }
+        // Stage lyrics are a broad lower composition now; keep the veil
+        // vertical so artwork position changes do not recreate a side rail.
+        LinearGradient(
+            stops: [
+                .init(color: .clear, location: 0.18),
+                .init(color: Color.black.opacity(0.06), location: 0.42),
+                .init(color: Color.black.opacity(0.24), location: 0.70),
+                .init(color: Color.black.opacity(0.52), location: 1.0)
+            ],
+            startPoint: .top,
+            endPoint: .bottom
+        )
     }
 
     @ViewBuilder
