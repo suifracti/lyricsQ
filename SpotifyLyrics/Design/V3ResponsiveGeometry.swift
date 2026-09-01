@@ -5,6 +5,31 @@ import Foundation
 /// intentionally responsible only for rendering these already-safe values;
 /// this keeps window resizing from turning a readable layout into an overflow.
 enum V3ResponsiveGeometry {
+    enum LayoutRegime: String, Equatable, Sendable {
+        case compact
+        case regular
+        case wide
+    }
+
+    /// Small, explicit composition regimes shared by the maintained V3
+    /// surfaces. These thresholds describe available space, not a second
+    /// layout preference or a scale factor.
+    static func layoutRegime(canvasSize: CGSize) -> LayoutRegime {
+        let width = finitePositive(canvasSize.width)
+        let height = finitePositive(canvasSize.height)
+        let aspectRatio = width / height
+
+        if width < 900 || height < 600 || aspectRatio < 1.25 {
+            return .compact
+        }
+
+        if width >= 1_280 || (width >= 1_080 && aspectRatio >= 1.70) {
+            return .wide
+        }
+
+        return .regular
+    }
+
     enum ForegroundLayout: Equatable {
         case adaptiveSplit
         case lyricsFocus

@@ -112,6 +112,8 @@ struct AppleMusicImmersiveV3WindowView: View {
     private func layout(for geometry: GeometryProxy) -> some View {
         if settings.v3ArtworkPresentation == .stage {
             stageTheaterLayout(in: geometry)
+        } else if settings.v3ArtworkPresentation == .classic {
+            classicExpandedLayout(in: geometry)
         } else {
             switch MainWindowResponsiveMode.resolve(
                 width: geometry.size.width,
@@ -191,35 +193,29 @@ struct AppleMusicImmersiveV3WindowView: View {
             canvasSize: geometry.size,
             artworkScale: foregroundArtworkScale
         )
+        let regime = V3ResponsiveGeometry.layoutRegime(canvasSize: geometry.size)
         let position = settings.v3ArtworkPosition
         let trackAlignment: HorizontalAlignment = position == "center" ? .center : .leading
-        let isWide = metrics.contentWidth >= 1080
+        let isWide = regime == .wide
+        let isCompact = regime == .compact
+        let progressDensity: AppleMusicImmersiveV3ProgressDensity = isWide
+            ? .wide
+            : (isCompact ? .small : .medium)
 
         let trackCol = Group {
-            if isWide {
-                trackColumn(
-                    width: metrics.artworkWidth,
-                    availableHeight: metrics.availableHeight,
-                    coverSize: metrics.coverSize,
-                    alignment: trackAlignment,
-                    compact: false,
-                    progressDensity: .wide
-                )
-            } else {
-                trackColumn(
-                    width: metrics.artworkWidth,
-                    availableHeight: metrics.availableHeight,
-                    coverSize: metrics.coverSize,
-                    alignment: trackAlignment,
-                    compact: false,
-                    progressDensity: .medium
-                )
-            }
+            trackColumn(
+                width: metrics.artworkWidth,
+                availableHeight: metrics.availableHeight,
+                coverSize: metrics.coverSize,
+                alignment: trackAlignment,
+                compact: isCompact,
+                progressDensity: progressDensity
+            )
         }
         .frame(width: metrics.artworkWidth)
         .frame(maxHeight: .infinity)
 
-        let lyricsCol = lyricsColumn(width: metrics.lyricsWidth, compact: false)
+        let lyricsCol = lyricsColumn(width: metrics.lyricsWidth, compact: isCompact)
             .frame(width: metrics.lyricsWidth)
             .frame(maxHeight: .infinity)
 
@@ -243,76 +239,180 @@ struct AppleMusicImmersiveV3WindowView: View {
         .padding(.vertical, metrics.verticalPadding)
     }
 
-    private var currentArtworkAspectRatio: CGFloat {
-        if let image = ArtworkImageLoader.shared.cachedImage(for: state.currentTrack.artworkURL),
-           image.size.width > 0, image.size.height > 0 {
-            return image.size.width / image.size.height
+    @ViewBuilder
+    private func classicExpandedLayout(in geometry: GeometryProxy) -> some View {
+        switch V3ResponsiveGeometry.layoutRegime(canvasSize: geometry.size) {
+        case .compact:
+            classicCompactLayout(in: geometry)
+        case .regular, .wide:
+            classicSplitLayout(
+                in: geometry,
+                regime: V3ResponsiveGeometry.layoutRegime(canvasSize: geometry.size)
+            )
         }
-        return 1.0
+    }
+
+    private func classicCompactLayout(in geometry: GeometryProxy) -> some View {
+        let horizontalPadding = LyricsDesignTokens.Spacing.windowSmall
+        let availableWidth = max(1, geometry.size.width - horizontalPadding * 2)
+        let trackHeight = max(420, geometry.size.height * 0.76)
+        let coverSize = V3ResponsiveGeometry.boundedCoverSize(
+            availableWidth: availableWidth - 20,
+            availableHeight: trackHeight * 0.50,
+            desiredSize: min(availableWidth * 0.60, geometry.size.height * 0.40),
+            minimum: min(176, availableWidth - 20),
+            maximum: 320
+        )
+
+        return ScrollView(.vertical) {
+            VStack(spacing: LyricsDesignTokens.Spacing.lg) {
+                trackColumn(
+                    width: availableWidth,
+                    availableHeight: trackHeight,
+                    coverSize: coverSize,
+                    alignment: .center,
+                    compact: true,
+                    progressDensity: .small
+                )
+
+                lyricsColumn(width: availableWidth, compact: true)
+                    .frame(minHeight: max(320, geometry.size.height * 0.58))
+            }
+            .padding(.horizontal, horizontalPadding)
+            .padding(.vertical, LyricsDesignTokens.Spacing.lg)
+        }
+        .scrollIndicators(.hidden)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func classicSplitLayout(
+        in geometry: GeometryProxy,
+        regime: V3ResponsiveGeometry.LayoutRegime
+    ) -> some View {
+        let horizontalPadding: CGFloat = regime == .wide ? 56 : 32
+        let verticalPadding: CGFloat = regime == .wide ? 34 : 28
+        let gap: CGFloat = regime == .wide ? 32 : 26
+        let contentWidth = max(1, geometry.size.width - horizontalPadding * 2)
+        let availableHeight = max(1, geometry.size.height - verticalPadding * 2)
+        let split = V3ResponsiveGeometry.splitColumns(
+            containerWidth: contentWidth,
+            requestedArtworkRatio: regime == .wide ? 0.49 : 0.46,
+            gap: gap,
+            minimumArtworkWidth: regime == .wide ? 320 : 260,
+            minimumLyricsWidth: regime == .wide ? 420 : 360
+        )
+        let coverSize = V3ResponsiveGeometry.boundedCoverSize(
+            availableWidth: max(1, split.artwork - 28),
+            availableHeight: max(1, availableHeight - 166),
+            desiredSize: min(split.artwork - 28, availableHeight * (regime == .wide ? 0.70 : 0.64)),
+            minimum: min(regime == .wide ? 250 : 220, split.artwork - 28),
+            maximum: regime == .wide ? 560 : 460
+        )
+        let trackCol = trackColumn(
+            width: split.artwork,
+            availableHeight: availableHeight,
+            coverSize: coverSize,
+            alignment: .center,
+            compact: false,
+            progressDensity: regime == .wide ? .wide : .medium
+        )
+        let lyricsCol = lyricsColumn(width: split.lyrics, compact: false)
+
+        return HStack(spacing: 0) {
+            if settings.v3ArtworkPosition == "right" {
+                lyricsCol
+                    .frame(width: split.lyrics, height: availableHeight)
+
+                Divider()
+                    .overlay(LyricsDesignTokens.controlBorder.opacity(0.72))
+
+                trackCol
+                    .frame(width: split.artwork, height: availableHeight)
+            } else {
+                trackCol
+                    .frame(width: split.artwork, height: availableHeight)
+
+                Divider()
+                    .overlay(LyricsDesignTokens.controlBorder.opacity(0.72))
+
+                lyricsCol
+                    .frame(width: split.lyrics, height: availableHeight)
+            }
+        }
+        .frame(width: contentWidth, height: availableHeight)
+        .padding(.horizontal, horizontalPadding)
+        .padding(.vertical, verticalPadding)
     }
 
     private func stageTheaterLayout(in geometry: GeometryProxy) -> some View {
         let canvasWidth = max(1, geometry.size.width)
         let canvasHeight = max(1, geometry.size.height)
-        let position = settings.v3ArtworkPosition
-        let isRight = position == "right"
-        let isCenter = position == "center"
+        let regime = V3ResponsiveGeometry.layoutRegime(canvasSize: geometry.size)
+        let horizontalPadding: CGFloat
+        let lyricHeight: CGFloat
+        let hudWidth: CGFloat
+        let bottomPadding: CGFloat
 
-        let artworkRect = V3ResponsiveGeometry.stageArtworkRect(
-            canvasSize: geometry.size,
-            artworkAspectRatio: currentArtworkAspectRatio,
-            position: position
-        )
-
-        let hudWidth = min(artworkRect.width - 32, 380)
-        let hudView = StageHUDView(state: state, width: hudWidth)
-
-        let lyricsWidth: CGFloat
-        if isCenter {
-            lyricsWidth = max(260, canvasWidth * 0.44)
-        } else if isRight {
-            lyricsWidth = max(220, artworkRect.minX - 32)
-        } else {
-            lyricsWidth = max(220, canvasWidth - artworkRect.maxX - 32)
+        switch regime {
+        case .compact:
+            horizontalPadding = 20
+            lyricHeight = max(220, min(286, canvasHeight * 0.52))
+            hudWidth = min(420, canvasWidth - horizontalPadding * 2)
+            bottomPadding = 18
+        case .regular:
+            horizontalPadding = 48
+            lyricHeight = max(260, min(390, canvasHeight * 0.52))
+            hudWidth = min(480, canvasWidth - horizontalPadding * 2)
+            bottomPadding = 28
+        case .wide:
+            horizontalPadding = 72
+            lyricHeight = max(300, min(470, canvasHeight * 0.50))
+            hudWidth = min(520, canvasWidth - horizontalPadding * 2)
+            bottomPadding = 36
         }
 
-        let lyricsCol = lyricsColumn(width: lyricsWidth, compact: false)
-            .frame(width: lyricsWidth)
-            .frame(maxHeight: .infinity)
+        let lyricsWidth = min(
+            max(1, canvasWidth - horizontalPadding * 2),
+            regime == .wide ? 960 : (regime == .regular ? 840 : 720)
+        )
+        let lyricsCol = lyricsColumn(
+            width: lyricsWidth,
+            compact: regime == .compact
+        )
+        let hudView = StageHUDView(state: state, width: hudWidth)
 
         return ZStack(alignment: .topLeading) {
-            // Lyrics Overlay floating in the safe reading zone
-            if isRight {
-                HStack(spacing: 0) {
-                    lyricsCol
-                        .padding(.leading, 24)
-                    Spacer()
-                }
-                .frame(width: canvasWidth, height: canvasHeight)
-            } else if isCenter {
-                lyricsCol
-                    .frame(width: lyricsWidth)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
-                    .padding(.trailing, 24)
-            } else {
-                HStack(spacing: 0) {
-                    Spacer()
-                    lyricsCol
-                        .padding(.trailing, 24)
-                }
-                .frame(width: canvasWidth, height: canvasHeight)
-            }
+            // A single broad, lower-stage veil gives the lyric group a
+            // readable stage without introducing a floating side panel.
+            LinearGradient(
+                stops: [
+                    .init(color: .clear, location: 0.18),
+                    .init(color: Color.black.opacity(0.08), location: 0.42),
+                    .init(color: Color.black.opacity(0.44), location: 0.70),
+                    .init(color: Color.black.opacity(0.72), location: 1.0)
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .frame(height: max(220, canvasHeight * 0.82))
+            .frame(maxHeight: .infinity, alignment: .bottom)
+            .allowsHitTesting(false)
 
-            // HUD Overlay anchored at the stage artwork base
-            VStack {
-                Spacer()
+            // Lyrics belong to the stage itself: one broad centered group,
+            // with the active line and its nearby context supplied by the
+            // existing viewport semantics.
+            VStack(spacing: regime == .compact ? 10 : 16) {
+                lyricsCol
+                    .frame(width: lyricsWidth, height: lyricHeight)
+
                 hudView
+                    .frame(width: hudWidth)
+                    .frame(maxWidth: .infinity, alignment: .center)
             }
-            .frame(width: hudWidth, alignment: isRight ? .trailing : (isCenter ? .center : .leading))
-            .padding(.leading, isRight ? 0 : (isCenter ? 0 : artworkRect.minX + 16))
-            .padding(.trailing, isRight ? (canvasWidth - artworkRect.maxX + 16) : 0)
-            .padding(.bottom, max(20, canvasHeight - artworkRect.maxY + 16))
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: isCenter ? .bottom : (isRight ? .bottomTrailing : .bottomLeading))
+            .frame(width: lyricsWidth)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+            .padding(.horizontal, horizontalPadding)
+            .padding(.bottom, bottomPadding)
         }
         .frame(width: canvasWidth, height: canvasHeight)
     }

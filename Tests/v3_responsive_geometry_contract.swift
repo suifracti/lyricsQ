@@ -3,6 +3,19 @@ import Foundation
 @main
 struct V3ResponsiveGeometryContract {
     static func main() {
+        precondition(
+            V3ResponsiveGeometry.layoutRegime(canvasSize: CGSize(width: 760, height: 520)) == .compact,
+            "technical minimum must use the compact regime"
+        )
+        precondition(
+            V3ResponsiveGeometry.layoutRegime(canvasSize: CGSize(width: 1_040, height: 680)) == .regular,
+            "reference window must use the regular regime"
+        )
+        precondition(
+            V3ResponsiveGeometry.layoutRegime(canvasSize: CGSize(width: 1_440, height: 900)) == .wide,
+            "large canvas must use the wide regime"
+        )
+
         // A user who leaves automatic lyrics focus disabled expects one
         // continuously resizing V3 composition. The former small-window
         // poster replaced the entire split layout at 800x600 and made a
