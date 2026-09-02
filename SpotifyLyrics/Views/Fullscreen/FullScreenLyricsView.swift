@@ -191,8 +191,8 @@ struct FullScreenLyricsView: View {
             // A→B→A switch from animating rows from the previous song.
             .id("lyrics-document-\(state.liveLyricsSessionRevision)")
             .frame(maxWidth: width, maxHeight: .infinity, alignment: .center)
-            .onChange(of: state.currentTime) { _, _ in
-                guard let index = state.liveCurrentLineIndex,
+            .onChange(of: state.liveCurrentLineIndex) { _, index in
+                guard let index,
                       index != lastScrolledLineIndex,
                       rows.indices.contains(index) else { return }
                 lastScrolledLineIndex = index

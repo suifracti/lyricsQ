@@ -29,7 +29,9 @@ require "$TOKENS" 'lyricsTransition\.system\.v1' 'system transition ID'
 require "$TOKENS" 'lyricsTransition\.smoothRelayout\.v1' 'smooth relayout transition ID'
 require "$TOKENS" 'lyricsTransition\.none\.v1' 'none transition ID'
 require "$TOKENS" 'smoothRelayoutV1' 'smooth relayout is available'
-require "$TOKENS" 'static let active: LyricsTransitionStyle = \.smoothRelayoutV1' 'smooth relayout is the default'
+require "$TOKENS" 'static var active: LyricsTransitionStyle' 'active transition is a stored selection'
+require "$TOKENS" 'PresentationSelectionStore.runtimeKey\(for: \.lyricsTransition\)' 'active style reads PresentationSelectionStore'
+require "$TOKENS" 'return \.smoothRelayoutV1' 'smooth relayout is the fallback'
 require "$TOKENS" 'reduceMotionDuration' 'reduce motion duration'
 require "$TOKENS" 'func animation\(reduceMotion: Bool\) -> Animation\?' 'optional transition animation'
 
@@ -45,9 +47,9 @@ require "$CANVAS" '\.id\(line\.id\)' 'stable lyric line identity'
 # revision so a fast track switch cannot animate old rows into the new track.
 require "$V3" 'LyricsTransitionPolicy\.perform' 'V3 shared transition policy'
 require "$V3" 'lyrics-document-' 'V3 session-bound scroll identity'
-require "$V3" 'state\.liveLyricsSessionRevision' 'V3 session revision in scroll identity'
+require "$V3" 'onChange\(of: currentIndex\)' 'V3 scrolls only on index change'
+require "$V3" 'state\.currentLineIndex' 'V3 uses published boundary index'
 require "$V3" 'layoutSignature' 'V3 row layout signature'
-require "$V3" 'transitionAnimation,' 'V3 relayout animation'
 require "$V3" 'value: layoutSignature' 'V3 layout signature animation value'
 
 # Compatibility/focus, fullscreen and floating surfaces use the same policy;

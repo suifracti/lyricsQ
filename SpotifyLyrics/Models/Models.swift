@@ -1170,6 +1170,57 @@ public struct LyricsPresentationClock: Equatable, Sendable {
     }
 }
 
+/// Next lyric-line boundary after the published index.
+/// Equal timestamps are skipped so repeated lines collapse to one wake-up.
+public enum LyricBoundary {
+    public static func nextTime(
+        afterIndex currentIndex: Int?,
+        timestamps: [TimeInterval]
+    ) -> TimeInterval? {
+        guard !timestamps.isEmpty else { return nil }
+        if let currentIndex {
+            guard timestamps.indices.contains(currentIndex) else { return nil }
+            let current = timestamps[currentIndex]
+            return timestamps[(currentIndex + 1)...].first { $0 > current }
+        }
+        return timestamps.first
+    }
+}
+
+/// Short-lived protection for a lyric boundary that was just confirmed.
+/// Ordinary poll jitter must not reverse that one crossing; real seeks can.
+public enum LyricIndexAntiRegression {
+    /// One Spotify poll cycle plus a small margin. Long enough to absorb
+    /// ordinary sample lag after a crossing; short enough that a later
+    /// real Desktop seek is not stuck on the old line.
+    public static let window: TimeInterval = 1.25
+
+    public static func shouldSuppressPollRegression(
+        isPlaying: Bool,
+        proposedIndex: Int?,
+        currentIndex: Int?,
+        confirmedIndex: Int?,
+        confirmedLineStart: TimeInterval?,
+        incomingTime: TimeInterval,
+        nowMonotonic: TimeInterval,
+        confirmedAtMonotonic: TimeInterval
+    ) -> Bool {
+        guard isPlaying,
+              let proposedIndex,
+              let currentIndex,
+              let confirmedIndex,
+              let confirmedLineStart,
+              proposedIndex == currentIndex - 1,
+              confirmedIndex == currentIndex,
+              incomingTime < confirmedLineStart,
+              nowMonotonic - confirmedAtMonotonic >= 0,
+              nowMonotonic - confirmedAtMonotonic < window else {
+            return false
+        }
+        return true
+    }
+}
+
 public struct LyricLine: Identifiable, Equatable, Hashable, Sendable {
     public let id: UUID
     public var timestamp: TimeInterval

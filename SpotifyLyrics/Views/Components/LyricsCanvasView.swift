@@ -294,7 +294,7 @@ struct LyricsCanvasView: View {
                         lastScrolledLineIndex = nil
                         scrollToCurrentLine(using: proxy, animated: false)
                     }
-                    .onChange(of: state.currentTime) { _, _ in
+                    .onChange(of: state.currentLineIndex) { _, _ in
                         scrollToCurrentLine(using: proxy, animated: true)
                     }
                     .onChange(of: state.lyricsSessionRevision) { _, _ in

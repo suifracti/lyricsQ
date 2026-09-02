@@ -120,6 +120,147 @@ struct PresentationClockContract {
         let t8_over = clock8.presentationTime(at: 102.0)
         assert(abs(t8_over - 200.0) < 1e-6, "Should clamp at duration 200.0, got \(t8_over)")
 
+        print("[9] Testing lyric boundary helper...")
+        let stamps: [TimeInterval] = [1.0, 2.0, 2.0, 5.0]
+        assert(LyricBoundary.nextTime(afterIndex: nil, timestamps: stamps) == 1.0)
+        assert(LyricBoundary.nextTime(afterIndex: 0, timestamps: stamps) == 2.0)
+        assert(LyricBoundary.nextTime(afterIndex: 1, timestamps: stamps) == 5.0)
+        assert(LyricBoundary.nextTime(afterIndex: 2, timestamps: stamps) == 5.0)
+        assert(LyricBoundary.nextTime(afterIndex: 3, timestamps: stamps) == nil)
+        assert(LyricBoundary.nextTime(afterIndex: 0, timestamps: []) == nil)
+
+        print("[10] Testing 10 line crossings are not 0.2s-quantized and do not wait for poll...")
+        let lineStarts: [TimeInterval] = [
+            1.03, 1.17, 1.41, 1.88, 2.05, 2.31, 2.74, 3.02, 3.19, 3.55, 4.01
+        ]
+        let clock10 = LyricsPresentationClock(
+            authoritativePosition: 0.95,
+            receivedAtMonotonicTime: 0,
+            isPlaying: true,
+            trackID: "track-10",
+            trackDuration: 30.0
+        )
+        var index: Int? = nil
+        var crossings: [(playhead: TimeInterval, index: Int)] = []
+        var pollWouldHaveFired = 0
+        let sampleStep = 0.01
+        var lastPoll = 0.0
+        for step in 0...400 {
+            let mono = Double(step) * sampleStep
+            let playhead = clock10.presentationTime(at: mono)
+            if mono - lastPoll >= 1.0 {
+                pollWouldHaveFired += 1
+                lastPoll = mono
+            }
+            let nextIndex: Int? = {
+                var lower = 0
+                var upper = lineStarts.count
+                while lower < upper {
+                    let middle = lower + (upper - lower) / 2
+                    if lineStarts[middle] <= playhead {
+                        lower = middle + 1
+                    } else {
+                        upper = middle
+                    }
+                }
+                return lower == 0 ? nil : lower - 1
+            }()
+            if nextIndex != index {
+                if let nextIndex {
+                    crossings.append((playhead, nextIndex))
+                }
+                index = nextIndex
+            }
+            if let current = index,
+               let boundary = LyricBoundary.nextTime(afterIndex: current, timestamps: lineStarts) {
+                let delay = boundary - playhead
+                assert(delay > 0 || nextIndex == lineStarts.count - 1 || playhead + 0.0005 >= boundary,
+                       "scheduled delay must target the next lyric timestamp")
+            }
+        }
+        assert(crossings.count == 11, "expected 11 unique line activations, got \(crossings.count)")
+        for (offset, crossing) in crossings.enumerated() {
+            let expected = lineStarts[offset]
+            let error = crossing.playhead - expected
+            assert(error >= -0.0001 && error < sampleStep + 0.0001,
+                   "crossing \(offset) at \(crossing.playhead) not at lyric start \(expected)")
+            let fiveHzActivation = (expected / 0.2).rounded(.up) * 0.2
+            let fiveHzError = fiveHzActivation - expected
+            if fiveHzError > sampleStep {
+                assert(error + 0.0001 < fiveHzError,
+                       "crossing \(offset) no better than 0.2s tick (\(crossing.playhead) vs 5Hz \(fiveHzActivation))")
+            }
+        }
+        let firstTenSpan = crossings[9].playhead - crossings[0].playhead
+        assert(firstTenSpan < 3.0, "10 crossings should not wait on 1s/2s polls; span=\(firstTenSpan)")
+        assert(pollWouldHaveFired >= 3, "simulation long enough that a 1s poll would have fired")
+
+        print("[11] Testing poll anti-regression only protects the just-crossed boundary...")
+        assert(
+            LyricIndexAntiRegression.shouldSuppressPollRegression(
+                isPlaying: true,
+                proposedIndex: 32,
+                currentIndex: 33,
+                confirmedIndex: 33,
+                confirmedLineStart: 87.78,
+                incomingTime: 87.63,
+                nowMonotonic: 100.08,
+                confirmedAtMonotonic: 100.00
+            )
+        )
+        assert(
+            LyricIndexAntiRegression.shouldSuppressPollRegression(
+                isPlaying: true,
+                proposedIndex: 17,
+                currentIndex: 18,
+                confirmedIndex: 18,
+                confirmedLineStart: 69.530,
+                incomingTime: 69.523,
+                nowMonotonic: 100.67,
+                confirmedAtMonotonic: 100.00
+            ),
+            "poll 0.67s after a crossing must still suppress"
+        )
+        assert(
+            !LyricIndexAntiRegression.shouldSuppressPollRegression(
+                isPlaying: true,
+                proposedIndex: 32,
+                currentIndex: 33,
+                confirmedIndex: 33,
+                confirmedLineStart: 87.78,
+                incomingTime: 87.63,
+                nowMonotonic: 102.00,
+                confirmedAtMonotonic: 100.00
+            ),
+            "expired window must not suppress"
+        )
+        assert(
+            !LyricIndexAntiRegression.shouldSuppressPollRegression(
+                isPlaying: true,
+                proposedIndex: 20,
+                currentIndex: 33,
+                confirmedIndex: 33,
+                confirmedLineStart: 87.78,
+                incomingTime: 60.62,
+                nowMonotonic: 100.08,
+                confirmedAtMonotonic: 100.00
+            ),
+            "multi-line backward seek must not suppress"
+        )
+        assert(
+            !LyricIndexAntiRegression.shouldSuppressPollRegression(
+                isPlaying: false,
+                proposedIndex: 32,
+                currentIndex: 33,
+                confirmedIndex: 33,
+                confirmedLineStart: 87.78,
+                incomingTime: 87.63,
+                nowMonotonic: 100.08,
+                confirmedAtMonotonic: 100.00
+            ),
+            "paused clock must not use poll anti-regression"
+        )
+
         print("PASS: Presentation clock contract verified")
     }
 }

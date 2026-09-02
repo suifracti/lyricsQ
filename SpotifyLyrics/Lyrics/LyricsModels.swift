@@ -428,6 +428,20 @@ public enum LyricsTimeline {
         return lower == 0 ? nil : lower - 1
     }
 
+    /// Timestamp of the next index change after `currentIndex`.
+    /// `nil` currentIndex means the playhead is before the first line.
+    public static func nextBoundaryTime(
+        lines: [LyricLine],
+        currentIndex: Int?,
+        isSynchronized: Bool
+    ) -> TimeInterval? {
+        guard isSynchronized, !lines.isEmpty else { return nil }
+        return LyricBoundary.nextTime(
+            afterIndex: currentIndex,
+            timestamps: lines.map(\.timestamp)
+        )
+    }
+
     public static func presentationDistance(
         index: Int,
         currentIndex: Int?,
