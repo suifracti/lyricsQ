@@ -2,7 +2,7 @@
 
 Status snapshot: 2026-08-13.
 
-This file describes what is present in the repository and how mature it is. It is not a release promise. Product direction and priority still come from the latest top-level Craft execution board; Git identifies the exact source.
+This file describes what is present in the repository and how mature it is. It is not a release promise. The current authoritative hierarchy is: (1) 用户明确指令, (2) Obsidian Current 的 Spotify Lyrics `README.md`、`Decisions.md`、活动 `Handoff.md`, (3) Git `HEAD` 与真实运行证据. Craft 已弃用，不得用于当前方向、优先级、阶段或项目状态判断. Git identifies the exact source.
 
 ## Source baseline
 

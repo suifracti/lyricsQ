@@ -1,6 +1,6 @@
 # Development Workflow
 
-This document defines the durable repository workflow. Product direction and stage priority come from the latest top-level Craft execution board; exact source identity comes from Git.
+This document defines the durable repository workflow. Product direction, decisions, and stage priority follow the authoritative hierarchy: (1) 用户明确指令, (2) Obsidian Current 的 Spotify Lyrics `README.md`、`Decisions.md`、活动 `Handoff.md`, and (3) Git `HEAD` 与真实运行证据. Craft 已弃用，不得用于当前方向、优先级、阶段或项目状态判断. Exact source identity comes from Git.
 
 ## Repository layout
 
@@ -106,4 +106,4 @@ When handing work to another AI, report:
 6. exact tests/builds run;
 7. whether an accepted `.app` archive exists.
 
-Craft decides what should be done next. Git identifies exactly what source was used.
+Current authoritative sources (用户明确指令 and Obsidian Current) decide what should be done next; Craft 已弃用，不得用于决定后续或阶段优先级. Git identifies exactly what source was used.
