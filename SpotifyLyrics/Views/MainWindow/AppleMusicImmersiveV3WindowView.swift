@@ -1343,11 +1343,9 @@ private struct AppleMusicImmersiveV3LyricsViewport: View {
         // windows and must not keep the previous track's lyrics on screen.
         let lines = state.lyrics
         let synchronized = state.lyricsAreSynchronized
-        let currentIndex = LyricsTimeline.activeLineIndex(
-            lines: lines,
-            time: state.currentTime,
-            isSynchronized: synchronized
-        )
+        // Line identity is published only at lyric boundaries. Do not derive
+        // it from the 5 Hz currentTime tick or the 60 fps presentation clock.
+        let currentIndex = state.currentLineIndex
         let language = state.isShowingSearchPreview ? nil : state.liveLyricsLanguage
         let trackStableKey = state.isShowingSearchPreview
             ? TrackIdentity(track: state.displayedTrack).stableKey
@@ -1596,6 +1594,12 @@ private struct AppleMusicImmersiveV3LyricsViewport: View {
             return
         }
         let id = lines[currentIndex].id
+#if DEBUG
+        let transitionTime = String(format: "%.3f", ProcessInfo.processInfo.systemUptime)
+        LyricsE2ELog.log(
+            "[LINE_INDEX] UI_TRANSITION_START_TIME=\(transitionTime) index=\(currentIndex) animated=\(animated)"
+        )
+#endif
         let action = { proxy.scrollTo(id, anchor: UnitPoint(x: 0.5, y: 0.47)) }
         if animated {
             LyricsTransitionPolicy.perform(reduceMotion: reduceMotion, action)

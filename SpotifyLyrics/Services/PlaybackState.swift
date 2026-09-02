@@ -14,6 +14,10 @@ public final class PlaybackState: ObservableObject {
 #endif
     @Published public private(set) var currentTrack: Track = .emptyPlaybackPlaceholder
     @Published public private(set) var currentTime: TimeInterval = 0
+    /// Published only when the playhead crosses a lyric-line boundary, on
+    /// seek/pause/resume/track change, or when the lyric document changes.
+    /// Not updated by the 5 Hz `currentTime` tick.
+    @Published public private(set) var liveCurrentLineIndex: Int? = nil
     @Published public private(set) var isPlaying = false
     @Published public var currentMode: LyricsDisplayMode = .mainWindow
     @Published public var preferences: DisplayPreferences = DisplayPreferences()
@@ -69,6 +73,11 @@ public final class PlaybackState: ObservableObject {
     private var playbackAnchorPosition: TimeInterval = 0
     private var playbackAnchorDate = Date()
     private var playbackAnchorMonotonic: TimeInterval = ProcessInfo.processInfo.systemUptime
+    private var lineBoundaryTask: Task<Void, Never>?
+    private var lineBoundaryGeneration: UInt64 = 0
+    private var confirmedLineIndex: Int?
+    private var confirmedLineStart: TimeInterval?
+    private var confirmedCrossMonotonic: TimeInterval = 0
     private var lastProviderRefreshDate = Date.distantPast
     private var transientProviderFailureStartedAt: Date?
     // Apple Events can fail for several polling cycles while Spotify remains
@@ -96,7 +105,10 @@ public final class PlaybackState: ObservableObject {
     private var liveLyricsProjectionCache: (key: LyricsProjectionCacheKey, lines: [LyricLine])?
     private var previewLyricsProjectionCache: (key: LyricsProjectionCacheKey, lines: [LyricLine])?
     private let tickInterval: TimeInterval = 0.2
-    private let calibrationInterval: TimeInterval = 2.0
+    // Track changes need a quicker observation path than the old two-second
+    // calibration heartbeat, while the single-flight guard still prevents
+    // overlapping Apple Events requests.
+    private let calibrationInterval: TimeInterval = 1.0
 
     public init(
         provider: PlaybackProvider? = nil,
@@ -176,6 +188,7 @@ public final class PlaybackState: ObservableObject {
                 guard let self else { return }
                 self.objectWillChange.send()
                 self.syncTranslationSession()
+                self.syncPublishedLineIndex(source: .lyricsSession)
                 // Product auto-align must re-evaluate after lyrics settle
                 // (plain document / version id), not only on willChange races.
                 AutomaticAlignmentJobController.shared.notePlaybackContextChanged()
@@ -415,13 +428,6 @@ public final class PlaybackState: ObservableObject {
         liveLyricsDocumentMatchesCurrentTrack ? lyricsSession.activeDocument?.source : nil
     }
     public var isLyricsSelectionEmpty: Bool { lyricsSession.isNoSelection }
-    public var liveCurrentLineIndex: Int? {
-        LyricsTimeline.activeLineIndex(
-            lines: liveLyrics,
-            time: currentTime,
-            isSynchronized: liveLyricsAreSynchronized
-        )
-    }
     public var currentTrackIdentity: TrackIdentity? {
         guard hasLiveTrack, !isMockPreviewMode else { return nil }
         return lyricsSession.activeIdentity
@@ -1079,7 +1085,7 @@ public final class PlaybackState: ObservableObject {
         currentTrack = MockData.sampleTrack
         lyricsSession.enterMockPreview(lines: MockData.sampleLyrics)
         isPlaying = false
-        resetPlaybackAnchor(to: 0)
+        resetPlaybackAnchor(to: 0, source: .reset)
     }
 
     public func exitMockPreview() {
@@ -1092,7 +1098,7 @@ public final class PlaybackState: ObservableObject {
         currentTrack = .emptyPlaybackPlaceholder
         lyricsSession.clear()
         isPlaying = false
-        resetPlaybackAnchor(to: 0)
+        resetPlaybackAnchor(to: 0, source: .reset)
         providerStatus = .connecting
         providerRefreshTask?.cancel()
         providerRefreshTask = Task { @MainActor [weak self] in
@@ -1103,7 +1109,7 @@ public final class PlaybackState: ObservableObject {
     public func togglePlayPause() {
         if isMockPreviewMode {
             isPlaying.toggle()
-            resetPlaybackAnchor(to: currentTime)
+            resetPlaybackAnchor(to: currentTime, source: .pauseResume)
             return
         }
 
@@ -1111,7 +1117,7 @@ public final class PlaybackState: ObservableObject {
         invalidateProviderRefresh()
         let shouldPlay = !isPlaying
         isPlaying = shouldPlay
-        resetPlaybackAnchor(to: currentTime)
+        resetPlaybackAnchor(to: currentTime, source: .pauseResume)
         providerRefreshTask = Task { @MainActor [weak self] in
             guard let self else { return }
             do {
@@ -1161,7 +1167,7 @@ public final class PlaybackState: ObservableObject {
         #endif
         // Product path: capture continuity + auto-align must see seeks outside DEBUG.
         AutomaticAlignmentJobController.shared.notifySeek(from: previousPosition, to: seekTime)
-        resetPlaybackAnchor(to: seekTime)
+        resetPlaybackAnchor(to: seekTime, source: .seek, previousTime: previousPosition)
 
         guard canControlSpotify else { return }
         invalidateProviderRefresh()
@@ -2045,11 +2051,23 @@ public final class PlaybackState: ObservableObject {
         // seek without going through seek(to:). Product auto-align reuses this.
         let previousPosition = currentTime
         let incoming = snapshot.position
-        if hasLiveTrack,
-           abs(incoming - previousPosition) > 1.5 {
+        let desktopJump = abs(incoming - previousPosition) > 1.5
+        if hasLiveTrack, desktopJump {
             AutomaticAlignmentJobController.shared.notifySeek(from: previousPosition, to: incoming)
         }
-        resetPlaybackAnchor(to: snapshot.position)
+        let anchorSource: LineIndexSource
+        if identityChanged {
+            anchorSource = .reset
+        } else if desktopJump {
+            anchorSource = .seek
+        } else {
+            anchorSource = .poll
+        }
+        resetPlaybackAnchor(
+            to: snapshot.position,
+            source: anchorSource,
+            previousTime: previousPosition
+        )
         if let session = listeningHistorySession,
            session.stableKey == nextIdentity.stableKey {
             updateListeningHistorySession(
@@ -2076,6 +2094,7 @@ public final class PlaybackState: ObservableObject {
         transientProviderFailureStartedAt = nil
         pauseListeningHistorySession(at: Date())
         alignmentTask?.cancel()
+        cancelLineBoundaryWake()
         clearSearchPreview()
         let hadLiveState = hasLiveTrack || lyricsSession.activeIdentity != nil || !lyrics.isEmpty
         lyricsEditorSession.markStale()
@@ -2086,7 +2105,7 @@ public final class PlaybackState: ObservableObject {
         }
         songSearchSelectionMessage = ""
         isPlaying = false
-        resetPlaybackAnchor(to: 0)
+        resetPlaybackAnchor(to: 0, source: .reset)
     }
 
     private func beginListeningHistorySession(
@@ -2208,7 +2227,7 @@ public final class PlaybackState: ObservableObject {
             currentTime = min(currentTrack.duration, currentTime + (isPlaying ? tickInterval : 0))
             if currentTime >= currentTrack.duration {
                 isPlaying = false
-                resetPlaybackAnchor(to: currentTrack.duration)
+                resetPlaybackAnchor(to: currentTrack.duration, source: .reset)
             }
         } else if providerStatus.isReady, hasLiveTrack {
             if isPlaying {
@@ -2216,13 +2235,17 @@ public final class PlaybackState: ObservableObject {
                 currentTime = min(currentTrack.duration, playbackAnchorPosition + elapsed)
                 if currentTime >= currentTrack.duration {
                     isPlaying = false
-                    resetPlaybackAnchor(to: currentTrack.duration)
+                    resetPlaybackAnchor(to: currentTrack.duration, source: .reset)
                 }
             } else {
                 currentTime = playbackAnchorPosition
             }
         } else {
             currentTime = 0
+        }
+
+        if isMockPreviewMode {
+            syncPublishedLineIndex(source: .mockTick)
         }
 
         let shouldRefreshProvider = !isMockPreviewMode &&
@@ -2234,11 +2257,153 @@ public final class PlaybackState: ObservableObject {
         }
     }
 
-    private func resetPlaybackAnchor(to position: TimeInterval) {
+    private enum LineIndexSource: String {
+        case poll
+        case seek
+        case boundary
+        case lyricsSession = "lyrics-session"
+        case pauseResume = "pause-resume"
+        case reset
+        case mockTick = "mock-tick"
+    }
+
+    private func resetPlaybackAnchor(
+        to position: TimeInterval,
+        source: LineIndexSource,
+        previousTime: TimeInterval? = nil
+    ) {
+        let previous = previousTime ?? currentTime
         playbackAnchorPosition = max(0, min(position, currentTrack.duration))
         playbackAnchorDate = Date()
         playbackAnchorMonotonic = ProcessInfo.processInfo.systemUptime
         currentTime = playbackAnchorPosition
+        syncPublishedLineIndex(
+            source: source,
+            previousTime: previous,
+            incomingTime: playbackAnchorPosition
+        )
+    }
+
+    private var presentationTimeNow: TimeInterval {
+        if isMockPreviewMode {
+            return currentTime
+        }
+        return presentationClock.presentationTime(at: ProcessInfo.processInfo.systemUptime)
+    }
+
+    private func cancelLineBoundaryWake() {
+        lineBoundaryGeneration &+= 1
+        lineBoundaryTask?.cancel()
+        lineBoundaryTask = nil
+    }
+
+    private func rememberConfirmedLine(index: Int?, lines: [LyricLine], at monotonic: TimeInterval) {
+        confirmedLineIndex = index
+        if let index, lines.indices.contains(index) {
+            confirmedLineStart = lines[index].timestamp
+            confirmedCrossMonotonic = monotonic
+        } else {
+            confirmedLineStart = nil
+            confirmedCrossMonotonic = 0
+        }
+    }
+
+    private func syncPublishedLineIndex(
+        source: LineIndexSource,
+        previousTime: TimeInterval? = nil,
+        incomingTime: TimeInterval? = nil
+    ) {
+        let lines = liveLyrics
+        let synchronized = liveLyricsAreSynchronized
+        let time = incomingTime ?? presentationTimeNow
+        let newIndex = LyricsTimeline.activeLineIndex(
+            lines: lines,
+            time: time,
+            isSynchronized: synchronized
+        )
+        let nowMono = ProcessInfo.processInfo.systemUptime
+        let previous = previousTime ?? time
+        let delta = time - previous
+
+        let suppress = source == .poll && LyricIndexAntiRegression.shouldSuppressPollRegression(
+            isPlaying: isPlaying,
+            proposedIndex: newIndex,
+            currentIndex: liveCurrentLineIndex,
+            confirmedIndex: confirmedLineIndex,
+            confirmedLineStart: confirmedLineStart,
+            incomingTime: time,
+            nowMonotonic: nowMono,
+            confirmedAtMonotonic: confirmedCrossMonotonic
+        )
+
+#if DEBUG
+        if newIndex != liveCurrentLineIndex || suppress {
+            let lineStart = (suppress ? liveCurrentLineIndex : newIndex).flatMap { index -> TimeInterval? in
+                guard lines.indices.contains(index) else { return nil }
+                return lines[index].timestamp
+            }
+            let startText = lineStart.map { String(format: "%.3f", $0) } ?? "nil"
+            let timeText = String(format: "%.3f", time)
+            let prevText = String(format: "%.3f", previous)
+            let deltaText = String(format: "%.3f", delta)
+            let monoText = String(format: "%.3f", nowMono)
+            let oldText = liveCurrentLineIndex.map(String.init) ?? "nil"
+            let newText = newIndex.map(String.init) ?? "nil"
+            LyricsE2ELog.log(
+                "[LINE_INDEX] reason=\(source.rawValue) suppress=\(suppress) previousTime=\(prevText) incoming=\(timeText) delta=\(deltaText) LINE_START_TIME=\(startText) PRESENTATION_CLOCK_CROSS_TIME=\(timeText) INDEX_CHANGE_TIME=\(monoText) STATE_PUBLISH_TIME=\(monoText) old=\(oldText) proposed=\(newText)"
+            )
+        }
+#endif
+
+        if suppress {
+            scheduleLineBoundaryWake(lines: lines, synchronized: synchronized, time: time)
+            return
+        }
+
+        if source == .seek || source == .reset || source == .lyricsSession {
+            rememberConfirmedLine(index: newIndex, lines: lines, at: nowMono)
+        }
+
+        if newIndex != liveCurrentLineIndex {
+            liveCurrentLineIndex = newIndex
+            if let newIndex, let old = confirmedLineIndex {
+                if newIndex >= old {
+                    rememberConfirmedLine(index: newIndex, lines: lines, at: nowMono)
+                } else if source != .poll {
+                    rememberConfirmedLine(index: newIndex, lines: lines, at: nowMono)
+                }
+            } else {
+                rememberConfirmedLine(index: newIndex, lines: lines, at: nowMono)
+            }
+        }
+
+        scheduleLineBoundaryWake(lines: lines, synchronized: synchronized, time: time)
+    }
+
+    private func scheduleLineBoundaryWake(
+        lines: [LyricLine],
+        synchronized: Bool,
+        time: TimeInterval
+    ) {
+        cancelLineBoundaryWake()
+        guard !isMockPreviewMode, isPlaying, synchronized, hasLiveTrack else { return }
+        guard let boundary = LyricsTimeline.nextBoundaryTime(
+            lines: lines,
+            currentIndex: liveCurrentLineIndex,
+            isSynchronized: synchronized
+        ) else {
+            return
+        }
+        let delay = boundary - time
+        let generation = lineBoundaryGeneration
+        guard delay > 0.0005 else { return }
+        let nanoseconds = UInt64(min(delay, 3600) * 1_000_000_000)
+        lineBoundaryTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: nanoseconds)
+            guard !Task.isCancelled else { return }
+            guard let self, self.lineBoundaryGeneration == generation else { return }
+            self.syncPublishedLineIndex(source: .boundary)
+        }
     }
 
     public var presentationClock: LyricsPresentationClock {
