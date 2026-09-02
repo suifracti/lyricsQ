@@ -12,9 +12,16 @@ The checked-out Git working tree is the source of truth. When the worktree is cl
 
 ## Sources of truth
 
-- Craft's latest top execution board is authoritative for product direction, priority, and stage decisions.
+The authoritative hierarchy for current work is:
+
+1. 用户明确指令
+2. Obsidian Current 的 Spotify Lyrics `README.md`、`Decisions.md`、活动 `Handoff.md`
+3. Git `HEAD` 与真实运行证据
+
+Craft 已弃用，不得用于当前方向、优先级、阶段或项目状态判断。历史上的 Craft 页面与旧 execution board 仅保留为归档材料，不具备当前权威。
+
 - Git `HEAD` is authoritative for the exact source version.
-- `docs/archive/` and old reports are historical evidence only; they must not override Craft's latest decision.
+- `docs/archive/` and old reports are historical evidence only; they must not override the current authoritative sources above.
 - `.local/` is never a source tree. Its `backups/`, `patches/`, `reference-projects/`, and `builds/` contain local history or reference material only. Do not automatically restore or overwrite source from `.local/`.
 
 ## Before starting work
@@ -28,7 +35,7 @@ git rev-parse HEAD
 git log -5 --oneline
 ```
 
-Also read the latest Craft execution board before deciding the product scope. For a substantial change, create a reversible checkpoint commit and push it before proceeding.
+Also inspect the user instructions and Obsidian Current's Spotify Lyrics documents (`README.md`, `Decisions.md`, and any active `Handoff.md`) before deciding the product scope. Craft 已弃用，不得依据旧 Craft execution board 进行决策。 For a substantial change, create a reversible checkpoint commit and push it before proceeding.
 
 ## Prohibited without explicit authorization
 

@@ -1,6 +1,6 @@
 # Submission Baseline
 
-This is the required local checklist for any AI or collaborator preparing a commit, push, handoff, or accepted build. It complements `AGENTS.md` and `DEVELOPMENT_WORKFLOW.md`; it does not replace the latest Craft execution board.
+This is the required local checklist for any AI or collaborator preparing a commit, push, handoff, or accepted build. It complements `AGENTS.md` and `DEVELOPMENT_WORKFLOW.md`. The authoritative hierarchy is: (1) 用户明确指令, (2) Obsidian Current 的 Spotify Lyrics `README.md`、`Decisions.md`、活动 `Handoff.md`, (3) Git `HEAD` 与真实运行证据. Craft 已弃用，不得用于当前方向、优先级、阶段或项目状态判断.
 
 ## 1. Identify the source exactly
 
@@ -27,7 +27,7 @@ git rev-parse '@{upstream}'
 
 ## 2. Protect the intended scope
 
-- Read `AGENTS.md`, the latest Craft execution board, and `docs/STATUS.md`.
+- Read `AGENTS.md`, Obsidian Current documents (`README.md`, `Decisions.md`, active `Handoff.md`), and `docs/STATUS.md`. Note that Craft 已弃用，不得依据旧 Craft execution board 进行判断.
 - Confirm which changes belong to the current task with `git status` and `git diff`.
 - Do not stage unrelated user changes.
 - Before a substantial or risky modification, create and push a reversible checkpoint commit.
