@@ -1354,15 +1354,6 @@ private struct AppleMusicImmersiveV3LyricsViewport: View {
             : state.currentTrackIdentity?.stableKey
         let artistDisplay = state.displayedTrack.artist
 
-#if DEBUG
-        let nowIso = ISO8601DateFormatter().string(from: Date())
-        let playbackTrackID = TrackIdentity.canonicalSpotifyTrackID(state.currentTrack.spotifyId) ?? state.currentTrack.spotifyId ?? "none"
-        let renderToken = lines.isEmpty ? "none" : (state.lyricsSession.debugLyricsBindingToken ?? "none")
-        let versionID = state.lyricsSession.activeLyricsVersionID?.uuidString ?? "none"
-        let sessionGen = state.lyricsSession.revision
-        print("[RuntimeLyricsRendered] timestamp=\(nowIso) sessionGeneration=\(sessionGen) playbackTrackID=\(playbackTrackID) renderLyricsBindingToken=\(renderToken) lyricsVersionID=\(versionID) activeLineIndex=\(currentIndex ?? -1)")
-#endif
-
         return VStack(alignment: .leading, spacing: LyricsDesignTokens.Spacing.xs) {
             if lines.isEmpty {
                 if lyricsFocus {
@@ -1569,7 +1560,6 @@ private struct AppleMusicImmersiveV3LyricsViewport: View {
             language: language,
             trackStableKey: trackStableKey,
             artistDisplay: artistDisplay,
-            currentTime: state.currentTime,
             presentationClock: state.presentationClock
         )
         .environmentObject(settings)
@@ -1673,6 +1663,82 @@ private enum V3JapaneseReadingCache {
     }
 }
 
+private final class V3TimedMultilineLayoutBox: NSObject {
+    let value: TimedMultilineLayout?
+
+    init(_ value: TimedMultilineLayout?) {
+        self.value = value
+    }
+}
+
+private final class V3TimedRubyLayoutBox: NSObject {
+    let value: TimedRubyLayout?
+
+    init(_ value: TimedRubyLayout?) {
+        self.value = value
+    }
+}
+
+/// Playback time updates frequently for word/syllable progress. Keep the
+/// CoreText geometry stable across those updates; the timed row still reads
+/// the live presentation clock for its fill progress.
+private enum V3TimedLayoutCache {
+    private static let multilineCache: NSCache<NSString, V3TimedMultilineLayoutBox> = {
+        let cache = NSCache<NSString, V3TimedMultilineLayoutBox>()
+        cache.countLimit = 128
+        return cache
+    }()
+    private static let rubyCache: NSCache<NSString, V3TimedRubyLayoutBox> = {
+        let cache = NSCache<NSString, V3TimedRubyLayoutBox>()
+        cache.countLimit = 128
+        return cache
+    }()
+
+    static func key(
+        kind: String,
+        line: LyricLine,
+        fontSize: CGFloat,
+        weight: CGFloat,
+        availableWidth: CGFloat? = nil,
+        rubyTokens: [LyricRubyToken]? = nil
+    ) -> String {
+        var hasher = Hasher()
+        hasher.combine(kind)
+        hasher.combine(line)
+        hasher.combine(fontSize)
+        hasher.combine(weight)
+        hasher.combine(availableWidth)
+        hasher.combine(rubyTokens)
+        return "\(kind)-\(hasher.finalize())"
+    }
+
+    static func multiline(
+        for key: String,
+        make: () -> TimedMultilineLayout?
+    ) -> TimedMultilineLayout? {
+        let cacheKey = key as NSString
+        if let cached = multilineCache.object(forKey: cacheKey) {
+            return cached.value
+        }
+        let value = make()
+        multilineCache.setObject(V3TimedMultilineLayoutBox(value), forKey: cacheKey)
+        return value
+    }
+
+    static func ruby(
+        for key: String,
+        make: () -> TimedRubyLayout?
+    ) -> TimedRubyLayout? {
+        let cacheKey = key as NSString
+        if let cached = rubyCache.object(forKey: cacheKey) {
+            return cached.value
+        }
+        let value = make()
+        rubyCache.setObject(V3TimedRubyLayoutBox(value), forKey: cacheKey)
+        return value
+    }
+}
+
 /// Adds presentation-only line breaks for long plain-text lyrics. Stored
 /// lyrics, translations, timing, search matching, and ruby tokens are never
 /// changed. Ruby rows already wrap at morphology-token boundaries.
@@ -1754,7 +1820,6 @@ private struct AppleMusicImmersiveV3LyricRow: View {
     let language: String?
     let trackStableKey: String?
     let artistDisplay: String?
-    var currentTime: TimeInterval = 0
     var presentationClock: LyricsPresentationClock = LyricsPresentationClock()
     @EnvironmentObject private var settings: AppSettingsStore
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -2190,25 +2255,49 @@ private struct AppleMusicImmersiveV3LyricRow: View {
     }
 
     private func precomputedTimedMultilineLayout(for line: LyricLine, spans: [TimedTextSpan]) -> TimedMultilineLayout? {
-        TimedTextComposer.computeMultilineLayout(
-            originalText: line.originalText,
-            spans: spans,
-            fontSize: baseSize,
-            weight: rowWeight.nsWeightValue,
-            design: "rounded",
-            availableWidth: readableLineWidth
+        let fontSize = baseSize
+        let weight = rowWeight.nsWeightValue
+        let width = readableLineWidth
+        let key = V3TimedLayoutCache.key(
+            kind: "multiline",
+            line: line,
+            fontSize: fontSize,
+            weight: weight,
+            availableWidth: width
         )
+        return V3TimedLayoutCache.multiline(for: key) {
+            TimedTextComposer.computeMultilineLayout(
+                originalText: line.originalText,
+                spans: spans,
+                fontSize: fontSize,
+                weight: weight,
+                design: "rounded",
+                availableWidth: width
+            )
+        }
     }
 
     private func precomputedTimedRubyLayout(for line: LyricLine, spans: [TimedTextSpan]) -> TimedRubyLayout? {
-        TimedTextComposer.computeTimedRubyLayout(
-            originalText: line.originalText,
-            spans: spans,
-            rubyTokens: inlineRubyTokens,
-            fontSize: baseSize,
-            weight: rowWeight.nsWeightValue,
-            design: "rounded"
+        let fontSize = baseSize
+        let weight = rowWeight.nsWeightValue
+        let rubyTokens = inlineRubyTokens
+        let key = V3TimedLayoutCache.key(
+            kind: "ruby",
+            line: line,
+            fontSize: fontSize,
+            weight: weight,
+            rubyTokens: rubyTokens
         )
+        return V3TimedLayoutCache.ruby(for: key) {
+            TimedTextComposer.computeTimedRubyLayout(
+                originalText: line.originalText,
+                spans: spans,
+                rubyTokens: rubyTokens,
+                fontSize: fontSize,
+                weight: weight,
+                design: "rounded"
+            )
+        }
     }
 
     #if DEBUG
