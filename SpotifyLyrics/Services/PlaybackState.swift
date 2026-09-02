@@ -70,6 +70,12 @@ public final class PlaybackState: ObservableObject {
     private var playbackAnchorDate = Date()
     private var playbackAnchorMonotonic: TimeInterval = ProcessInfo.processInfo.systemUptime
     private var lastProviderRefreshDate = Date.distantPast
+    private var transientProviderFailureStartedAt: Date?
+    // Apple Events can fail for several polling cycles while Spotify remains
+    // open and playing. Retain the last confirmed state for a bounded window
+    // longer than the observed transient burst, but still clear a persistent
+    // provider outage.
+    private let transientProviderFailureGracePeriod: TimeInterval = 20
 #if DEBUG
     /// Optional acceptance harness: when `SPOTIFYLYRICS_ACCEPTANCE_CONTROL_PATH`
     /// is set, a short timer applies mode / retry commands from that file.
@@ -1961,12 +1967,30 @@ public final class PlaybackState: ObservableObject {
         // A refresh that was already in flight when Mock Preview was entered
         // must not be allowed to resurrect a real Spotify session.
         guard !isMockPreviewMode else { return }
-        providerStatus = snapshot.status
-
         guard snapshot.status.isReady, let providerTrack = snapshot.track else {
+            guard hasLiveTrack else {
+                transientProviderFailureStartedAt = nil
+                providerStatus = snapshot.status
+                clearLiveTrackIfNeeded()
+                return
+            }
+
+            let now = Date()
+            let failureStartedAt = transientProviderFailureStartedAt ?? now
+            transientProviderFailureStartedAt = failureStartedAt
+            let elapsed = now.timeIntervalSince(failureStartedAt)
+            guard elapsed >= transientProviderFailureGracePeriod else {
+                return
+            }
+
+            transientProviderFailureStartedAt = nil
+            providerStatus = snapshot.status
             clearLiveTrackIfNeeded()
             return
         }
+
+        transientProviderFailureStartedAt = nil
+        providerStatus = snapshot.status
 
         let nextTrack = Track(providerTrack: providerTrack)
         let nextIdentity = TrackIdentity(track: nextTrack)
@@ -2049,6 +2073,7 @@ public final class PlaybackState: ObservableObject {
 
     private func clearLiveTrackIfNeeded() {
         guard !isMockPreviewMode else { return }
+        transientProviderFailureStartedAt = nil
         pauseListeningHistorySession(at: Date())
         alignmentTask?.cancel()
         clearSearchPreview()
