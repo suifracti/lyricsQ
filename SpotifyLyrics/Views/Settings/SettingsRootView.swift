@@ -10,7 +10,6 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
     case advancedAndData = "高级与数据"
 
     // 过渡桥接隐藏目标 (Hidden Bridge Destinations, 不在侧边栏显示)
-    case reading = "读音与文字"
     case lyricsSources = "歌词来源"
     case data = "数据与存储"
     case library = "我的歌词库"
@@ -31,7 +30,6 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
         case .servicesAndSources: return "waveform.circle"
         case .aiTranslation: return "sparkles"
         case .advancedAndData: return "wrench.and.screwdriver"
-        case .reading: return "character.book.closed"
         case .lyricsSources: return "books.vertical"
         case .data: return "externaldrive"
         case .library: return "music.note.list"
@@ -130,7 +128,7 @@ private struct SettingsDetailView: View {
                 GeneralSettingsView()
                     .padding(28)
             case .lyricsAndText:
-                DisplaySettingsView(onNavigateToReading: { selection = .reading })
+                LyricsAndTextSettingsView()
                     .padding(28)
             case .servicesAndSources:
                 SpotifySettingsView(onNavigateToLyricsSources: { selection = .lyricsSources })
@@ -146,11 +144,6 @@ private struct SettingsDetailView: View {
                 .padding(28)
 
             // Hidden Bridge Destinations
-            case .reading:
-                TransitionalBridgeContainer(title: "返回歌词与文字", onBack: { selection = .lyricsAndText }) {
-                    ReadingSettingsView()
-                        .padding(28)
-                }
             case .lyricsSources:
                 TransitionalBridgeContainer(title: "返回服务与来源", onBack: { selection = .servicesAndSources }) {
                     LyricsSourcesSettingsView()
@@ -185,7 +178,7 @@ private struct SettingsDetailView: View {
     }
 }
 
-private struct SettingsPageHeader: View {
+struct SettingsPageHeader: View {
     let title: String
     let detail: String
 
@@ -295,95 +288,6 @@ private struct GeneralSettingsView: View {
                 )
             }
         )
-    }
-}
-
-private struct DisplaySettingsView: View {
-    @EnvironmentObject private var settings: AppSettingsStore
-    let onNavigateToReading: () -> Void
-
-    var body: some View {
-        Form {
-            SettingsPageHeader(title: "歌词显示", detail: "V3 和歌词专注模式共用这些显示层设置，修改后立即生效。")
-
-            Section("语言层") {
-                Toggle("显示原文", isOn: preferenceBinding(\.showOriginal))
-                Toggle("显示翻译", isOn: preferenceBinding(\.showTranslation))
-                Toggle("显示罗马音", isOn: preferenceBinding(\.showRomaji))
-                Picker("假名显示模式", selection: preferenceBinding(\.kanaDisplayMode)) {
-                    Text("汉字上方注音").tag(KanaDisplayMode.inlineRuby)
-                    Text("独立假名行").tag(KanaDisplayMode.independentLine)
-                    Text("假名替换").tag(KanaDisplayMode.kanaReplacement)
-                    Text("隐藏").tag(KanaDisplayMode.hidden)
-                }
-                Text(settings.displayPreferences.kanaDisplayMode.detail)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Section("字号与层级") {
-                numericSlider("当前歌词字号", value: doubleBinding(\.fontSize), range: 14...42, format: "%.0f pt")
-                numericSlider("辅助文本字号", value: doubleBinding(\.assistantFontSize), range: 10...24, format: "%.0f pt")
-                numericSlider("Ruby 假名大小", value: doubleBinding(\.rubyFontSize), range: 8...18, format: "%.0f pt")
-                numericSlider("非当前歌词透明度", value: preferenceBinding(\.opacity), range: 0.15...1, format: "%.0f%%", scale: 100)
-                Toggle("远处歌词隐藏 Ruby 和罗马音", isOn: preferenceBinding(\.hideDistantAuxiliary))
-            }
-
-            Section("读音与文字设置（过渡入口）") {
-                Button {
-                    onNavigateToReading()
-                } label: {
-                    HStack {
-                        Label("进入读音与文字设置", systemImage: "character.book.closed")
-                        Spacer()
-                        Image(systemName: "chevron.right")
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("btn_enter_reading")
-            }
-        }
-        .formStyle(.grouped)
-    }
-
-    private func preferenceBinding<Value>(_ keyPath: WritableKeyPath<DisplayPreferences, Value>) -> Binding<Value> {
-        Binding(
-            get: { settings.displayPreferences[keyPath: keyPath] },
-            set: { value in
-                var next = settings.displayPreferences
-                next[keyPath: keyPath] = value
-                settings.displayPreferences = next
-            }
-        )
-    }
-
-    private func doubleBinding(_ keyPath: WritableKeyPath<DisplayPreferences, CGFloat>) -> Binding<Double> {
-        Binding(
-            get: { Double(settings.displayPreferences[keyPath: keyPath]) },
-            set: { value in
-                var next = settings.displayPreferences
-                next[keyPath: keyPath] = CGFloat(value)
-                settings.displayPreferences = next
-            }
-        )
-    }
-
-    private func numericSlider(
-        _ title: String,
-        value: Binding<Double>,
-        range: ClosedRange<Double>,
-        format: String,
-        scale: Double = 1
-    ) -> some View {
-        HStack {
-            Text(title)
-            Slider(value: value, in: range)
-            Text(String(format: format, value.wrappedValue * scale))
-                .font(.system(.caption, design: .monospaced))
-                .foregroundStyle(.secondary)
-                .frame(width: 58, alignment: .trailing)
-        }
     }
 }
 
