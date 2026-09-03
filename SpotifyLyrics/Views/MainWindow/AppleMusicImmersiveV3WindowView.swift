@@ -32,10 +32,6 @@ struct AppleMusicImmersiveV3WindowView: View {
     @State private var isAlignmentDetailsPresented = false
     @State private var isCurrentSongOperationsPresented = false
 
-    private var isSecondarySurfacePresented: Bool {
-        isVisualTuningPresented || isSearchPresented || isCurrentSongOperationsPresented
-    }
-
     private var showsForegroundArtwork: Bool {
         settings.v3ArtworkPresentation != .stage
     }
@@ -66,11 +62,11 @@ struct AppleMusicImmersiveV3WindowView: View {
                 toolBar
                     .padding(.top, 18)
                     .padding(.trailing, 26)
-                    .opacity(toolsVisible || isSecondarySurfacePresented ? 1 : 0)
-                    .allowsHitTesting(toolsVisible || isSecondarySurfacePresented)
+                    .opacity(toolsVisible || isVisualTuningPresented || isSearchPresented || isCurrentSongOperationsPresented ? 1 : 0)
+                    .allowsHitTesting(toolsVisible || isVisualTuningPresented || isSearchPresented || isCurrentSongOperationsPresented)
                     .animation(
                         LyricsDesignTokens.Motion.animation(reduceMotion: reduceMotion),
-                        value: toolsVisible || isSecondarySurfacePresented
+                        value: toolsVisible || isVisualTuningPresented || isSearchPresented || isCurrentSongOperationsPresented
                     )
             }
             .clipped()
@@ -78,13 +74,13 @@ struct AppleMusicImmersiveV3WindowView: View {
             .onContinuousHover(coordinateSpace: .local) { phase in
                 switch phase {
                 case .active(let location):
-                    if location.y <= MainWindowResponsiveThresholds.toolbarRevealHeight || isSecondarySurfacePresented {
+                    if location.y <= MainWindowResponsiveThresholds.toolbarRevealHeight || isVisualTuningPresented || isSearchPresented || isCurrentSongOperationsPresented {
                         revealTools()
-                    } else if !isSecondarySurfacePresented {
+                    } else if !isVisualTuningPresented && !isSearchPresented && !isCurrentSongOperationsPresented {
                         toolsVisible = false
                     }
                 case .ended:
-                    if !isSecondarySurfacePresented {
+                    if !isVisualTuningPresented && !isSearchPresented && !isCurrentSongOperationsPresented {
                         toolsVisible = false
                     }
                 }
