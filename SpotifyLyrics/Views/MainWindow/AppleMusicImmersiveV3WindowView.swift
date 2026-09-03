@@ -1223,11 +1223,19 @@ private struct V3TransportIconButton: View {
 }
 
 struct V3BounceButtonStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .scaleEffect(configuration.isPressed ? 0.84 : 1.0)
+            .scaleEffect(configuration.isPressed && !reduceMotion ? 0.96 : 1.0)
             .opacity(configuration.isPressed ? 0.72 : 1.0)
-            .animation(.spring(response: 0.22, dampingFraction: 0.65), value: configuration.isPressed)
+            .animation(
+                LyricsDesignTokens.Motion.animation(
+                    reduceMotion: reduceMotion,
+                    duration: LyricsDesignTokens.Motion.quickDuration
+                ),
+                value: configuration.isPressed
+            )
     }
 }
 
