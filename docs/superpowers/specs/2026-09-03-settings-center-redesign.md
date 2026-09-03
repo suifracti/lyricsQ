@@ -60,9 +60,9 @@
 | 原分类 | 真实所有权属性 | 诊断结论 |
 | :--- | :--- | :--- |
 | **通用** (`General`) | Global Preference | 属于正统偏好；保留为主入口，并整合散落在各处的全局自动化开关。 |
-| **我的歌词库** (`Library`) | Data Workstation | **非偏好设置**。具备完整增删改查、资产包导入导出且内嵌第二层双分栏，属于重型数据工具。本轮降级为实用工具入口，不占一级偏好。 |
-| **最近播放** (`History`) | Activity Log | **非偏好设置**。纯观察日志，无配置属性。降级为实用工具入口。 |
-| **听歌统计** (`Statistics`) | Analytics Dashboard | **非偏好设置**。纯数据分析看板，无配置属性。降级为实用工具入口。 |
+| **我的歌词库** (`Library`) | Data Workstation | **非偏好设置**。具备完整增删改查、资产包导入导出且内嵌第二层双分栏，属于重型数据工具。本轮降级为“高级与数据”内的过渡桥接，不占一级偏好。 |
+| **最近播放** (`History`) | Activity Log | **非偏好设置**。纯观察日志，无配置属性。降级为过渡桥接入口。 |
+| **听歌统计** (`Statistics`) | Analytics Dashboard | **非偏好设置**。纯数据分析看板，无配置属性。降级为过渡桥接入口。 |
 | **歌词显示** (`Display`) | Global Typography | 属于正统偏好；但与“读音与文字”同质，应合并为单一文字领域。 |
 | **读音与文字** (`Reading`) | Global Language & Typography | 属于正统偏好；核心显示合并入“歌词与文字”，生成策略与词典作为渐进式折叠区。 |
 | **Spotify** (`Spotify`) | Service & Credentials | 属于正统偏好（基础设施连接与授权凭据）；与歌词来源同构，应整合为“服务与来源”。 |
@@ -76,24 +76,23 @@
 
 ## 5. Final Information Architecture（最终信息架构）
 
-最终侧边栏分为两大区域：**5 个核心偏好大类** + **1 个过渡实用工具区（轻量独立分组）**。
+最终侧边栏严格仅保留 **5 个一级核心偏好入口**。原非设置功能（我的歌词库、最近播放、听歌统计）不再占用侧边栏导航行，而是统一降级收纳于 `高级与数据 → 实用工具` 作为过渡桥接，确保侧边栏轻量、聚焦。
 
 ```
 SettingsCenter
-├── [偏好设置 / Preferences] (Primary)
-│   ├── 1. 通用 (General)
-│   ├── 2. 歌词与文字 (Lyrics & Text)
-│   ├── 3. 服务与来源 (Services & Sources)
-│   ├── 4. AI 翻译 (AI Translation)
-│   └── 5. 高级与数据 (Advanced & Data)
-│
-└── [实用工具 / Tools] (Secondary Bridge - 非偏好入口)
-    ├── 我的歌词库 (Personal Lyrics Library)
-    ├── 最近播放 (Listening History)
-    └── 听歌统计 (Listening Statistics)
+└── [侧边栏一级入口 / Five Direct Sidebar Categories]
+    ├── 1. 通用 (General)
+    ├── 2. 歌词与文字 (Lyrics & Text)
+    ├── 3. 服务与来源 (Services & Sources)
+    ├── 4. AI 翻译 (AI Translation)
+    └── 5. 高级与数据 (Advanced & Data)
+        └── [实用工具过渡桥接 / Transitional Tools Bridge]
+            ├── 打开我的歌词库 (Personal Lyrics Library)
+            ├── 查看最近播放 (Listening History)
+            └── 查看听歌统计 (Listening Statistics)
 ```
 
-> **说明**：在侧边栏中，“实用工具”通过独立的 Section 标题和轻量分组与真正的 5 个设置项明确区分，既保证老功能不丢失、不破坏老用户习惯，又彻底恢复了 5 个核心偏好的主导地位。
+> **说明**：侧边栏严格禁止出现 8~10 个平级入口。非设置模块通过“高级与数据”内部的实用工具区域保持可达，既杜绝功能失联，又维护了正统偏好设置的信息纯粹性。
 
 ---
 
@@ -197,7 +196,7 @@ SettingsCenter
 
 ### 5. 高级与数据 (`Advanced & Data`)
 
-- **定位**：本地数据存储维护、运行期诊断、破坏性操作与实验性版本桥接。
+- **定位**：本地数据存储维护、运行期诊断、破坏性操作、实验性版本与实用工具过渡桥接。
 - **Sections**：
   1. **SQLite 数据库与本地存储**：
      - 数据库路径、Migration 版本、曲目与歌词统计信息展示
@@ -210,7 +209,12 @@ SettingsCenter
   3. **重置与危险操作**：
      - 重置窗口状态按钮（重置主窗口与悬浮窗口位置）
      - 清除所有歌词缓存（Destructive Button，带二次确认弹窗）
-  4. **深入体验与实验版本（折叠 / 次级区域）**：
+  4. **实用工具（过渡桥接 / Transitional Tools Bridge）**：
+     - 打开我的歌词库（Button）
+     - 查看最近播放（Button）
+     - 查看听歌统计（Button）
+     *(说明：Audit 确认这三项重型功能当前全 App 无其他入口；本轮在“高级与数据”内提供桥接入口保持可达，不新建独立窗口架构，不重新设计这三个业务模块)*
+  5. **深入体验与实验版本（折叠 / 次级区域）**：
      - 打开“体验版本库”按钮
      - 设置中心外壳切换（若必须保留 V1/V2 切换）
      *(定案：移除纯文本占位的“Migration v2 规划”)*
@@ -227,7 +231,7 @@ SettingsCenter
 | **歌词与文字** | 语言层开关、假名/拼音/繁简格式、全套字号与透明度滑块 | **读音生成与用户词典**（生成策略开关、AI 辅助候选、人工词典编辑列表） |
 | **服务与来源** | Spotify 连接与 Web 授权凭据、歌词来源模式、Provider 排序 | **外部发现检索**（Uta-Net 等浏览器外链辅助框） |
 | **AI 翻译** | 引擎/Base URL/Model/API Key、测试连接、目标语言、默认预设 | **高级调参与自定义 Prompt**（Temperature、超时、自定义 System Prompt、风格 Profile 管理） |
-| **高级与数据** | SQLite 维护、重建本地索引、系统诊断导出、窗口重置 | **深入体验**（体验版本库跳转、设置中心版本切换） |
+| **高级与数据** | SQLite 维护、重建本地索引、系统诊断导出、窗口重置、实用工具桥接 | **深入体验**（体验版本库跳转、设置中心版本切换） |
 
 ---
 
@@ -259,11 +263,11 @@ SettingsCenter
 
 | 原 Surface | 真实属性 | 当前替代入口 | 本轮重整处理方案 (Redesign Treatment) |
 | :--- | :--- | :--- | :--- |
-| **我的歌词库** (`PersonalLyricsLibraryView`) | 个人本地歌词与资产维护工作台 | 无 | **降级至侧边栏下方的“实用工具”辅助分组**；移除外层重复的 Form 内边距包装，保持功能完好；后续版本计划迁移至独立应用窗口。 |
-| **最近播放** (`ListeningHistoryView`) | 运行期观察日志列表 | 无 | **降级至侧边栏下方的“实用工具”辅助分组**；后续版本可集成至主菜单“窗口”或状态栏。 |
-| **听歌统计** (`ListeningStatisticsView`) | 播放数据统计看板 | 无 | **降级至侧边栏下方的“实用工具”辅助分组**；后续版本可演进为独立仪表盘窗口。 |
+| **我的歌词库** (`PersonalLyricsLibraryView`) | 个人本地歌词与资产维护工作台 | **无**（Settings 为当前全 App 唯一入口） | **从侧边栏彻底移除**；作为过渡桥接放入 `高级与数据 → 实用工具`（通过“打开我的歌词库”按钮唤起）。其内部包含的完整双栏/`NavigationSplitView` **明确记录为过渡期已知技术债务（transitional known debt）**，本轮不为了满足 Settings 规范重构其内部架构，后续由独立窗口设计承接。 |
+| **最近播放** (`ListeningHistoryView`) | 运行期观察日志列表 | **无**（Settings 为当前唯一入口） | **从侧边栏彻底移除**；作为过渡桥接放入 `高级与数据 → 实用工具`（通过“查看最近播放”按钮唤起）。后续版本集成至主菜单“窗口”或状态栏。 |
+| **听歌统计** (`ListeningStatisticsView`) | 播放数据统计看板 | **无**（Settings 为当前唯一入口） | **从侧边栏彻底移除**；作为过渡桥接放入 `高级与数据 → 实用工具`（通过“查看听歌统计”按钮唤起）。后续版本演进为独立仪表盘。 |
 | **体验版本库** (`ExperienceLibrarySettingsView`) | 实验性呈现版本切换器 | 无（原深埋在高级） | 移出侧边栏；统一在“高级与数据”页面的“深入体验”Section 中通过按钮唤起。 |
-| **Migration v2 规划** | 开发者架构路线占位文本 | 源码与文档 | **从用户设置界面完全移除**；相关规划仅在工程文档中维护。 |
+| **Migration v2 规划** | 开发者架构路线占位文本 | 源码与文档 | **从用户设置界面完全移除**；不留无功能纯文本。 |
 
 ---
 
@@ -290,10 +294,12 @@ SettingsCenter
 ## 11. Header / Scroll Contract（标题安全区与滚动合同）
 
 1. **根治顶部裁切 Bug**：
-   - 统一在 `SettingsDetailView` 宿主层管理 Detail 的顶部安全间距，消除外层硬编码 `padding(28)` 与内部 `Form` 自带 `NSScrollView` 顶部安全区的冲突；
-   - 页面切换时，强制将 Detail Pane 的滚动偏移复位至 `y = 0`，确保标题区域完整呈现在窗口标题栏/工具栏下方。
+   - 统一在 `SettingsDetailView` 宿主容器层定义稳定的顶部安全内边距，消除外层硬编码 `padding(28)` 与内部 `Form` 自带 `NSScrollView` 顶部安全区的冲突；
+   - 页面切换后，确保 Page Title 与 Subtitle 100% 完整可见，无任何 titlebar/toolbar 重叠与遮挡，且无错误的负向滚动偏移；
+   - 根除切换页面后的削顶缺陷，不依赖逐页特殊的 padding hack；
+   - 具体实现机制（是利用统一容器 inset 还是滚动偏移重置）留给 implementation plan 根据 SwiftUI 容器实机行为选择最小定向实现。
 2. **首屏标题可见性**：
-   - 每个一级分类进入时，Page Title 与 Subtitle 必须 100% 完整可见，不得有任何重叠、负偏移或被阴影削顶。
+   - 每个一级分类进入时，Page Title 与 Subtitle 必须清晰、完整呈现在窗口标题栏下沿，不得被阴影削顶。
 
 ---
 
@@ -306,10 +312,10 @@ SettingsCenter
 2. **侧边栏结构**：
    - 采用标准 `List(selection:)` + `.listStyle(.sidebar)`；
    - 侧边栏最小宽度 `180`，建议宽度 `200`；
-   - 侧边栏分为两段：上方展示 5 个核心偏好图标项，下方通过 `Section("实用工具")` 展示 3 个辅助工具项。
-3. **拒绝多层嵌套 SplitView**：
-   - 设置中心主窗口只维护一层 `NavigationSplitView`；
-   - “我的歌词库”在过渡期作为完整视图嵌入，后续版本不再向设置窗口内部嵌套新的多栏导航容器。
+   - **严格仅保留 5 个一级核心偏好入口**（通用、歌词与文字、服务与来源、AI 翻译、高级与数据），杜绝 8~10 个直接入口，保持侧边栏轻量清晰。
+3. **导航分栏层级合同（NavigationSplitView Boundary Contract）**：
+   - **单层约束严格适用于 5 个正式 Settings 页面**：通用、歌词与文字、服务与来源、AI 翻译、高级与数据这五个正式设置页面均只作为外层 `NavigationSplitView` 的 Detail 展示，严禁在此五类页面内再嵌套第二层 split navigation；
+   - **过渡实用工具已知债务（Transitional Known Debt）**：`PersonalLyricsLibraryView` 内部已有的双栏/`NavigationSplitView` 仅通过“高级与数据 → 实用工具”作为过渡桥接访问，不属于设置中心布局重构范围；**明确记录为过渡期已知技术债务**，本轮不为了削足适履而重写歌词库，留待后续独立的 Library Window / Tools Surface 设计统一处理。
 
 ---
 
@@ -344,7 +350,7 @@ SettingsCenter
 本重整任务分解为 **5 个自包含、可单独验证的实施候选（Candidate）**，严格依序执行：
 
 ```
-[Candidate 1: P0] 侧边栏 IA 收敛至 5 大类 + 实用工具分组，彻底修复标题栏裁切 Bug
+[Candidate 1: P0] 侧边栏 IA 收敛为 5 大核心偏好 + 根治标题栏裁切 Bug
        │
 [Candidate 2: P1] 歌词与文字 (Lyrics & Text) 深度合并与排版层渐进折叠
        │
@@ -352,13 +358,14 @@ SettingsCenter
        │
 [Candidate 4: P1] AI 翻译页面渐进展开与 Prompt 预览语义明确化
        │
-[Candidate 5: P2] 高级与数据 (Advanced & Data) 收敛与开发占位内容剔除
+[Candidate 5: P2] 高级与数据 (Advanced & Data) 收敛、过渡工具桥接与无用内容剔除
 ```
 
 - **Candidate 1 (P0) — 侧边栏信息架构收敛与标题安全区修复**：
-  - 将侧边栏重构为 5 个核心分类 + 1 个实用工具过渡分组；
-  - 修复 `SettingsDetailView` 顶部安全内边距冲突与切页标题削顶 Bug；
-  - 单独 commit，实机验证侧边栏与页面切换体验。
+  - 侧边栏严格收敛为 5 个核心分类（通用、歌词与文字、服务与来源、AI 翻译、高级与数据），移除所有非设置独立 sidebar rows；
+  - 修复 `SettingsDetailView` 宿主层顶部安全内边距冲突，消除切页标题被削顶与负偏移 Bug；
+  - 在 `Advanced & Data` 中为现有实用工具预留过渡路由/入口外壳；
+  - 单独 commit，实机验证侧边栏纯净度与页面切换体验。
 - **Candidate 2 (P1) — 歌词与文字（Lyrics & Text）合并**：
   - 合并原 `DisplaySettingsView` 与 `ReadingSettingsView` 为单一统一视图；
   - 高频字号与排版直出，高级读音策略与词典折叠收纳；
@@ -373,11 +380,12 @@ SettingsCenter
   - 将 Temperature、超时、自定义 System Prompt 收进 DisclosureGroup；
   - 将 Prompt 预览说明明确为请求内容只读检查；
   - 单独 commit，实机验证 API 保存与参数微调。
-- **Candidate 5 (P2) — 高级与数据（Advanced & Data）收敛**：
+- **Candidate 5 (P2) — 高级与数据（Advanced & Data）收敛与实用工具过渡桥接**：
   - 合并 `DataSettingsView` 与 `AdvancedSettingsView`；
+  - 挂载“实用工具”过渡桥接入口（打开我的歌词库、查看最近播放、查看听歌统计）；
+  - 挂载体验版本库入口；
   - 移除开发文档占位的“Migration v2 规划”纯文本；
-  - 提供干净的体验版本库与数据诊断入口；
-  - 单独 commit，完成全设置中心最终集成。
+  - 单独 commit，完成全设置中心最终集成与验收。
 
 ---
 
@@ -385,8 +393,9 @@ SettingsCenter
 
 | 验收维度 | 验收合同标准 |
 | :--- | :--- |
-| **IA 收敛** | 侧边栏核心入口严格收敛为 5 个；过渡工具明确隔离在独立的“实用工具”区域；无 11 项垂直平铺。 |
-| **标题裁切** | 切换至任意页面，Page Title 与 Subtitle 100% 完整可见，与标题栏下边缘无任何遮挡、重叠或负偏移。 |
+| **IA 收敛** | 侧边栏严格仅保留 5 个一级偏好入口；“我的歌词库/最近播放/听歌统计”无独立 sidebar row，统一通过 `高级与数据 → 实用工具` 保持可达。 |
+| **标题裁切** | 切换至任意页面，Page Title 与 Subtitle 100% 完整可见，与标题栏下边缘无任何遮挡、重叠或负偏移，不依赖逐页 padding hack。 |
+| **分栏约束** | 5 个正式设置页面均遵循单层 NavigationSplitView 规范；PersonalLyricsLibrary 内部已存 split view 作为已知过渡债务，不污染设置外壳。 |
 | **显示与文字** | 歌词字号、翻译开关、假名注音模式、繁简转换在“歌词与文字”一站式调整，修改即刻在主窗口与悬浮窗口体现。 |
 | **凭证安全** | Spotify Client ID 与 AI API Key 的显式保存与清除正常工作，Keychain 存取无降级。 |
 | **渐进折叠** | AI 提示词与专业参数、读音高级策略、外部发现工具默认呈收起状态，点击可顺畅展开。 |
