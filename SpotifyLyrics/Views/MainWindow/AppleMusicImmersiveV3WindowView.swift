@@ -677,15 +677,6 @@ struct AppleMusicImmersiveV3WindowView: View {
     private var providerStatusMenu: some View {
         Menu {
             Text(state.providerStatusMessage)
-            if state.canOpenLyricsEditor {
-                Button("编辑当前歌词", systemImage: "pencil.and.list.clipboard") {
-                    state.prepareLyricsEditor()
-                    openWindow(id: "lyrics-editor")
-                }
-            }
-            lyricsVersionMenuContent
-            translationMenuContent
-            alignmentMenuContent
 
             if state.isUsingMockPreview {
                 Button("退出 Mock Preview") { state.exitMockPreview() }
@@ -705,16 +696,6 @@ struct AppleMusicImmersiveV3WindowView: View {
         .buttonStyle(.plain)
         .help("播放来源与歌词工具")
         .accessibilityLabel("播放来源：\(state.providerStatusMessage)")
-    }
-
-    @ViewBuilder
-    private var lyricsVersionMenuContent: some View {
-        Divider()
-        Menu("歌词版本") {
-            Button("无歌词版本") { state.selectNoLyricsVersion() }
-                .disabled(state.isLyricsSelectionEmpty)
-            Text(state.isLyricsSelectionEmpty ? "当前会话未选择版本" : "当前会话使用已采用版本")
-        }
     }
 
     @ViewBuilder
@@ -763,36 +744,6 @@ struct AppleMusicImmersiveV3WindowView: View {
                     Button("删除当前版本", role: .destructive) { state.deleteSelectedTranslation() }
                 }
             }
-        }
-    }
-
-    @ViewBuilder
-    private var alignmentMenuContent: some View {
-        switch state.liveLyricsState {
-        case .alignmentQueued:
-            Divider()
-            Text("歌词：待对齐时间轴")
-            Button("自动排轴") { state.alignCurrentLyricsWithLocalAudio() }
-#if DEBUG
-            if state.canStartListeningAssist {
-                Button("边听边排轴") { state.presentListeningAssistExplanation() }
-            }
-#endif
-        case .alignmentRunning:
-            Divider()
-            Text("歌词：正在排轴")
-            Button("取消排轴") { state.cancelAlignmentPreview() }
-        case .alignmentPreview:
-            Divider()
-            Text("歌词：排轴预览")
-            Button("查看逐行证据") { isAlignmentDetailsPresented = true }
-            Button("确认并保存") { state.confirmAlignmentPreview(saveLocal: true) }
-            Button("放弃排轴") { state.cancelAlignmentPreview() }
-        case .loaded, .mockPreview:
-            EmptyView()
-        default:
-            Divider()
-            Text("歌词：\(state.liveLyricsStatusMessage)")
         }
     }
 
