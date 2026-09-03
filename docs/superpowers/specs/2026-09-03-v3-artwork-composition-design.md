@@ -20,7 +20,15 @@
 2. **歌词始终是核心阅读内容**：无论处于何种构图模式，歌词都是主交互与持续阅读的主体。封面权重可以提高，但任何模式都不得把歌词退化为完全无法辨识的次要装饰或不可交互图层。
 3. **差异源于“构图关系”而非“更换主题”**：三种模式的本质差异在于 **专辑封面与歌词在视口中的几何关系、空间占比与环境延伸逻辑**，而不是切换独立的设计系统、换肤或变更控件风格。
 4. **连续响应几何优先**：视口尺寸变化时，窗口几何优先遵循既有的连续线性插值（以 `adaptiveSplitMetrics` 为基准），不为了刻意突显模式身份而引入生硬、突兀的断点跳跃。
-5. **完全继承 Reduce Motion 合同**：任何模式下的封面缩放、视口滚动与浮层过渡，均严格继承 Reduce Motion 规范（无位移、无缩放/模糊形变、仅保留约 0.12s 的短 opacity 淡化）。
+5. **Reduce Motion 继承现有已验收行为；本 V3 Composition Design Contract 不新增任何 composition-level Reduce Motion 规则**：
+   - 明确已有冻结事实严格且仅包括：
+     - 歌词视口滚动 / 焦点行 / 距离权重的 Reduce Motion 行为（无位移过渡、blur 强制为 0、无字重/模糊形变）；
+     - 歌词行切换约 0.12s 的短 opacity 淡化；
+     - seek 与 track change 的 `.immediate` 瞬跳；
+     - 已验收的 `V3BounceButtonStyle` 在 Reduce Motion 下 `scaleEffect` 严格为 1.0（无 scale/spring 物理形变，仅保留 0.12s 透明度微反馈）。
+   - 对于未来 Ambient / Stage / Classic implementation：
+     - 如果某个具体 implementation candidate 新增或修改了 artwork motion、overlay motion 或 composition transition，则必须在该 candidate 自己的 implementation plan 中，单独定义并实测其 Reduce Motion 行为；
+     - 当前 design contract 绝不预先规定这些未来 motion 必须如何实现，不创建新的全局 composition animation system，亦不修改现有已验收的 Reduce Motion 行为。
 6. **运行时完全解耦**：三模式构图纯属 Presentation 层级的视觉排布与渲染差异，绝对不修改播放状态机、Presentation Clock、歌词行索引判定（line index）与柔和切行合同（soft transition）。
 
 ### 1.2 冻结项（Frozen Items — 严禁重新设计）
@@ -257,6 +265,7 @@ graph TD
 | **Classic: Compact 歌词推离首屏** | 垂直 ScrollView 导致封面占满首屏 | **Relevant design gap** | **Future implementation decision**：重组 Compact 构图，确保当前播放行歌词首屏立即可达。 |
 | **通用: Backdrop / Blur 算法** | 现有多层材质与色彩提取 | **Out of scope** | 严格冻结，严禁借构图之名重写背景管线。 |
 | **通用: Presentation Clock / 播放** | 核心播放与切行时钟 | **Out of scope** | 严格冻结，无运行时介入。 |
+| **通用: Reduce Motion 既有行为** | 已验收歌词切行与按钮反馈 | **Already aligned / preserve** | 严格继承既有冻结行为，本设计不新增全局构图动效规则；未来 candidate 若涉及新增 motion 须在其自身 plan 中单独定义并实测。 |
 
 ---
 
@@ -273,7 +282,7 @@ graph TD
 - [x] **7. 分割线（Divider）职责界定**：仅定义其克制、不割裂画布的视觉职责，不提前预判去留或硬编码样式；
 - [x] **8. 响应式系统延续既有机制**：完全依赖现有几何插值体系，不重新发明断点；
 - [x] **9. 背景底层算法完全冻结**：严格封存 backdrop、palette 提取与 blur 渲染管线；
-- [x] **10. 运行时时钟与切行动效完全隔离**：不触及 Presentation Clock、line index 与 soft transition；
+- [x] **10. 动效与 Reduce Motion 合同收口**：不触及 Presentation Clock、line index 与 soft transition；严格继承现有已验收的歌词与按钮 Reduce Motion 行为，本设计合同不新增任何全局 composition-level 动效规则，不暗示或提前冻结全局构图动效；
 - [x] **11. 外围系统完全隔离**：不借机进行 Toolbar IA 或 Settings 架构的提前重构；
 - [x] **12. 严格 Docs-Only**：本任务仅建立设计规范合同，未编写 implementation plan；
 - [x] **13. 代码零修改**：未修改任何 Swift 代码与项目文件。
