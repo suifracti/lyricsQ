@@ -113,7 +113,7 @@ In `AppleMusicImmersiveV3WindowView.swift`, the visibility suppression logic onl
 ### Candidate 3 (P1) — Provider Status De-duplication
 
 #### Problem
-The 8pt status indicator dot (`providerStatusMenu`) currently contains a sprawling dropdown of over 20 items—including lyrics version selection, full translation management, and timeline alignment. This heavily duplicates the functionality housed in `CurrentSongOperationsView` (`music.note.list`), creating confusing dual-entry paths for per-track lyrics workflows.
+The status indicator dot (`providerStatusMenu`) currently contains a sprawling dropdown of over 20 items—including lyrics version selection, full translation management, and timeline alignment. This heavily duplicates the functionality housed in `CurrentSongOperationsView` (`music.note.list`), creating confusing dual-entry paths for per-track lyrics workflows.
 
 #### Primary Implementation Surface
 - `AppleMusicImmersiveV3WindowView.swift`:
@@ -132,21 +132,21 @@ The 8pt status indicator dot (`providerStatusMenu`) currently contains a sprawli
 | `Button("退出 Mock Preview")` | **Keep** | Essential developer/playback provider fallback recovery. |
 | `Button("进入 Mock Preview")` | **Keep** | Essential developer/playback provider fallback recovery. |
 | `Button("重试 Spotify")` | **Keep** | Essential connection recovery action when Spotify is disconnected. |
-| `Button("自动补全歌词")` | **Keep** | Retained fallback recovery action when connected to live track without lyrics. |
+| `Button("自动补全歌词")` | **Temporarily Keep** | Exceptional contextual lyrics recovery action. `CurrentSongOperationsView` currently lacks `autoCompleteLyrics` (it only exposes `retryLyrics`). Retained here to avoid removing an existing functional capability; candidate for future migration, with no new features added to `CurrentSongOperationsView` in this round. |
 
 #### Allowed Changes
 - Remove `lyricsVersionMenuContent`, `translationMenuContent`, `alignmentMenuContent`, and the duplicate edit button from `providerStatusMenu`.
 - Delete the unused private helper view builders (`lyricsVersionMenuContent`, `translationMenuContent`, `alignmentMenuContent`) in `AppleMusicImmersiveV3WindowView.swift`.
-- Retain connection health display and essential recovery/reconnect actions.
+- Retain connection health display, recovery/reconnect actions, and the exceptional contextual `autoCompleteLyrics` action.
 
 #### Explicit No-Go
 - Do not modify provider connection logic or `PlaybackState` methods.
-- Do not alter `CurrentSongOperationsView`.
-- Do not remove Spotify reconnection or Mock Preview capabilities.
+- Do not alter `CurrentSongOperationsView` or add new buttons to it in this round.
+- Do not remove Spotify reconnection, Mock Preview, or un-duplicated recovery capabilities.
 
 #### Acceptance Criteria
-1. Clicking the status dot presents a clean, focused status and recovery menu (Connection status, Retry Spotify / Mock Preview toggles).
-2. All per-track lyrics operations (versions, translations, furigana, alignment) remain fully accessible in `CurrentSongOperationsView`.
+1. Clicking the status dot presents a clean, focused status and recovery menu (Connection status, Retry Spotify / Mock Preview toggles, and the exceptional contextual lyrics recovery action).
+2. All duplicated per-track lyrics operations (versions, translations, furigana, alignment, duplicate editor button) are removed from Provider Status, with authoritative workflows residing in `CurrentSongOperationsView`.
 3. No compile warnings or orphan helpers remain.
 
 #### Verification
@@ -158,7 +158,7 @@ The 8pt status indicator dot (`providerStatusMenu`) currently contains a sprawli
 ### Candidate 4 (P1) — Compact Action Convergence
 
 #### Problem
-In Compact windows (760×520), a 6-button toolbar capsule spans ~260pt. With 26pt trailing margin, it reaches within ~21pt of the centered 145pt album cover, causing visual overcrowding and competing with the primary listening content.
+In Compact windows (760×520), an unconstrained 6-action rail crowds the centered album cover and competes with the primary reading content.
 
 #### Action Allocation Strategy
 
@@ -169,7 +169,7 @@ In Compact windows (760×520), a 6-button toolbar capsule spans ~260pt. With 26p
 | **Search** (`magnifyingglass`) | Visible in Capsule | **Secondary Surface** | Secondary in Compact: manual search is an occasional correction workflow. |
 | **Visual Tuning** (`rectangle.3.group`) | Visible in Capsule | **Secondary Surface** | Secondary in Compact: setup-level layout preference. |
 | **Preferences** (`gearshape`) | Visible in Capsule | **Secondary Surface** | Secondary in Compact: low-frequency global settings (accessible via Cmd+,). |
-| **Provider Status** (Status dot) | Visible in Capsule | **Visible in Capsule** (or paired with Window Mode) | Tiny visual footprint (8pt dot) providing immediate connection feedback. |
+| **Provider Status** (Status dot) | Visible in Capsule | **Visible in Capsule** (or paired with Window Mode) | Tiny visual footprint providing immediate connection feedback. |
 | **More Actions** (Overflow trigger) | N/A | **Visible in Capsule** | Triggers secondary surface housing Search, Visual Tuning, and Settings. |
 
 #### Primary Implementation Surface
@@ -179,7 +179,7 @@ In Compact windows (760×520), a 6-button toolbar capsule spans ~260pt. With 26p
 
 #### Allowed Changes
 - Group lower-frequency actions (Search, Visual Tuning, Settings) into a compact secondary surface (e.g. unified menu or popover) when in `.compact` regime.
-- Ensure the Compact toolbar capsule width contracts significantly (from ~260pt down to ~140–160pt), leaving over 100pt of breathing room between the toolbar and the centered album cover.
+- Ensure the Compact toolbar capsule visibly narrows, significantly reducing permanently visible action count and eliminating visual crowding against the centered album cover.
 
 #### Explicit No-Go
 - Do not alter Standard or Wide layout.
@@ -187,10 +187,12 @@ In Compact windows (760×520), a 6-button toolbar capsule spans ~260pt. With 26p
 - Do not modify Album block geometry in `classicCompactLayout` (already verified and frozen).
 
 #### Acceptance Criteria
-1. In 760×520 and 800×600, toolbar capsule contains primary actions and an overflow entry.
-2. Distance between toolbar left edge and centered album artwork exceeds 90pt (no visual crowding).
-3. Search, Visual Tuning, and Settings remain fully functional through the secondary surface.
-4. Standard (1040×680) and Wide (1280×720) retain their standard direct action layout without regression.
+1. In 760×520 and 800×600, permanently visible action count is noticeably reduced, with the toolbar visibly narrowing compared to the current 6-action rail.
+2. Window Mode and Current Song Operations retain highest priority and remain directly visible.
+3. Provider Status presentation is handled according to Candidate 3 final results.
+4. No visual crowding, clipping, or overlap occurs with the centered album block or lyrics primary reading space.
+5. Search, Visual Tuning, and Settings remain fully accessible through the secondary surface.
+6. Standard (1040×680) and Wide (1280×720) direct-action layout does not regress.
 
 #### Verification
 - Real App: 760×520 Compact — verify toolbar width is compact, artwork has generous clearance, overflow opens secondary actions.
@@ -234,8 +236,8 @@ Toolbar actions are primarily accessed via pointer hover. Users relying on Full 
 | :--- | :--- | :--- |
 | **C1: Keep-Alive** | Standard 1040×680 with Search open; with Song Operations open; with Visual Tuning open | Toolbar stays visible throughout interaction; fades out 3.0s after close. |
 | **C2: Preferences Chrome** | Standard 1040×680 | Gear icon renders borderless without dark gray background; opens Settings. |
-| **C3: Provider Status** | Standard 1040×680 | Status dot menu is concise (status + reconnect); no duplicate lyrics versions/translations. |
-| **C4: Compact Convergence** | Compact 760×520, Compact 800×600, Standard 1040×680 | Compact capsule contracts; artwork clearance > 90pt; Standard unchanged. |
+| **C3: Provider Status** | Standard 1040×680 | Status dot menu is concise (status + reconnect + contextual recovery); no duplicate lyrics versions/translations. |
+| **C4: Compact Convergence** | Compact 760×520, Compact 800×600, Standard 1040×680 | Compact capsule visibly narrows; artwork and lyrics free of crowding/overlap; secondary actions fully accessible; Standard unchanged. |
 | **C5: Accessibility** | Compact & Standard with Tab navigation | All buttons reachable by keyboard; clean focus ring; overflow labelled. |
 
 ---
@@ -245,7 +247,7 @@ Toolbar actions are primarily accessed via pointer hover. Users relying on Full 
 Each candidate will be implemented, verified, and committed independently:
 1. `fix(v3): ensure toolbar remains visible during secondary surface interactions` (C1)
 2. `fix(v3): unify toolbar settings action chrome with standard icon presentation` (C2)
-3. `refactor(v3): remove duplicate lyrics operations from provider status menu` (C3)
+3. `fix(v3): remove duplicate lyrics operations from provider status menu` (C3)
 4. `feat(v3): converge toolbar actions in compact window layout` (C4)
 5. `fix(v3): ensure keyboard focus and accessibility integrity across toolbar actions` (C5)
 
