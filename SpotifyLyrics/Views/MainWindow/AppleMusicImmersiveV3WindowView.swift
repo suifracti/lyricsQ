@@ -255,31 +255,53 @@ struct AppleMusicImmersiveV3WindowView: View {
     private func classicCompactLayout(in geometry: GeometryProxy) -> some View {
         let horizontalPadding = LyricsDesignTokens.Spacing.windowSmall
         let availableWidth = max(1, geometry.size.width - horizontalPadding * 2)
-        let trackHeight = max(420, geometry.size.height * 0.76)
+        let canvasHeight = max(1, geometry.size.height)
         let coverSize = V3ResponsiveGeometry.boundedCoverSize(
             availableWidth: availableWidth - 20,
-            availableHeight: trackHeight * 0.50,
-            desiredSize: min(availableWidth * 0.60, geometry.size.height * 0.40),
-            minimum: min(176, availableWidth - 20),
-            maximum: 320
+            availableHeight: min(210, canvasHeight * 0.34),
+            desiredSize: min(availableWidth * 0.45, canvasHeight * 0.29),
+            minimum: min(140, availableWidth - 20),
+            maximum: 210
         )
 
         return ScrollView(.vertical) {
-            VStack(spacing: LyricsDesignTokens.Spacing.lg) {
-                trackColumn(
-                    width: availableWidth,
-                    availableHeight: trackHeight,
-                    coverSize: coverSize,
-                    alignment: .center,
-                    compact: true,
-                    progressDensity: .small
-                )
+            VStack(spacing: LyricsDesignTokens.Spacing.sm) {
+                VStack(alignment: .center, spacing: 0) {
+                    ArtworkView(
+                        track: state.currentTrack,
+                        size: coverSize,
+                        showsAlbumLabel: false,
+                        cornerRadiusRatio: 0.06
+                    )
+                    .frame(maxWidth: availableWidth, alignment: .center)
+
+                    Spacer().frame(height: LyricsDesignTokens.Spacing.xs + 2)
+
+                    TrackMetadataView(
+                        track: state.currentTrack,
+                        titleSize: min(22, max(17, coverSize * 0.11)),
+                        alignment: .center,
+                        presentation: .v3Immersive
+                    )
+                    .frame(maxWidth: availableWidth, alignment: .center)
+
+                    Spacer().frame(height: LyricsDesignTokens.Spacing.xs + 2)
+
+                    AppleMusicImmersiveV3TransportControls(
+                        state: state,
+                        alignment: .center,
+                        progressDensity: .small,
+                        progressMaxWidth: min(availableWidth, LyricsDesignTokens.Progress.smallMaxWidth)
+                    )
+                    .frame(maxWidth: availableWidth, alignment: .center)
+                }
 
                 lyricsColumn(width: availableWidth, compact: true)
-                    .frame(minHeight: max(320, geometry.size.height * 0.58))
+                    .frame(minHeight: max(220, canvasHeight * 0.48))
             }
             .padding(.horizontal, horizontalPadding)
-            .padding(.vertical, LyricsDesignTokens.Spacing.lg)
+            .padding(.top, LyricsDesignTokens.Spacing.sm)
+            .padding(.bottom, LyricsDesignTokens.Spacing.md)
         }
         .scrollIndicators(.hidden)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
