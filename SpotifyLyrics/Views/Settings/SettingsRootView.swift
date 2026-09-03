@@ -553,17 +553,18 @@ private struct AISettingsView: View {
     @State private var promptPreview: AITranslationPrompt?
     @State private var showPromptPreview = false
     @State private var showProfileManager = false
+    @State private var isAdvancedAIExpanded = false
 
     private var keyStore: KeychainAITranslationAPIKeyStore { KeychainAITranslationAPIKeyStore() }
 
     var body: some View {
         Form {
             SettingsPageHeader(
-                title: "AI",
+                title: "AI 翻译",
                 detail: "对当前已加载的整首歌词做上下文翻译。原文、假名、罗马音和时间轴不会被 AI 修改。"
             )
 
-            Section("服务") {
+            Section("服务配置") {
                 Picker("翻译引擎", selection: configurationBinding(\.engineID)) {
                     ForEach(TranslationEngineCatalog.all, id: \.stableID) { engine in
                         Text(engine.displayName).tag(engine.stableID)
@@ -631,6 +632,27 @@ private struct AISettingsView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+                HStack {
+                    Button("测试连接") {
+                        statusMessage = "正在发送最小测试请求…"
+                        let configuration = settings.aiTranslationConfiguration
+                        let engine = TranslationEngineRegistry.make(stableID: configuration.engineID)
+                        Task {
+                            do {
+                                try await engine.testConnection(configuration: configuration)
+                                await MainActor.run { statusMessage = "连接成功。测试请求未使用当前歌词。" }
+                            } catch {
+                                await MainActor.run { statusMessage = error.localizedDescription }
+                            }
+                        }
+                    }
+                    if !statusMessage.isEmpty {
+                        Text(statusMessage)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                    }
+                }
                 Text("macOS 可能在首次保存、替换或清除时请求 Keychain 鉴权；仅浏览此页面不会读取 Key。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -640,10 +662,10 @@ private struct AISettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
-            Section("翻译") {
+            Section("翻译默认行为") {
                 TextField("目标语言", text: configurationBinding(\.targetLanguage))
                     .textFieldStyle(.roundedBorder)
-                Picker("提示词预设", selection: configurationBinding(\.promptPresetID)) {
+                Picker("默认提示词预设", selection: configurationBinding(\.promptPresetID)) {
                     ForEach(TranslationPromptPresetCatalog.all, id: \.id) { preset in
                         Text(preset.displayName).tag(preset.id.rawValue)
                     }
@@ -654,76 +676,67 @@ private struct AISettingsView: View {
                         Text(profile.name).tag(profile.id.uuidString)
                     }
                 }
-                Button("管理个人翻译风格", systemImage: "person.crop.circle.badge.pencil") {
-                    showProfileManager = true
-                }
-                Button("预览当前提示词", systemImage: "doc.text.magnifyingglass") {
-                    do {
-                        let preset = TranslationPromptPresetID(rawValue: settings.aiTranslationConfiguration.promptPresetID) ?? .naturalSong
-                        promptPreview = try AITranslationPromptBuilder().preview(
-                            context: promptContext,
-                            configuration: settings.aiTranslationConfiguration,
-                            presetID: preset,
-                            profile: selectedProfile
-                        )
-                        showPromptPreview = true
-                    } catch {
-                        statusMessage = "提示词预览失败：\(error.localizedDescription)"
-                    }
-                }
-                Picker("失败后的策略", selection: fallbackBinding) {
-                    ForEach(TranslationFallbackStrategy.allCases, id: \.self) { strategy in
-                        Text(strategy.title).tag(strategy)
-                    }
-                }
-                TextField("翻译风格（兼容旧设置）", text: configurationBinding(\.style))
-                    .textFieldStyle(.roundedBorder)
-                VStack(alignment: .leading, spacing: 5) {
-                    Text("自定义系统提示词（可选）")
-                    TextEditor(text: configurationBinding(\.customSystemPrompt))
-                        .frame(minHeight: 70)
-                        .font(.system(size: 12))
-                        .overlay(RoundedRectangle(cornerRadius: 6).stroke(.quaternary))
-                }
-                HStack {
-                    Text("随机度（Temperature）")
-                    Slider(value: configurationDoubleBinding(\.temperature), in: 0...2, step: 0.1)
-                    Text(String(format: "%.1f", settings.aiTranslationConfiguration.temperature))
-                        .monospacedDigit()
-                        .frame(width: 40, alignment: .trailing)
-                }
-                HStack {
-                    Text("请求超时")
-                    Slider(value: configurationDoubleBinding(\.timeout), in: 5...600, step: 5)
-                    Text("\(Int(settings.aiTranslationConfiguration.timeout)) 秒")
-                        .monospacedDigit()
-                        .frame(width: 70, alignment: .trailing)
-                }
                 Toggle("自动翻译新歌词", isOn: configurationBinding(\.autoTranslateNewLyrics))
                 Text("默认关闭。失败不会循环重试，也不会创建半成品数据库版本。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
 
-            Section("诊断") {
-                Button("测试连接") {
-                    statusMessage = "正在发送最小测试请求…"
-                    let configuration = settings.aiTranslationConfiguration
-                    let engine = TranslationEngineRegistry.make(stableID: configuration.engineID)
-                    Task {
-                        do {
-                            try await engine.testConnection(configuration: configuration)
-                            await MainActor.run { statusMessage = "连接成功。测试请求未使用当前歌词。" }
-                        } catch {
-                            await MainActor.run { statusMessage = error.localizedDescription }
+            Section {
+                DisclosureGroup("高级模型参数与提示词", isExpanded: $isAdvancedAIExpanded) {
+                    VStack(alignment: .leading, spacing: 14) {
+                        HStack {
+                            Text("随机度（Temperature）")
+                            Slider(value: configurationDoubleBinding(\.temperature), in: 0...2, step: 0.1)
+                            Text(String(format: "%.1f", settings.aiTranslationConfiguration.temperature))
+                                .monospacedDigit()
+                                .frame(width: 40, alignment: .trailing)
+                        }
+                        HStack {
+                            Text("请求超时")
+                            Slider(value: configurationDoubleBinding(\.timeout), in: 5...600, step: 5)
+                            Text("\(Int(settings.aiTranslationConfiguration.timeout)) 秒")
+                                .monospacedDigit()
+                                .frame(width: 70, alignment: .trailing)
+                        }
+                        Picker("失败后的策略", selection: fallbackBinding) {
+                            ForEach(TranslationFallbackStrategy.allCases, id: \.self) { strategy in
+                                Text(strategy.title).tag(strategy)
+                            }
+                        }
+                        TextField("翻译风格（兼容旧设置）", text: configurationBinding(\.style))
+                            .textFieldStyle(.roundedBorder)
+                        Button("管理个人翻译风格", systemImage: "person.crop.circle.badge.pencil") {
+                            showProfileManager = true
+                        }
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text("自定义系统提示词（可选）")
+                            TextEditor(text: configurationBinding(\.customSystemPrompt))
+                                .frame(minHeight: 70)
+                                .font(.system(size: 12))
+                                .overlay(RoundedRectangle(cornerRadius: 6).stroke(.quaternary))
+                        }
+                        VStack(alignment: .leading, spacing: 4) {
+                            Button("查看当前 Prompt 内容", systemImage: "doc.text.magnifyingglass") {
+                                do {
+                                    let preset = TranslationPromptPresetID(rawValue: settings.aiTranslationConfiguration.promptPresetID) ?? .naturalSong
+                                    promptPreview = try AITranslationPromptBuilder().preview(
+                                        context: promptContext,
+                                        configuration: settings.aiTranslationConfiguration,
+                                        presetID: preset,
+                                        profile: selectedProfile
+                                    )
+                                    showPromptPreview = true
+                                } catch {
+                                    statusMessage = "查看当前 Prompt 内容失败：\(error.localizedDescription)"
+                                }
+                            }
+                            Text("只读检查当前将发送给 LLM 的完整 Prompt，不会发送请求，不代表设置未保存。")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
                         }
                     }
-                }
-                if !statusMessage.isEmpty {
-                    Text(statusMessage)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .textSelection(.enabled)
+                    .padding(.vertical, 4)
                 }
             }
         }
@@ -958,11 +971,11 @@ private struct TranslationPromptPreviewView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("提示词预览").font(.title3.weight(.semibold))
+                Text("查看当前 Prompt 内容").font(.title3.weight(.semibold))
                 Spacer()
                 Button("关闭") { dismiss() }
             }
-            Text("只读预览 · 不会请求 API、写数据库或改变播放位置")
+            Text("只读检查 · 展示当前将发送给 LLM 的请求/Prompt 内容，不会请求 API、写数据库或改变播放状态。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             Text("Prompt Hash: \(prompt.promptHash)")
