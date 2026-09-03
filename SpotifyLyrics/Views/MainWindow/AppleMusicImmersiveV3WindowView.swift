@@ -255,17 +255,18 @@ struct AppleMusicImmersiveV3WindowView: View {
     private func classicCompactLayout(in geometry: GeometryProxy) -> some View {
         let horizontalPadding = LyricsDesignTokens.Spacing.windowSmall
         let availableWidth = max(1, geometry.size.width - horizontalPadding * 2)
-        let trackHeight = max(420, geometry.size.height * 0.76)
+        let canvasHeight = max(1, geometry.size.height)
         let coverSize = V3ResponsiveGeometry.boundedCoverSize(
             availableWidth: availableWidth - 20,
-            availableHeight: trackHeight * 0.50,
-            desiredSize: min(availableWidth * 0.60, geometry.size.height * 0.40),
-            minimum: min(176, availableWidth - 20),
-            maximum: 320
+            availableHeight: min(200, canvasHeight * 0.32),
+            desiredSize: min(availableWidth * 0.42, canvasHeight * 0.28),
+            minimum: min(136, availableWidth - 20),
+            maximum: 200
         )
+        let trackHeight = coverSize + 140
 
         return ScrollView(.vertical) {
-            VStack(spacing: LyricsDesignTokens.Spacing.lg) {
+            VStack(spacing: LyricsDesignTokens.Spacing.xs + 2) {
                 trackColumn(
                     width: availableWidth,
                     availableHeight: trackHeight,
@@ -276,10 +277,11 @@ struct AppleMusicImmersiveV3WindowView: View {
                 )
 
                 lyricsColumn(width: availableWidth, compact: true)
-                    .frame(minHeight: max(320, geometry.size.height * 0.58))
+                    .frame(minHeight: max(220, canvasHeight * 0.50))
             }
             .padding(.horizontal, horizontalPadding)
-            .padding(.vertical, LyricsDesignTokens.Spacing.lg)
+            .padding(.top, LyricsDesignTokens.Spacing.xs + 2)
+            .padding(.bottom, LyricsDesignTokens.Spacing.md)
         }
         .scrollIndicators(.hidden)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -318,13 +320,27 @@ struct AppleMusicImmersiveV3WindowView: View {
         )
         let lyricsCol = lyricsColumn(width: split.lyrics, compact: false)
 
+        let classicDivider = Divider()
+            .overlay(LyricsDesignTokens.controlBorder.opacity(0.35))
+            .mask(
+                LinearGradient(
+                    stops: [
+                        .init(color: .clear, location: 0.0),
+                        .init(color: .white, location: 0.18),
+                        .init(color: .white, location: 0.82),
+                        .init(color: .clear, location: 1.0)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            )
+
         return HStack(spacing: 0) {
             if settings.v3ArtworkPosition == "right" {
                 lyricsCol
                     .frame(width: split.lyrics, height: availableHeight)
 
-                Divider()
-                    .overlay(LyricsDesignTokens.controlBorder.opacity(0.72))
+                classicDivider
 
                 trackCol
                     .frame(width: split.artwork, height: availableHeight)
@@ -332,8 +348,7 @@ struct AppleMusicImmersiveV3WindowView: View {
                 trackCol
                     .frame(width: split.artwork, height: availableHeight)
 
-                Divider()
-                    .overlay(LyricsDesignTokens.controlBorder.opacity(0.72))
+                classicDivider
 
                 lyricsCol
                     .frame(width: split.lyrics, height: availableHeight)
@@ -356,19 +371,19 @@ struct AppleMusicImmersiveV3WindowView: View {
         switch regime {
         case .compact:
             horizontalPadding = 20
-            lyricHeight = max(220, min(286, canvasHeight * 0.52))
+            lyricHeight = max(110, min(170, canvasHeight * 0.28))
             hudWidth = min(420, canvasWidth - horizontalPadding * 2)
-            bottomPadding = 18
+            bottomPadding = 14
         case .regular:
             horizontalPadding = 48
-            lyricHeight = max(260, min(390, canvasHeight * 0.52))
+            lyricHeight = max(150, min(224, canvasHeight * 0.30))
             hudWidth = min(480, canvasWidth - horizontalPadding * 2)
-            bottomPadding = 28
+            bottomPadding = 22
         case .wide:
             horizontalPadding = 72
-            lyricHeight = max(300, min(470, canvasHeight * 0.50))
+            lyricHeight = max(180, min(260, canvasHeight * 0.29))
             hudWidth = min(520, canvasWidth - horizontalPadding * 2)
-            bottomPadding = 36
+            bottomPadding = 26
         }
 
         let lyricsWidth = min(
@@ -401,7 +416,7 @@ struct AppleMusicImmersiveV3WindowView: View {
             // Lyrics belong to the stage itself: one broad centered group,
             // with the active line and its nearby context supplied by the
             // existing viewport semantics.
-            VStack(spacing: regime == .compact ? 10 : 16) {
+            VStack(spacing: regime == .compact ? 8 : 12) {
                 lyricsCol
                     .frame(width: lyricsWidth, height: lyricHeight)
 
@@ -1223,11 +1238,19 @@ private struct V3TransportIconButton: View {
 }
 
 struct V3BounceButtonStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .scaleEffect(configuration.isPressed ? 0.84 : 1.0)
+            .scaleEffect(configuration.isPressed && !reduceMotion ? 0.96 : 1.0)
             .opacity(configuration.isPressed ? 0.72 : 1.0)
-            .animation(.spring(response: 0.22, dampingFraction: 0.65), value: configuration.isPressed)
+            .animation(
+                LyricsDesignTokens.Motion.animation(
+                    reduceMotion: reduceMotion,
+                    duration: LyricsDesignTokens.Motion.quickDuration
+                ),
+                value: configuration.isPressed
+            )
     }
 }
 
