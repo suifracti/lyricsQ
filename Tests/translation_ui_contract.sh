@@ -2,14 +2,14 @@
 set -euo pipefail
 
 ROOT="${0:A:h}/.."
-FILE="$ROOT/SpotifyLyrics/Views/MainWindow/AppleMusicImmersiveV3WindowView.swift"
+FILE="$ROOT/SpotifyLyrics/Views/Components/CurrentSongOperationsView.swift"
 
 for needle in \
-  'translationMenuContent' \
+  'translationSection' \
   'translationProgressMessage' \
   '重新翻译' \
-  '锁定当前版本' \
-  '删除当前版本' \
+  '锁定当前翻译' \
+  '删除当前翻译' \
   'selectTranslation' \
   'lockSelectedTranslation' \
   'deleteSelectedTranslation'; do

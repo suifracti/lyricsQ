@@ -59,14 +59,14 @@ struct AppleMusicImmersiveV3WindowView: View {
 
                 layout(for: geometry)
 
-                toolBar
+                toolBar(for: geometry.size)
                     .padding(.top, 18)
                     .padding(.trailing, 26)
-                    .opacity(toolsVisible || isVisualTuningPresented ? 1 : 0)
-                    .allowsHitTesting(toolsVisible || isVisualTuningPresented)
+                    .opacity(toolsVisible || isVisualTuningPresented || isSearchPresented || isCurrentSongOperationsPresented ? 1 : 0)
+                    .allowsHitTesting(toolsVisible || isVisualTuningPresented || isSearchPresented || isCurrentSongOperationsPresented)
                     .animation(
                         LyricsDesignTokens.Motion.animation(reduceMotion: reduceMotion),
-                        value: toolsVisible || isVisualTuningPresented
+                        value: toolsVisible || isVisualTuningPresented || isSearchPresented || isCurrentSongOperationsPresented
                     )
             }
             .clipped()
@@ -74,13 +74,13 @@ struct AppleMusicImmersiveV3WindowView: View {
             .onContinuousHover(coordinateSpace: .local) { phase in
                 switch phase {
                 case .active(let location):
-                    if location.y <= MainWindowResponsiveThresholds.toolbarRevealHeight || isVisualTuningPresented {
+                    if location.y <= MainWindowResponsiveThresholds.toolbarRevealHeight || isVisualTuningPresented || isSearchPresented || isCurrentSongOperationsPresented {
                         revealTools()
-                    } else if !isVisualTuningPresented {
+                    } else if !isVisualTuningPresented && !isSearchPresented && !isCurrentSongOperationsPresented {
                         toolsVisible = false
                     }
                 case .ended:
-                    if !isVisualTuningPresented {
+                    if !isVisualTuningPresented && !isSearchPresented && !isCurrentSongOperationsPresented {
                         toolsVisible = false
                     }
                 }
@@ -611,14 +611,23 @@ struct AppleMusicImmersiveV3WindowView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private var toolBar: some View {
+    private func isCompact(for size: CGSize) -> Bool {
+        size.width <= MainWindowResponsiveThresholds.comfortableMinimumSize.width
+            || size.height <= MainWindowResponsiveThresholds.comfortableMinimumSize.height
+    }
+
+    private func toolBar(for size: CGSize) -> some View {
         HStack(spacing: LyricsDesignTokens.Spacing.xs + 2) {
             windowModeMenu
             providerStatusMenu
             currentSongOperationsButton
-            searchButton
-            layoutMenu
-            preferencesButton
+            if isCompact(for: size) {
+                compactMoreMenu
+            } else {
+                searchButton
+                layoutMenu
+                preferencesButton
+            }
         }
         .font(.system(size: 13, weight: .medium))
         .padding(.horizontal, 14)
@@ -634,6 +643,42 @@ struct AppleMusicImmersiveV3WindowView: View {
         )
         .shadow(color: Color.black.opacity(0.25), radius: 10, x: 0, y: 4)
         .foregroundStyle(.white.opacity(LyricsDesignTokens.Material.primaryTextOpacity))
+    }
+
+    private var compactMoreMenu: some View {
+        Menu {
+            Button {
+                isSearchPresented = true
+            } label: {
+                Label("搜索歌曲", systemImage: "magnifyingglass")
+            }
+            Button {
+                isVisualTuningPresented = true
+            } label: {
+                Label("视觉与布局调节", systemImage: "rectangle.3.group")
+            }
+            Divider()
+            SettingsLink {
+                Label("显示设置", systemImage: "gearshape")
+            }
+        } label: {
+            iconLabel("ellipsis", description: "更多操作")
+        }
+        .menuStyle(.borderlessButton)
+        .buttonStyle(.plain)
+        .popover(isPresented: $isSearchPresented, arrowEdge: .top) {
+            SongSearchPopover(
+                manager: state.songSearchManager,
+                playbackState: state
+            )
+        }
+        .popover(isPresented: $isVisualTuningPresented, arrowEdge: .top) {
+            V3VisualTuningPopoverView(
+                settings: settings,
+                layoutStyleRawValue: $layoutStyleRawValue
+            )
+        }
+        .accessibilityLabel("更多操作")
     }
 
     private var windowModeMenu: some View {
@@ -677,15 +722,6 @@ struct AppleMusicImmersiveV3WindowView: View {
     private var providerStatusMenu: some View {
         Menu {
             Text(state.providerStatusMessage)
-            if state.canOpenLyricsEditor {
-                Button("编辑当前歌词", systemImage: "pencil.and.list.clipboard") {
-                    state.prepareLyricsEditor()
-                    openWindow(id: "lyrics-editor")
-                }
-            }
-            lyricsVersionMenuContent
-            translationMenuContent
-            alignmentMenuContent
 
             if state.isUsingMockPreview {
                 Button("退出 Mock Preview") { state.exitMockPreview() }
@@ -705,95 +741,6 @@ struct AppleMusicImmersiveV3WindowView: View {
         .buttonStyle(.plain)
         .help("播放来源与歌词工具")
         .accessibilityLabel("播放来源：\(state.providerStatusMessage)")
-    }
-
-    @ViewBuilder
-    private var lyricsVersionMenuContent: some View {
-        Divider()
-        Menu("歌词版本") {
-            Button("无歌词版本") { state.selectNoLyricsVersion() }
-                .disabled(state.isLyricsSelectionEmpty)
-            Text(state.isLyricsSelectionEmpty ? "当前会话未选择版本" : "当前会话使用已采用版本")
-        }
-    }
-
-    @ViewBuilder
-    private var translationMenuContent: some View {
-        if !state.liveLyrics.isEmpty {
-            Divider()
-            if !state.translationProgressMessage.isEmpty {
-                Text(state.translationProgressMessage)
-            }
-            switch state.translationState {
-            case .loading:
-                Text("翻译：正在翻译整首歌词…")
-            case .unavailable:
-                Text("翻译：未配置 AI 翻译")
-                Button("翻译") { state.translateCurrentLyrics() }
-            case .failed:
-                Text("翻译：上次请求失败")
-                Button("重试翻译") { state.translateCurrentLyrics() }
-            case .idle:
-                Text(state.isTranslationSelectionEmpty ? "翻译：未选择版本" : "翻译：暂无版本")
-                Button("翻译") { state.translateCurrentLyrics() }
-            case .loaded:
-                Text(state.isTranslationSelectionEmpty ? "翻译：未选择版本" : "翻译：已加载")
-                Button("重新翻译") { state.retranslateCurrentLyrics() }
-            case .candidateReady:
-                Text("翻译：有新候选待采用")
-                if let candidate = state.translationSessionPendingCandidate {
-                    Button("采用新候选") { state.adoptTranslation(versionID: candidate.record.id) }
-                    Button("归档候选") { state.archiveTranslation(versionID: candidate.record.id) }
-                }
-            }
-            Menu("翻译版本") {
-                Button("无翻译版本") { state.selectNoTranslationVersion() }
-                    .disabled(state.isTranslationSelectionEmpty)
-                if !state.translationVersions.isEmpty { Divider() }
-                ForEach(state.translationVersions, id: \.record.id) { version in
-                    Button {
-                        state.selectTranslation(versionID: version.record.id)
-                    } label: {
-                        Text("\(version.record.model.isEmpty ? version.record.sourceKind.rawValue : version.record.model) · \(version.record.createdAt.formatted(date: .abbreviated, time: .shortened))")
-                    }
-                }
-                if state.selectedTranslation?.record.isLocked == false {
-                    Divider()
-                    Button("锁定当前版本") { state.lockSelectedTranslation() }
-                    Button("删除当前版本", role: .destructive) { state.deleteSelectedTranslation() }
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var alignmentMenuContent: some View {
-        switch state.liveLyricsState {
-        case .alignmentQueued:
-            Divider()
-            Text("歌词：待对齐时间轴")
-            Button("自动排轴") { state.alignCurrentLyricsWithLocalAudio() }
-#if DEBUG
-            if state.canStartListeningAssist {
-                Button("边听边排轴") { state.presentListeningAssistExplanation() }
-            }
-#endif
-        case .alignmentRunning:
-            Divider()
-            Text("歌词：正在排轴")
-            Button("取消排轴") { state.cancelAlignmentPreview() }
-        case .alignmentPreview:
-            Divider()
-            Text("歌词：排轴预览")
-            Button("查看逐行证据") { isAlignmentDetailsPresented = true }
-            Button("确认并保存") { state.confirmAlignmentPreview(saveLocal: true) }
-            Button("放弃排轴") { state.cancelAlignmentPreview() }
-        case .loaded, .mockPreview:
-            EmptyView()
-        default:
-            Divider()
-            Text("歌词：\(state.liveLyricsStatusMessage)")
-        }
     }
 
     private var searchButton: some View {
@@ -847,6 +794,7 @@ struct AppleMusicImmersiveV3WindowView: View {
         SettingsLink {
             iconLabel("gearshape", description: "显示设置")
         }
+        .buttonStyle(.plain)
         .accessibilityLabel("显示设置")
     }
 
