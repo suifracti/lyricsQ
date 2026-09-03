@@ -2,35 +2,42 @@ import SwiftUI
 import AppKit
 
 private enum SettingsCategory: String, CaseIterable, Identifiable {
+    // 5 个正式偏好一级入口 (Primary Sidebar Cases)
     case general = "通用"
+    case lyricsAndText = "歌词与文字"
+    case servicesAndSources = "服务与来源"
+    case aiTranslation = "AI 翻译"
+    case advancedAndData = "高级与数据"
+
+    // 过渡桥接隐藏目标 (Hidden Bridge Destinations, 不在侧边栏显示)
+    case reading = "读音与文字"
+    case lyricsSources = "歌词来源"
+    case data = "数据与存储"
     case library = "我的歌词库"
     case history = "最近播放"
     case statistics = "听歌统计"
-    case display = "歌词显示"
-    case reading = "读音与文字"
-    case spotify = "Spotify"
-    case lyricsSources = "歌词来源"
-    case data = "数据与存储"
-    case ai = "AI"
     case experienceLibrary = "体验版本库"
-    case advanced = "高级"
+
+    static var primaryCases: [SettingsCategory] {
+        [.general, .lyricsAndText, .servicesAndSources, .aiTranslation, .advancedAndData]
+    }
 
     var id: String { rawValue }
 
     var systemImage: String {
         switch self {
         case .general: return "gearshape"
+        case .lyricsAndText: return "text.quote"
+        case .servicesAndSources: return "waveform.circle"
+        case .aiTranslation: return "sparkles"
+        case .advancedAndData: return "wrench.and.screwdriver"
+        case .reading: return "character.book.closed"
+        case .lyricsSources: return "books.vertical"
+        case .data: return "externaldrive"
         case .library: return "music.note.list"
         case .history: return "clock.arrow.circlepath"
         case .statistics: return "chart.bar"
-        case .display: return "text.quote"
-        case .reading: return "character.book.closed"
-        case .spotify: return "waveform.circle"
-        case .lyricsSources: return "books.vertical"
-        case .data: return "externaldrive"
-        case .ai: return "sparkles"
         case .experienceLibrary: return "rectangle.on.rectangle"
-        case .advanced: return "wrench.and.screwdriver"
         }
     }
 }
@@ -56,7 +63,7 @@ struct SettingsRootView: View {
     private func settingsShell(includeExperienceLibrary: Bool, title: String) -> some View {
         NavigationSplitView {
             List(selection: $selection) {
-                ForEach(SettingsCategory.allCases.filter { $0 != .experienceLibrary }) { category in
+                ForEach(SettingsCategory.primaryCases) { category in
                     Label(category.rawValue, systemImage: category.systemImage)
                         .tag(category)
                 }
@@ -77,9 +84,7 @@ struct SettingsRootView: View {
             .accessibilityIdentifier(settings.settingsCenterPresentation.rawValue)
             .frame(minWidth: 180)
         } detail: {
-            SettingsDetailView(category: selection) {
-                selection = .experienceLibrary
-            }
+            SettingsDetailView(selection: $selection)
                 .environmentObject(settings)
         }
         .onAppear {
@@ -90,28 +95,92 @@ struct SettingsRootView: View {
     }
 }
 
+private struct TransitionalBridgeContainer<Content: View>: View {
+    let title: String
+    let onBack: () -> Void
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Button(action: onBack) {
+                    Label(title, systemImage: "chevron.left")
+                }
+                .buttonStyle(.borderless)
+                .accessibilityIdentifier("transitional_bridge_back_button")
+                Spacer()
+            }
+            .padding(.horizontal, 24)
+            .padding(.vertical, 10)
+            Divider()
+
+            content()
+        }
+    }
+}
+
 private struct SettingsDetailView: View {
     @EnvironmentObject private var settings: AppSettingsStore
-    let category: SettingsCategory
-    let onOpenExperienceLibrary: () -> Void
+    @Binding var selection: SettingsCategory
 
     var body: some View {
         Group {
-            switch category {
-            case .general: GeneralSettingsView().padding(28)
-            case .library: PersonalLyricsLibraryView()
-            case .history: ListeningHistoryView()
-            case .statistics: ListeningStatisticsView()
-            case .display: DisplaySettingsView().padding(28)
-            case .reading: ReadingSettingsView().padding(28)
-            case .spotify: SpotifySettingsView().padding(28)
-            case .lyricsSources: LyricsSourcesSettingsView().padding(28)
-            case .data: DataSettingsView().padding(28)
-            case .ai: AISettingsView().padding(28)
-            case .experienceLibrary: ExperienceLibrarySettingsView(selectionStore: settings.presentationSelections).padding(28)
-            case .advanced: AdvancedSettingsView(onOpenExperienceLibrary: onOpenExperienceLibrary).padding(28)
+            switch selection {
+            case .general:
+                GeneralSettingsView()
+                    .padding(28)
+            case .lyricsAndText:
+                DisplaySettingsView(onNavigateToReading: { selection = .reading })
+                    .padding(28)
+            case .servicesAndSources:
+                SpotifySettingsView(onNavigateToLyricsSources: { selection = .lyricsSources })
+                    .padding(28)
+            case .aiTranslation:
+                AISettingsView()
+                    .padding(28)
+            case .advancedAndData:
+                AdvancedSettingsView(
+                    onNavigateToData: { selection = .data },
+                    onOpenTool: { tool in selection = tool }
+                )
+                .padding(28)
+
+            // Hidden Bridge Destinations
+            case .reading:
+                TransitionalBridgeContainer(title: "返回歌词与文字", onBack: { selection = .lyricsAndText }) {
+                    ReadingSettingsView()
+                        .padding(28)
+                }
+            case .lyricsSources:
+                TransitionalBridgeContainer(title: "返回服务与来源", onBack: { selection = .servicesAndSources }) {
+                    LyricsSourcesSettingsView()
+                        .padding(28)
+                }
+            case .data:
+                TransitionalBridgeContainer(title: "返回高级与数据", onBack: { selection = .advancedAndData }) {
+                    DataSettingsView()
+                        .padding(28)
+                }
+            case .library:
+                TransitionalBridgeContainer(title: "返回高级与数据", onBack: { selection = .advancedAndData }) {
+                    PersonalLyricsLibraryView()
+                }
+            case .history:
+                TransitionalBridgeContainer(title: "返回高级与数据", onBack: { selection = .advancedAndData }) {
+                    ListeningHistoryView()
+                }
+            case .statistics:
+                TransitionalBridgeContainer(title: "返回高级与数据", onBack: { selection = .advancedAndData }) {
+                    ListeningStatisticsView()
+                }
+            case .experienceLibrary:
+                TransitionalBridgeContainer(title: "返回高级与数据", onBack: { selection = .advancedAndData }) {
+                    ExperienceLibrarySettingsView(selectionStore: settings.presentationSelections)
+                        .padding(28)
+                }
             }
         }
+        .id(selection)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }
@@ -231,6 +300,7 @@ private struct GeneralSettingsView: View {
 
 private struct DisplaySettingsView: View {
     @EnvironmentObject private var settings: AppSettingsStore
+    let onNavigateToReading: () -> Void
 
     var body: some View {
         Form {
@@ -257,6 +327,21 @@ private struct DisplaySettingsView: View {
                 numericSlider("Ruby 假名大小", value: doubleBinding(\.rubyFontSize), range: 8...18, format: "%.0f pt")
                 numericSlider("非当前歌词透明度", value: preferenceBinding(\.opacity), range: 0.15...1, format: "%.0f%%", scale: 100)
                 Toggle("远处歌词隐藏 Ruby 和罗马音", isOn: preferenceBinding(\.hideDistantAuxiliary))
+            }
+
+            Section("读音与文字设置（过渡入口）") {
+                Button {
+                    onNavigateToReading()
+                } label: {
+                    HStack {
+                        Label("进入读音与文字设置", systemImage: "character.book.closed")
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("btn_enter_reading")
             }
         }
         .formStyle(.grouped)
@@ -305,6 +390,7 @@ private struct DisplaySettingsView: View {
 private struct SpotifySettingsView: View {
     @EnvironmentObject private var playbackState: PlaybackState
     @State private var clientIDDraft = ""
+    let onNavigateToLyricsSources: () -> Void
 
     private var authorization: SpotifyAuthorizationManager {
         playbackState.spotifyAuthorizationManager
@@ -357,6 +443,21 @@ private struct SpotifySettingsView: View {
                 Text("授权失败不会影响 Spotify Desktop 当前播放和本地歌词链路。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+            }
+
+            Section("歌词来源与 Provider（过渡入口）") {
+                Button {
+                    onNavigateToLyricsSources()
+                } label: {
+                    HStack {
+                        Label("进入歌词来源与 Provider 设置", systemImage: "books.vertical")
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("btn_enter_lyrics_sources")
             }
         }
         .formStyle(.grouped)
@@ -1007,7 +1108,8 @@ private struct TranslationPromptPreviewView: View {
 private struct AdvancedSettingsView: View {
     @EnvironmentObject private var settings: AppSettingsStore
     @EnvironmentObject private var data: SettingsDataController
-    let onOpenExperienceLibrary: () -> Void
+    let onNavigateToData: () -> Void
+    let onOpenTool: (SettingsCategory) -> Void
 
     private var appVersion: String {
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "开发构建"
@@ -1035,10 +1137,75 @@ private struct AdvancedSettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
-            Section("深入体验") {
-                Button("打开体验版本库", systemImage: "rectangle.on.rectangle") {
-                    onOpenExperienceLibrary()
+            Section("数据与存储（过渡入口）") {
+                Button {
+                    onNavigateToData()
+                } label: {
+                    HStack {
+                        Label("进入数据库与存储维护", systemImage: "externaldrive")
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .foregroundStyle(.secondary)
+                    }
                 }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("btn_enter_data")
+            }
+
+            Section("实用工具（过渡桥接）") {
+                Button {
+                    onOpenTool(.library)
+                } label: {
+                    HStack {
+                        Label("打开我的歌词库", systemImage: "books.vertical")
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("btn_enter_library")
+
+                Button {
+                    onOpenTool(.history)
+                } label: {
+                    HStack {
+                        Label("查看最近播放", systemImage: "clock.arrow.circlepath")
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("btn_enter_history")
+
+                Button {
+                    onOpenTool(.statistics)
+                } label: {
+                    HStack {
+                        Label("查看听歌统计", systemImage: "chart.bar")
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("btn_enter_statistics")
+            }
+
+            Section("深入体验") {
+                Button {
+                    onOpenTool(.experienceLibrary)
+                } label: {
+                    HStack {
+                        Label("打开体验版本库", systemImage: "rectangle.on.rectangle")
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("btn_enter_experience_library")
                 Text("预览、应用或恢复主窗口、桌面歌词和其他呈现版本。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
