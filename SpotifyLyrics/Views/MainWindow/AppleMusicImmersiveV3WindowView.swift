@@ -32,6 +32,10 @@ struct AppleMusicImmersiveV3WindowView: View {
     @State private var isAlignmentDetailsPresented = false
     @State private var isCurrentSongOperationsPresented = false
 
+    private var isSecondarySurfacePresented: Bool {
+        isVisualTuningPresented || isSearchPresented || isCurrentSongOperationsPresented
+    }
+
     private var showsForegroundArtwork: Bool {
         settings.v3ArtworkPresentation != .stage
     }
@@ -62,11 +66,11 @@ struct AppleMusicImmersiveV3WindowView: View {
                 toolBar
                     .padding(.top, 18)
                     .padding(.trailing, 26)
-                    .opacity(toolsVisible || isVisualTuningPresented ? 1 : 0)
-                    .allowsHitTesting(toolsVisible || isVisualTuningPresented)
+                    .opacity(toolsVisible || isSecondarySurfacePresented ? 1 : 0)
+                    .allowsHitTesting(toolsVisible || isSecondarySurfacePresented)
                     .animation(
                         LyricsDesignTokens.Motion.animation(reduceMotion: reduceMotion),
-                        value: toolsVisible || isVisualTuningPresented
+                        value: toolsVisible || isSecondarySurfacePresented
                     )
             }
             .clipped()
@@ -74,13 +78,13 @@ struct AppleMusicImmersiveV3WindowView: View {
             .onContinuousHover(coordinateSpace: .local) { phase in
                 switch phase {
                 case .active(let location):
-                    if location.y <= MainWindowResponsiveThresholds.toolbarRevealHeight || isVisualTuningPresented {
+                    if location.y <= MainWindowResponsiveThresholds.toolbarRevealHeight || isSecondarySurfacePresented {
                         revealTools()
-                    } else if !isVisualTuningPresented {
+                    } else if !isSecondarySurfacePresented {
                         toolsVisible = false
                     }
                 case .ended:
-                    if !isVisualTuningPresented {
+                    if !isSecondarySurfacePresented {
                         toolsVisible = false
                     }
                 }
