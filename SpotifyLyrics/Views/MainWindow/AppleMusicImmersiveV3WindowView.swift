@@ -258,49 +258,29 @@ struct AppleMusicImmersiveV3WindowView: View {
         let canvasHeight = max(1, geometry.size.height)
         let coverSize = V3ResponsiveGeometry.boundedCoverSize(
             availableWidth: availableWidth - 20,
-            availableHeight: min(210, canvasHeight * 0.34),
-            desiredSize: min(availableWidth * 0.45, canvasHeight * 0.29),
-            minimum: min(140, availableWidth - 20),
-            maximum: 210
+            availableHeight: min(200, canvasHeight * 0.32),
+            desiredSize: min(availableWidth * 0.42, canvasHeight * 0.28),
+            minimum: min(136, availableWidth - 20),
+            maximum: 200
         )
+        let trackHeight = coverSize + 140
 
         return ScrollView(.vertical) {
-            VStack(spacing: LyricsDesignTokens.Spacing.sm) {
-                VStack(alignment: .center, spacing: 0) {
-                    ArtworkView(
-                        track: state.currentTrack,
-                        size: coverSize,
-                        showsAlbumLabel: false,
-                        cornerRadiusRatio: 0.06
-                    )
-                    .frame(maxWidth: availableWidth, alignment: .center)
-
-                    Spacer().frame(height: LyricsDesignTokens.Spacing.xs + 2)
-
-                    TrackMetadataView(
-                        track: state.currentTrack,
-                        titleSize: min(22, max(17, coverSize * 0.11)),
-                        alignment: .center,
-                        presentation: .v3Immersive
-                    )
-                    .frame(maxWidth: availableWidth, alignment: .center)
-
-                    Spacer().frame(height: LyricsDesignTokens.Spacing.xs + 2)
-
-                    AppleMusicImmersiveV3TransportControls(
-                        state: state,
-                        alignment: .center,
-                        progressDensity: .small,
-                        progressMaxWidth: min(availableWidth, LyricsDesignTokens.Progress.smallMaxWidth)
-                    )
-                    .frame(maxWidth: availableWidth, alignment: .center)
-                }
+            VStack(spacing: LyricsDesignTokens.Spacing.xs + 2) {
+                trackColumn(
+                    width: availableWidth,
+                    availableHeight: trackHeight,
+                    coverSize: coverSize,
+                    alignment: .center,
+                    compact: true,
+                    progressDensity: .small
+                )
 
                 lyricsColumn(width: availableWidth, compact: true)
-                    .frame(minHeight: max(220, canvasHeight * 0.48))
+                    .frame(minHeight: max(220, canvasHeight * 0.50))
             }
             .padding(.horizontal, horizontalPadding)
-            .padding(.top, LyricsDesignTokens.Spacing.sm)
+            .padding(.top, LyricsDesignTokens.Spacing.xs + 2)
             .padding(.bottom, LyricsDesignTokens.Spacing.md)
         }
         .scrollIndicators(.hidden)
