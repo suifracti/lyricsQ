@@ -72,10 +72,18 @@
       - 垂直信息群布局 `VStack(spacing:) { lyricsCol; hudView }`（lines 404–416）；
   - `SpotifyLyrics/Views/Components/AppleMusicImmersiveV3BackdropView.swift`:
     - `stageArtworkLayers` 中的 `stageReadingVeil`（lines 292–305）。
-- **实施目标**：
-  - **Standard / Wide**：微调 `lyricHeight` 与 veil 比例，使底部浮层垂直占用明显下移并收敛，恢复主 artwork 作为整窗第一视觉主体的完整舞台感，消除“上半张封面、下半张 UI”的二分割裂感；
-  - **Short Window**：在视口高度接近最小安全高度（~500pt）时，歌词浮层弹性收敛，不机械占用固定大高度，保住完整 aspect-fit 舞台主体与当前播放行及播放控制按钮；
-  - **保持底线**：当前行歌词对比度与可读性不降低，播放控制按钮（HUD）完整可见可点，不修改 Stage artwork aspect-fit 算法，不引入新全局断点。
+- **实施范围与规则**：
+  - **Primary implementation surface（核心实施面）**：
+    - 优先且仅聚焦于：`lyricHeight` 计算、overlay 垂直几何尺寸、以及 HUD / 歌词在底部的垂直占用；
+    - 实施目标：通过最小的 geometry 调整，在 Standard / Wide 下明显降低底部浮层高度并收敛，使主 artwork 恢复为整窗第一视觉主体，消除“上半张封面、下半张 UI”的二分割裂感；
+    - Short Window 目标：在视口高度接近最小高度（~500pt）时，歌词浮层弹性收敛，不机械占用固定大高度，保住完整 aspect-fit 舞台主体与当前播放行及 HUD 控制按钮；
+    - 保持底线：当前行歌词对比度与可读性不降低，播放控制按钮完整可见可点，不修改 Stage artwork aspect-fit 算法，不引入新全局断点。
+  - **Veil 规则（Conditional Sub-scope，非默认修改项）**：
+    - `stageReadingVeil` / 外层 veil 先保持 **NO CHANGE**；
+    - 严禁因为代码位置顺手就去改动 veil；
+    - 严禁重写 backdrop、严禁改动 normalizedBlur、严禁重做 gradient 系统；
+    - **唯一允许调整条件**：仅在真实 Stage Standard / Wide / Short 截图明确证明“即使 overlay geometry 已充分收敛，veil 本身依然明显造成下半张 artwork 被淹没吞噬”时，才允许在同一个 Candidate 1 中做最小的 veil presentation 调整；
+    - 因此 Candidate 1 仍为一个统一任务，但 veil 属于有严格触发前提的条件子范围（conditional sub-scope），绝非既定必改项。
 
 ---
 
@@ -121,10 +129,16 @@
       Divider()
           .overlay(LyricsDesignTokens.controlBorder.opacity(0.72))
       ```
-- **实施目标**：
-  - 仅针对该单一视图修饰符进行极小参数调整（如降低 overlay opacity 或调整边框透明度），使 Divider 极大程度退居幕后，充当极微妙的留白界定，消除面板生硬割裂感；
-  - 左右两栏视觉融合为同一块有机画布；
-  - 严格不改变左右分栏比例（Split Ratio）与现有布局结构。
+- **实施意图与边界（只冻结视觉目标，不冻结实现手段）**：
+  - **视觉目标**：
+    - 保持 Classic 模式的 split identity；
+    - 严格保持既有左右分栏比例（Split Ratio）与布局结构；
+    - 消除左右两侧像两块独立 Dashboard 面板的生硬割裂感，使两栏感知为同一块有机艺术画布；
+    - 分割线 / 分隔线索（Divider / separation cue）不再成为视觉中心，必须极大程度退居幕后或自然融入留白。
+  - **实现手段开放性**：
+    - 本 plan **绝对不提前冻结具体实现手段**（不提前决定必须是删除、采用微渐变、还是调整特定透明度数值）；
+    - 允许实施 Agent 在实际执行时，基于当前真实界面截图，从现有 separation presentation 空间中选择**最小改动方案**；
+    - 若代码评估显示消除面板割裂感需要大规模 layout 重排或重构，则立即标记为 `DEFER`。
 
 ---
 
@@ -137,11 +151,16 @@
     - 阴影修饰符（line 42：`.shadow(...)`）；
   - `SpotifyLyrics/Views/MainWindow/AppleMusicImmersiveV3WindowView.swift`:
     - `trackColumn` 中的 `ArtworkView` 容器外层修饰（line 438, lines 510–516）。
-- **实施目标**：
-  - 在不修改底层背景算法、不添加彩色光晕、不新增大型底板卡片的前提下，通过对前景封面的边框对比度或阴影弥散进行极小范围的 presentation 微调，使其与同源环境场的衔接更加柔和自然；
-  - 保持实体唱片封面的辨识度与几何完整性；
-  - 歌词阅读列始终为长时沉浸阅读主焦点。
-- **评估与备选规则**：若后续实施发现微调边框/阴影不足以消除贴片感，需探索复杂遮罩或材质融合时，本任务立即标记为 `DEFER — requires separate visual exploration`，严禁硬做或侵入底层算法。
+- **实施意图与边界（最小前景 presentation 微调）**：
+  - **实施意图**：
+    - 仅允许对前景封面进行**最小的 presentation 调整**；
+    - 目标：保持完整实体 1:1 方形封面，同时弱化“独立卡片生硬贴在背景上”的贴片感与割裂感；
+    - 歌词阅读列始终保持为长时沉浸阅读主焦点；
+    - 严格守住边界：不改动 Ambient split geometry，不改动 backdrop / palette / normalizedBlur 核心算法，不添加彩色发光（halo/glow），不新增大型底板卡片容器。
+  - **实施流程与选择范围**：
+    - 实施 Agent 必须先在真实 Standard / Wide / Compact 截图中审视贴片感的实际来源，再从当前 foreground artwork presentation 中选择**最小的一处**进行调整（可能涉及既有边框处理、既有阴影处理、或前景容器外围 presentation，但 plan 不预先规定具体选哪一个）；
+  - **严格 Defer 规则**：
+    - 如果该问题的解决必须依赖同时修改多层材质、添加复杂渐变 mask、侵入 backdrop、或引入全新融合系统，则**立即判定为 `DEFER — requires separate visual exploration`**，严禁硬做或侵入底层算法。
 
 ---
 
@@ -149,11 +168,11 @@
 
 | 候选标识 | 候选任务名称 | 优先级 | 决策 rationale（依据） |
 |---|---|:---:|---|
-| **Candidate 1** | **Stage 底部浮层纵向收敛与矮窗弹性压缩**<br>*(Merged B + C)* | **P0** | **最高构图收益**。Stage 当前遮挡 50%~80% 封面，严重背离“单张封面为主舞台”的合同底线。代码高度内聚，合并后一次性彻底解决 Stage 核心视觉危机。 |
+| **Candidate 1** | **Stage 底部浮层纵向收敛与矮窗弹性压缩**<br>*(Merged B + C)* | **P0** | **最高构图收益**。Stage 当前遮挡 50%~80% 封面，严重背离“单张封面为主舞台”的合同底线。代码高度内聚，合并后优先收敛 overlay 垂直几何；veil 作为条件子范围（截图证明有必要时才微调），一次性解决 Stage 核心视觉危机。 |
 | **Candidate 2** | **Classic Compact 歌词首屏可见性保障**<br>*(Candidate F)* | **P1** | **关键功能可用性**。Classic 在窄视口下将当前歌词完全挤出首屏，违背了“歌词为核心内容”的全局合同，必须优先解决。 |
 | **Candidate 3** | **Stage 用户设置描述文案校准**<br>*(Candidate D)* | **P1** | **无风险单点校准**。消除用户设置描述与实际底部居中渲染的明显脱节，单一字符串修改，0 代码回归风险。 |
-| **Candidate 4** | **Classic 分割线视觉弱化**<br>*(Candidate E)* | **P2** | **低风险微调**。仅涉及单一修饰符透明度下调，使画布更具整体感，可作为独立小步提交。 |
-| **Candidate 5** | **Ambient 前景封面视觉交融微调**<br>*(Candidate A)* | **P2** | **谨慎探索项**。需在保留实体封面感与弱化贴片感之间权衡，代码改动小但主观视觉权重大。若微调无法达标则执行 `DEFER`。 |
+| **Candidate 4** | **Classic 分割线视觉弱化**<br>*(Candidate E)* | **P2** | **低风险视觉目标收敛**。保持 split 结构，不提前冻结具体实现手段，由实施 Agent 基于真实截图从现有 separation presentation 中选最小手段，使 Divider 不成为视觉中心。 |
+| **Candidate 5** | **Ambient 前景封面视觉交融微调**<br>*(Candidate A)* | **P2** | **谨慎探索项**。基于真实截图从前景 presentation 中选择最小一处调整，弱化贴片感；若需多层/复杂方案则立即 `DEFER`。 |
 
 ---
 
@@ -163,11 +182,11 @@
 
 1. **绝对禁止大杂烩提交**：严禁在一个 commit 中同时混杂两个及以上模式的代码修改；
 2. **提交拆分合同**：
-   - **Commit 1 (P0)**：Candidate 1 (Stage Overlay + Short Contraction 几何收敛)；
+   - **Commit 1 (P0)**：Candidate 1 (Stage Overlay + Short Contraction 几何收敛，veil 仅限满足条件时微调)；
    - **Commit 2 (P1)**：Candidate 2 (Classic Compact 首屏歌词排布收敛)；
    - **Commit 3 (P1)**：Candidate 3 (Stage Settings 文案校准)；
-   - **Commit 4 (P2)**：Candidate 4 (Classic Divider 弱化)；
-   - **Commit 5 (P2)**：Candidate 5 (Ambient 边框/阴影微调，若未 DEFER)；
+   - **Commit 4 (P2)**：Candidate 4 (Classic Divider 视觉弱化，按最小手段实现)；
+   - **Commit 5 (P2)**：Candidate 5 (Ambient 前景 presentation 最小微调，若未 DEFER)；
 3. **每步独立闭环**：每个 Candidate 实施后，必须单独执行该候选的实机截图验证与代码审查，确认无回归后再进入下一个 Candidate。
 
 ---
