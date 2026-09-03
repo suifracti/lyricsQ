@@ -698,55 +698,6 @@ struct AppleMusicImmersiveV3WindowView: View {
         .accessibilityLabel("播放来源：\(state.providerStatusMessage)")
     }
 
-    @ViewBuilder
-    private var translationMenuContent: some View {
-        if !state.liveLyrics.isEmpty {
-            Divider()
-            if !state.translationProgressMessage.isEmpty {
-                Text(state.translationProgressMessage)
-            }
-            switch state.translationState {
-            case .loading:
-                Text("翻译：正在翻译整首歌词…")
-            case .unavailable:
-                Text("翻译：未配置 AI 翻译")
-                Button("翻译") { state.translateCurrentLyrics() }
-            case .failed:
-                Text("翻译：上次请求失败")
-                Button("重试翻译") { state.translateCurrentLyrics() }
-            case .idle:
-                Text(state.isTranslationSelectionEmpty ? "翻译：未选择版本" : "翻译：暂无版本")
-                Button("翻译") { state.translateCurrentLyrics() }
-            case .loaded:
-                Text(state.isTranslationSelectionEmpty ? "翻译：未选择版本" : "翻译：已加载")
-                Button("重新翻译") { state.retranslateCurrentLyrics() }
-            case .candidateReady:
-                Text("翻译：有新候选待采用")
-                if let candidate = state.translationSessionPendingCandidate {
-                    Button("采用新候选") { state.adoptTranslation(versionID: candidate.record.id) }
-                    Button("归档候选") { state.archiveTranslation(versionID: candidate.record.id) }
-                }
-            }
-            Menu("翻译版本") {
-                Button("无翻译版本") { state.selectNoTranslationVersion() }
-                    .disabled(state.isTranslationSelectionEmpty)
-                if !state.translationVersions.isEmpty { Divider() }
-                ForEach(state.translationVersions, id: \.record.id) { version in
-                    Button {
-                        state.selectTranslation(versionID: version.record.id)
-                    } label: {
-                        Text("\(version.record.model.isEmpty ? version.record.sourceKind.rawValue : version.record.model) · \(version.record.createdAt.formatted(date: .abbreviated, time: .shortened))")
-                    }
-                }
-                if state.selectedTranslation?.record.isLocked == false {
-                    Divider()
-                    Button("锁定当前版本") { state.lockSelectedTranslation() }
-                    Button("删除当前版本", role: .destructive) { state.deleteSelectedTranslation() }
-                }
-            }
-        }
-    }
-
     private var searchButton: some View {
         Button {
             isSearchPresented.toggle()
