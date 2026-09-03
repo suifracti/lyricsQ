@@ -1324,6 +1324,9 @@ private struct AppleMusicImmersiveV3LyricsViewport: View {
         let artistDisplay = state.displayedTrack.artist
 
         return VStack(alignment: .leading, spacing: LyricsDesignTokens.Spacing.xs) {
+            if state.isShowingSearchPreview, state.hasLiveTrack {
+                searchPreviewBanner
+            }
             if lines.isEmpty {
                 if lyricsFocus {
                     focusEmptyState
@@ -1342,6 +1345,33 @@ private struct AppleMusicImmersiveV3LyricsViewport: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var searchPreviewBanner: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(LyricsDesignTokens.accent)
+            Text("正在预览搜索歌词：「\(state.displayedTrack.title)」")
+                .font(.system(size: 12, weight: .medium, design: .rounded))
+                .foregroundStyle(LyricsDesignTokens.primaryText)
+                .lineLimit(1)
+            Spacer()
+            Button("应用到当前播放") {
+                state.adoptSearchPreviewLyrics()
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(LyricsDesignTokens.accent)
+            .controlSize(.small)
+
+            Button("退出预览") {
+                state.clearSearchPreview()
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 7)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 9))
     }
 
     private var focusEmptyState: some View {

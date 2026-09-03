@@ -38,6 +38,9 @@ struct SongSearchPopover: View {
                 .foregroundStyle(LyricsDesignTokens.mutedText)
 
             spotifyAuthorizationSection
+            if playbackState.isShowingSearchPreview, playbackState.hasLiveTrack {
+                searchPreviewActionBanner
+            }
 
             content
         }
@@ -214,6 +217,35 @@ struct SongSearchPopover: View {
         )
         .accessibilityLabel("歌曲结果：\(result.track.title)，\(result.track.artist)")
         .accessibilityHint(result.lyrics == nil ? "查看这首歌的歌词" : "加载这首歌的歌词")
+    }
+
+    private var searchPreviewActionBanner: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "music.note.list")
+                .foregroundStyle(LyricsDesignTokens.accent)
+            Text(playbackState.searchPreviewTrack.map { "已载入预览：「\($0.title)」" } ?? "已载入预览歌词")
+                .font(.system(size: 11, weight: .medium, design: .rounded))
+                .foregroundStyle(LyricsDesignTokens.primaryText)
+                .lineLimit(1)
+            Spacer()
+            Button("应用到当前歌曲") {
+                playbackState.adoptSearchPreviewLyrics()
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(LyricsDesignTokens.accent)
+            .controlSize(.small)
+
+            Button("退出预览") {
+                playbackState.clearSearchPreview()
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+        }
+        .padding(9)
+        .background(
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .fill(LyricsDesignTokens.controlBackground)
+        )
     }
 
     private var isAuthorizing: Bool {
