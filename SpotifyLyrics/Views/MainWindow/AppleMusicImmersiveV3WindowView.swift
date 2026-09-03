@@ -320,13 +320,27 @@ struct AppleMusicImmersiveV3WindowView: View {
         )
         let lyricsCol = lyricsColumn(width: split.lyrics, compact: false)
 
+        let classicDivider = Divider()
+            .overlay(LyricsDesignTokens.controlBorder.opacity(0.35))
+            .mask(
+                LinearGradient(
+                    stops: [
+                        .init(color: .clear, location: 0.0),
+                        .init(color: .white, location: 0.18),
+                        .init(color: .white, location: 0.82),
+                        .init(color: .clear, location: 1.0)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            )
+
         return HStack(spacing: 0) {
             if settings.v3ArtworkPosition == "right" {
                 lyricsCol
                     .frame(width: split.lyrics, height: availableHeight)
 
-                Divider()
-                    .overlay(LyricsDesignTokens.controlBorder.opacity(0.72))
+                classicDivider
 
                 trackCol
                     .frame(width: split.artwork, height: availableHeight)
@@ -334,8 +348,7 @@ struct AppleMusicImmersiveV3WindowView: View {
                 trackCol
                     .frame(width: split.artwork, height: availableHeight)
 
-                Divider()
-                    .overlay(LyricsDesignTokens.controlBorder.opacity(0.72))
+                classicDivider
 
                 lyricsCol
                     .frame(width: split.lyrics, height: availableHeight)
