@@ -847,6 +847,7 @@ struct AppleMusicImmersiveV3WindowView: View {
         SettingsLink {
             iconLabel("gearshape", description: "显示设置")
         }
+        .buttonStyle(.plain)
         .accessibilityLabel("显示设置")
     }
 
