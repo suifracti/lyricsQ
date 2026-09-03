@@ -2,35 +2,36 @@ import SwiftUI
 import AppKit
 
 private enum SettingsCategory: String, CaseIterable, Identifiable {
+    // 5 个正式偏好一级入口 (Primary Sidebar Cases)
     case general = "通用"
+    case lyricsAndText = "歌词与文字"
+    case servicesAndSources = "服务与来源"
+    case aiTranslation = "AI 翻译"
+    case advancedAndData = "高级与数据"
+
+    // 过渡桥接隐藏目标 (Hidden Bridge Destinations, 不在侧边栏显示)
     case library = "我的歌词库"
     case history = "最近播放"
     case statistics = "听歌统计"
-    case display = "歌词显示"
-    case reading = "读音与文字"
-    case spotify = "Spotify"
-    case lyricsSources = "歌词来源"
-    case data = "数据与存储"
-    case ai = "AI"
     case experienceLibrary = "体验版本库"
-    case advanced = "高级"
+
+    static var primaryCases: [SettingsCategory] {
+        [.general, .lyricsAndText, .servicesAndSources, .aiTranslation, .advancedAndData]
+    }
 
     var id: String { rawValue }
 
     var systemImage: String {
         switch self {
         case .general: return "gearshape"
+        case .lyricsAndText: return "text.quote"
+        case .servicesAndSources: return "waveform.circle"
+        case .aiTranslation: return "sparkles"
+        case .advancedAndData: return "wrench.and.screwdriver"
         case .library: return "music.note.list"
         case .history: return "clock.arrow.circlepath"
         case .statistics: return "chart.bar"
-        case .display: return "text.quote"
-        case .reading: return "character.book.closed"
-        case .spotify: return "waveform.circle"
-        case .lyricsSources: return "books.vertical"
-        case .data: return "externaldrive"
-        case .ai: return "sparkles"
         case .experienceLibrary: return "rectangle.on.rectangle"
-        case .advanced: return "wrench.and.screwdriver"
         }
     }
 }
@@ -56,7 +57,7 @@ struct SettingsRootView: View {
     private func settingsShell(includeExperienceLibrary: Bool, title: String) -> some View {
         NavigationSplitView {
             List(selection: $selection) {
-                ForEach(SettingsCategory.allCases.filter { $0 != .experienceLibrary }) { category in
+                ForEach(SettingsCategory.primaryCases) { category in
                     Label(category.rawValue, systemImage: category.systemImage)
                         .tag(category)
                 }
@@ -77,9 +78,7 @@ struct SettingsRootView: View {
             .accessibilityIdentifier(settings.settingsCenterPresentation.rawValue)
             .frame(minWidth: 180)
         } detail: {
-            SettingsDetailView(category: selection) {
-                selection = .experienceLibrary
-            }
+            SettingsDetailView(selection: $selection)
                 .environmentObject(settings)
         }
         .onAppear {
@@ -90,33 +89,81 @@ struct SettingsRootView: View {
     }
 }
 
+private struct TransitionalBridgeContainer<Content: View>: View {
+    let title: String
+    let onBack: () -> Void
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Button(action: onBack) {
+                    Label(title, systemImage: "chevron.left")
+                }
+                .buttonStyle(.borderless)
+                .accessibilityIdentifier("transitional_bridge_back_button")
+                Spacer()
+            }
+            .padding(.horizontal, 24)
+            .padding(.vertical, 10)
+            Divider()
+
+            content()
+        }
+    }
+}
+
 private struct SettingsDetailView: View {
     @EnvironmentObject private var settings: AppSettingsStore
-    let category: SettingsCategory
-    let onOpenExperienceLibrary: () -> Void
+    @Binding var selection: SettingsCategory
 
     var body: some View {
         Group {
-            switch category {
-            case .general: GeneralSettingsView().padding(28)
-            case .library: PersonalLyricsLibraryView()
-            case .history: ListeningHistoryView()
-            case .statistics: ListeningStatisticsView()
-            case .display: DisplaySettingsView().padding(28)
-            case .reading: ReadingSettingsView().padding(28)
-            case .spotify: SpotifySettingsView().padding(28)
-            case .lyricsSources: LyricsSourcesSettingsView().padding(28)
-            case .data: DataSettingsView().padding(28)
-            case .ai: AISettingsView().padding(28)
-            case .experienceLibrary: ExperienceLibrarySettingsView(selectionStore: settings.presentationSelections).padding(28)
-            case .advanced: AdvancedSettingsView(onOpenExperienceLibrary: onOpenExperienceLibrary).padding(28)
+            switch selection {
+            case .general:
+                GeneralSettingsView()
+                    .padding(28)
+            case .lyricsAndText:
+                LyricsAndTextSettingsView()
+                    .padding(28)
+            case .servicesAndSources:
+                ServicesAndSourcesSettingsView()
+                    .padding(28)
+            case .aiTranslation:
+                AISettingsView()
+                    .padding(28)
+            case .advancedAndData:
+                AdvancedAndDataSettingsView(
+                    onOpenTool: { tool in selection = tool }
+                )
+                .padding(28)
+
+            // Hidden Bridge Destinations
+            case .library:
+                TransitionalBridgeContainer(title: "返回高级与数据", onBack: { selection = .advancedAndData }) {
+                    PersonalLyricsLibraryView()
+                }
+            case .history:
+                TransitionalBridgeContainer(title: "返回高级与数据", onBack: { selection = .advancedAndData }) {
+                    ListeningHistoryView()
+                }
+            case .statistics:
+                TransitionalBridgeContainer(title: "返回高级与数据", onBack: { selection = .advancedAndData }) {
+                    ListeningStatisticsView()
+                }
+            case .experienceLibrary:
+                TransitionalBridgeContainer(title: "返回高级与数据", onBack: { selection = .advancedAndData }) {
+                    ExperienceLibrarySettingsView(selectionStore: settings.presentationSelections)
+                        .padding(28)
+                }
             }
         }
+        .id(selection)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }
 
-private struct SettingsPageHeader: View {
+struct SettingsPageHeader: View {
     let title: String
     let detail: String
 
@@ -229,82 +276,12 @@ private struct GeneralSettingsView: View {
     }
 }
 
-private struct DisplaySettingsView: View {
-    @EnvironmentObject private var settings: AppSettingsStore
-
-    var body: some View {
-        Form {
-            SettingsPageHeader(title: "歌词显示", detail: "V3 和歌词专注模式共用这些显示层设置，修改后立即生效。")
-
-            Section("语言层") {
-                Toggle("显示原文", isOn: preferenceBinding(\.showOriginal))
-                Toggle("显示翻译", isOn: preferenceBinding(\.showTranslation))
-                Toggle("显示罗马音", isOn: preferenceBinding(\.showRomaji))
-                Picker("假名显示模式", selection: preferenceBinding(\.kanaDisplayMode)) {
-                    Text("汉字上方注音").tag(KanaDisplayMode.inlineRuby)
-                    Text("独立假名行").tag(KanaDisplayMode.independentLine)
-                    Text("假名替换").tag(KanaDisplayMode.kanaReplacement)
-                    Text("隐藏").tag(KanaDisplayMode.hidden)
-                }
-                Text(settings.displayPreferences.kanaDisplayMode.detail)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Section("字号与层级") {
-                numericSlider("当前歌词字号", value: doubleBinding(\.fontSize), range: 14...42, format: "%.0f pt")
-                numericSlider("辅助文本字号", value: doubleBinding(\.assistantFontSize), range: 10...24, format: "%.0f pt")
-                numericSlider("Ruby 假名大小", value: doubleBinding(\.rubyFontSize), range: 8...18, format: "%.0f pt")
-                numericSlider("非当前歌词透明度", value: preferenceBinding(\.opacity), range: 0.15...1, format: "%.0f%%", scale: 100)
-                Toggle("远处歌词隐藏 Ruby 和罗马音", isOn: preferenceBinding(\.hideDistantAuxiliary))
-            }
-        }
-        .formStyle(.grouped)
-    }
-
-    private func preferenceBinding<Value>(_ keyPath: WritableKeyPath<DisplayPreferences, Value>) -> Binding<Value> {
-        Binding(
-            get: { settings.displayPreferences[keyPath: keyPath] },
-            set: { value in
-                var next = settings.displayPreferences
-                next[keyPath: keyPath] = value
-                settings.displayPreferences = next
-            }
-        )
-    }
-
-    private func doubleBinding(_ keyPath: WritableKeyPath<DisplayPreferences, CGFloat>) -> Binding<Double> {
-        Binding(
-            get: { Double(settings.displayPreferences[keyPath: keyPath]) },
-            set: { value in
-                var next = settings.displayPreferences
-                next[keyPath: keyPath] = CGFloat(value)
-                settings.displayPreferences = next
-            }
-        )
-    }
-
-    private func numericSlider(
-        _ title: String,
-        value: Binding<Double>,
-        range: ClosedRange<Double>,
-        format: String,
-        scale: Double = 1
-    ) -> some View {
-        HStack {
-            Text(title)
-            Slider(value: value, in: range)
-            Text(String(format: format, value.wrappedValue * scale))
-                .font(.system(.caption, design: .monospaced))
-                .foregroundStyle(.secondary)
-                .frame(width: 58, alignment: .trailing)
-        }
-    }
-}
-
-private struct SpotifySettingsView: View {
+private struct ServicesAndSourcesSettingsView: View {
     @EnvironmentObject private var playbackState: PlaybackState
+    @EnvironmentObject private var settings: AppSettingsStore
     @State private var clientIDDraft = ""
+    @State private var discoveryQuery = ""
+    @State private var isExternalDiscoveryExpanded = false
 
     private var authorization: SpotifyAuthorizationManager {
         playbackState.spotifyAuthorizationManager
@@ -312,7 +289,10 @@ private struct SpotifySettingsView: View {
 
     var body: some View {
         Form {
-            SettingsPageHeader(title: "Spotify", detail: "Desktop 控制和 Web 在线目录授权彼此独立。Access Token 与 Refresh Token 永远不在此页面显示。")
+            SettingsPageHeader(
+                title: "服务与来源",
+                detail: "管理 Spotify 播放控制、在线曲库授权与多源歌词检索。"
+            )
 
             Section("Spotify Desktop") {
                 LabeledContent("连接状态", value: playbackState.providerStatus.userFacingMessage)
@@ -358,27 +338,6 @@ private struct SpotifySettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-        }
-        .formStyle(.grouped)
-        .onAppear { clientIDDraft = authorization.clientID ?? "" }
-    }
-
-    private func authorize() {
-        authorization.updateClientID(clientIDDraft)
-        authorization.authorize()
-    }
-}
-
-private struct LyricsSourcesSettingsView: View {
-    @EnvironmentObject private var settings: AppSettingsStore
-    @State private var discoveryQuery = ""
-
-    var body: some View {
-        Form {
-            SettingsPageHeader(
-                title: "歌词来源",
-                detail: "单一免费来源模式控制是否调用实验接口；SQLite 已保存版本始终可恢复，不受模式切换影响。"
-            )
 
             Section("歌词来源模式") {
                 Picker("模式", selection: Binding(
@@ -428,35 +387,46 @@ private struct LyricsSourcesSettingsView: View {
                 }
             }
 
-            Section("外部发现（仅浏览器）") {
-                Text("Uta-Net、UtaTime、AWA 只用于「可能存在歌词」时的外链与复制检索词，不会自动提取、缓存或再分发歌词正文。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            Section {
+                DisclosureGroup("外部发现（仅浏览器）", isExpanded: $isExternalDiscoveryExpanded) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Uta-Net、UtaTime、AWA 只用于「可能存在歌词」时的外链与复制检索词，不会自动提取、缓存或再分发歌词正文。")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
 
-                TextField("歌曲名 艺人（可选）", text: $discoveryQuery)
-                    .textFieldStyle(.roundedBorder)
+                        TextField("歌曲名 艺人（可选）", text: $discoveryQuery)
+                            .textFieldStyle(.roundedBorder)
 
-                HStack {
-                    Button("复制检索词") {
-                        let text = discoveryQuery.trimmingCharacters(in: .whitespacesAndNewlines)
-                        guard !text.isEmpty else { return }
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(text, forType: .string)
-                    }
-                    .disabled(discoveryQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        HStack {
+                            Button("复制检索词") {
+                                let text = discoveryQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+                                guard !text.isEmpty else { return }
+                                NSPasteboard.general.clearContents()
+                                NSPasteboard.general.setString(text, forType: .string)
+                            }
+                            .disabled(discoveryQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
 
-                    ForEach(LyricsDiscoverySite.allCases) { site in
-                        Button(site.title) {
-                            if let url = site.browserURL(query: discoveryQuery) {
-                                NSWorkspace.shared.open(url)
+                            ForEach(LyricsDiscoverySite.allCases) { site in
+                                Button(site.title) {
+                                    if let url = site.browserURL(query: discoveryQuery) {
+                                        NSWorkspace.shared.open(url)
+                                    }
+                                }
+                                .help(site.detail)
                             }
                         }
-                        .help(site.detail)
                     }
+                    .padding(.vertical, 4)
                 }
             }
         }
         .formStyle(.grouped)
+        .onAppear { clientIDDraft = authorization.clientID ?? "" }
+    }
+
+    private func authorize() {
+        authorization.updateClientID(clientIDDraft)
+        authorization.authorize()
     }
 
     private func providerRow(id: LyricsProviderID, index: Int) -> some View {
@@ -510,62 +480,6 @@ private struct LyricsSourcesSettingsView: View {
     }
 }
 
-private struct DataSettingsView: View {
-    @EnvironmentObject private var data: SettingsDataController
-    @State private var showClearConfirmation = false
-
-    var body: some View {
-        Form {
-            SettingsPageHeader(title: "数据与存储", detail: "数据库操作在后台执行；本地歌词目录仍保持只读。")
-
-            Section("SQLite 数据库") {
-                LabeledContent("路径", value: data.statistics?.databaseURL.path ?? SQLiteLyricsRepository.defaultDatabaseURL.path)
-                    .textSelection(.enabled)
-                LabeledContent("Migration", value: "v\(data.statistics?.schemaVersion ?? DatabaseMigrator.currentVersion)")
-                LabeledContent("Track 数量", value: "\(data.statistics?.trackCount ?? 0)")
-                LabeledContent("LyricsVersion 数量", value: "\(data.statistics?.lyricsVersionCount ?? 0)")
-                LabeledContent("LyricLine 数量", value: "\(data.statistics?.lyricLineCount ?? 0)")
-                LabeledContent("数据库大小", value: data.statistics.map { ByteCountFormatter.string(fromByteCount: $0.fileSize, countStyle: .file) } ?? "未知")
-                HStack {
-                    Button("刷新统计") { data.refreshStatistics() }
-                    Button("在 Finder 中显示") { data.revealDatabase() }
-                    Button("创建备份") { data.createBackup() }
-                }
-            }
-
-            Section("本地歌词") {
-                Button("重建本地歌词索引") { data.rebuildLocalIndex() }
-                Text("只扫描 ~/Music/SpotifyLyrics/Lyrics、应用支持目录和 Debug 兼容目录，不写入或修改用户文件。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Section("危险操作") {
-                Button("清除所有歌词缓存", role: .destructive) { showClearConfirmation = true }
-                Text("只删除 SQLite 中的歌词版本和行，保留歌曲元数据；操作前应先创建备份。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            if !data.statusMessage.isEmpty {
-                Text(data.statusMessage)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .formStyle(.grouped)
-        .onAppear { data.refreshStatistics() }
-        .confirmationDialog("清除所有歌词缓存？", isPresented: $showClearConfirmation, titleVisibility: .visible) {
-            Button("创建备份并清除", role: .destructive) {
-                data.backupAndClearLyricsCache()
-            }
-            Button("取消", role: .cancel) {}
-        } message: {
-            Text("这会删除 SQLite 中的 LyricsVersion 和 LyricLine，不会修改本地 LRC 文件。")
-        }
-    }
-}
-
 private struct AISettingsView: View {
     @EnvironmentObject private var settings: AppSettingsStore
     @EnvironmentObject private var playback: PlaybackState
@@ -575,17 +489,18 @@ private struct AISettingsView: View {
     @State private var promptPreview: AITranslationPrompt?
     @State private var showPromptPreview = false
     @State private var showProfileManager = false
+    @State private var isAdvancedAIExpanded = false
 
     private var keyStore: KeychainAITranslationAPIKeyStore { KeychainAITranslationAPIKeyStore() }
 
     var body: some View {
         Form {
             SettingsPageHeader(
-                title: "AI",
+                title: "AI 翻译",
                 detail: "对当前已加载的整首歌词做上下文翻译。原文、假名、罗马音和时间轴不会被 AI 修改。"
             )
 
-            Section("服务") {
+            Section("服务配置") {
                 Picker("翻译引擎", selection: configurationBinding(\.engineID)) {
                     ForEach(TranslationEngineCatalog.all, id: \.stableID) { engine in
                         Text(engine.displayName).tag(engine.stableID)
@@ -653,6 +568,27 @@ private struct AISettingsView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+                HStack {
+                    Button("测试连接") {
+                        statusMessage = "正在发送最小测试请求…"
+                        let configuration = settings.aiTranslationConfiguration
+                        let engine = TranslationEngineRegistry.make(stableID: configuration.engineID)
+                        Task {
+                            do {
+                                try await engine.testConnection(configuration: configuration)
+                                await MainActor.run { statusMessage = "连接成功。测试请求未使用当前歌词。" }
+                            } catch {
+                                await MainActor.run { statusMessage = error.localizedDescription }
+                            }
+                        }
+                    }
+                    if !statusMessage.isEmpty {
+                        Text(statusMessage)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                    }
+                }
                 Text("macOS 可能在首次保存、替换或清除时请求 Keychain 鉴权；仅浏览此页面不会读取 Key。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -662,10 +598,10 @@ private struct AISettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
-            Section("翻译") {
+            Section("翻译默认行为") {
                 TextField("目标语言", text: configurationBinding(\.targetLanguage))
                     .textFieldStyle(.roundedBorder)
-                Picker("提示词预设", selection: configurationBinding(\.promptPresetID)) {
+                Picker("默认提示词预设", selection: configurationBinding(\.promptPresetID)) {
                     ForEach(TranslationPromptPresetCatalog.all, id: \.id) { preset in
                         Text(preset.displayName).tag(preset.id.rawValue)
                     }
@@ -676,76 +612,67 @@ private struct AISettingsView: View {
                         Text(profile.name).tag(profile.id.uuidString)
                     }
                 }
-                Button("管理个人翻译风格", systemImage: "person.crop.circle.badge.pencil") {
-                    showProfileManager = true
-                }
-                Button("预览当前提示词", systemImage: "doc.text.magnifyingglass") {
-                    do {
-                        let preset = TranslationPromptPresetID(rawValue: settings.aiTranslationConfiguration.promptPresetID) ?? .naturalSong
-                        promptPreview = try AITranslationPromptBuilder().preview(
-                            context: promptContext,
-                            configuration: settings.aiTranslationConfiguration,
-                            presetID: preset,
-                            profile: selectedProfile
-                        )
-                        showPromptPreview = true
-                    } catch {
-                        statusMessage = "提示词预览失败：\(error.localizedDescription)"
-                    }
-                }
-                Picker("失败后的策略", selection: fallbackBinding) {
-                    ForEach(TranslationFallbackStrategy.allCases, id: \.self) { strategy in
-                        Text(strategy.title).tag(strategy)
-                    }
-                }
-                TextField("翻译风格（兼容旧设置）", text: configurationBinding(\.style))
-                    .textFieldStyle(.roundedBorder)
-                VStack(alignment: .leading, spacing: 5) {
-                    Text("自定义系统提示词（可选）")
-                    TextEditor(text: configurationBinding(\.customSystemPrompt))
-                        .frame(minHeight: 70)
-                        .font(.system(size: 12))
-                        .overlay(RoundedRectangle(cornerRadius: 6).stroke(.quaternary))
-                }
-                HStack {
-                    Text("随机度（Temperature）")
-                    Slider(value: configurationDoubleBinding(\.temperature), in: 0...2, step: 0.1)
-                    Text(String(format: "%.1f", settings.aiTranslationConfiguration.temperature))
-                        .monospacedDigit()
-                        .frame(width: 40, alignment: .trailing)
-                }
-                HStack {
-                    Text("请求超时")
-                    Slider(value: configurationDoubleBinding(\.timeout), in: 5...600, step: 5)
-                    Text("\(Int(settings.aiTranslationConfiguration.timeout)) 秒")
-                        .monospacedDigit()
-                        .frame(width: 70, alignment: .trailing)
-                }
                 Toggle("自动翻译新歌词", isOn: configurationBinding(\.autoTranslateNewLyrics))
                 Text("默认关闭。失败不会循环重试，也不会创建半成品数据库版本。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
 
-            Section("诊断") {
-                Button("测试连接") {
-                    statusMessage = "正在发送最小测试请求…"
-                    let configuration = settings.aiTranslationConfiguration
-                    let engine = TranslationEngineRegistry.make(stableID: configuration.engineID)
-                    Task {
-                        do {
-                            try await engine.testConnection(configuration: configuration)
-                            await MainActor.run { statusMessage = "连接成功。测试请求未使用当前歌词。" }
-                        } catch {
-                            await MainActor.run { statusMessage = error.localizedDescription }
+            Section {
+                DisclosureGroup("高级模型参数与提示词", isExpanded: $isAdvancedAIExpanded) {
+                    VStack(alignment: .leading, spacing: 14) {
+                        HStack {
+                            Text("随机度（Temperature）")
+                            Slider(value: configurationDoubleBinding(\.temperature), in: 0...2, step: 0.1)
+                            Text(String(format: "%.1f", settings.aiTranslationConfiguration.temperature))
+                                .monospacedDigit()
+                                .frame(width: 40, alignment: .trailing)
+                        }
+                        HStack {
+                            Text("请求超时")
+                            Slider(value: configurationDoubleBinding(\.timeout), in: 5...600, step: 5)
+                            Text("\(Int(settings.aiTranslationConfiguration.timeout)) 秒")
+                                .monospacedDigit()
+                                .frame(width: 70, alignment: .trailing)
+                        }
+                        Picker("失败后的策略", selection: fallbackBinding) {
+                            ForEach(TranslationFallbackStrategy.allCases, id: \.self) { strategy in
+                                Text(strategy.title).tag(strategy)
+                            }
+                        }
+                        TextField("翻译风格（兼容旧设置）", text: configurationBinding(\.style))
+                            .textFieldStyle(.roundedBorder)
+                        Button("管理个人翻译风格", systemImage: "person.crop.circle.badge.pencil") {
+                            showProfileManager = true
+                        }
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text("自定义系统提示词（可选）")
+                            TextEditor(text: configurationBinding(\.customSystemPrompt))
+                                .frame(minHeight: 70)
+                                .font(.system(size: 12))
+                                .overlay(RoundedRectangle(cornerRadius: 6).stroke(.quaternary))
+                        }
+                        VStack(alignment: .leading, spacing: 4) {
+                            Button("查看当前 Prompt 内容", systemImage: "doc.text.magnifyingglass") {
+                                do {
+                                    let preset = TranslationPromptPresetID(rawValue: settings.aiTranslationConfiguration.promptPresetID) ?? .naturalSong
+                                    promptPreview = try AITranslationPromptBuilder().preview(
+                                        context: promptContext,
+                                        configuration: settings.aiTranslationConfiguration,
+                                        presetID: preset,
+                                        profile: selectedProfile
+                                    )
+                                    showPromptPreview = true
+                                } catch {
+                                    statusMessage = "查看当前 Prompt 内容失败：\(error.localizedDescription)"
+                                }
+                            }
+                            Text("只读检查当前将发送给 LLM 的完整 Prompt，不会发送请求，不代表设置未保存。")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
                         }
                     }
-                }
-                if !statusMessage.isEmpty {
-                    Text(statusMessage)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .textSelection(.enabled)
+                    .padding(.vertical, 4)
                 }
             }
         }
@@ -980,11 +907,11 @@ private struct TranslationPromptPreviewView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("提示词预览").font(.title3.weight(.semibold))
+                Text("查看当前 Prompt 内容").font(.title3.weight(.semibold))
                 Spacer()
                 Button("关闭") { dismiss() }
             }
-            Text("只读预览 · 不会请求 API、写数据库或改变播放位置")
+            Text("只读检查 · 展示当前将发送给 LLM 的请求/Prompt 内容，不会请求 API、写数据库或改变播放状态。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             Text("Prompt Hash: \(prompt.promptHash)")
@@ -1004,10 +931,13 @@ private struct TranslationPromptPreviewView: View {
     }
 }
 
-private struct AdvancedSettingsView: View {
+private struct AdvancedAndDataSettingsView: View {
     @EnvironmentObject private var settings: AppSettingsStore
     @EnvironmentObject private var data: SettingsDataController
-    let onOpenExperienceLibrary: () -> Void
+    let onOpenTool: (SettingsCategory) -> Void
+
+    @State private var showClearConfirmation = false
+    @State private var isExperienceExpanded = false
 
     private var appVersion: String {
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "开发构建"
@@ -1017,7 +947,30 @@ private struct AdvancedSettingsView: View {
 
     var body: some View {
         Form {
-            SettingsPageHeader(title: "高级", detail: "仅放置诊断和开发相关入口，不显示原始日志或授权敏感数据。")
+            SettingsPageHeader(
+                title: "高级与数据",
+                detail: "数据库维护、系统诊断、窗口状态与实用工具。"
+            )
+
+            Section("数据与存储") {
+                LabeledContent("路径", value: data.statistics?.databaseURL.path ?? SQLiteLyricsRepository.defaultDatabaseURL.path)
+                    .textSelection(.enabled)
+                LabeledContent("Migration", value: "v\(data.statistics?.schemaVersion ?? DatabaseMigrator.currentVersion)")
+                LabeledContent("Track 数量", value: "\(data.statistics?.trackCount ?? 0)")
+                LabeledContent("LyricsVersion 数量", value: "\(data.statistics?.lyricsVersionCount ?? 0)")
+                LabeledContent("LyricLine 数量", value: "\(data.statistics?.lyricLineCount ?? 0)")
+                LabeledContent("数据库大小", value: data.statistics.map { ByteCountFormatter.string(fromByteCount: $0.fileSize, countStyle: .file) } ?? "未知")
+                HStack {
+                    Button("刷新统计") { data.refreshStatistics() }
+                    Button("在 Finder 中显示") { data.revealDatabase() }
+                    Button("创建备份") { data.createBackup() }
+                }
+
+                Button("重建本地歌词索引") { data.rebuildLocalIndex() }
+                Text("只扫描 ~/Music/SpotifyLyrics/Lyrics、应用支持目录和 Debug 兼容目录，不写入或修改用户文件。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
 
             Section("诊断") {
                 LabeledContent("App Build", value: appVersion)
@@ -1028,49 +981,120 @@ private struct AdvancedSettingsView: View {
                 Button("导出脱敏诊断摘要") { data.exportDiagnostics() }
             }
 
-            Section("窗口状态") {
+            Section("重置与危险操作") {
                 Button("重置窗口状态") { settings.resetWindowState() }
                 Text("会删除保存的窗口位置，下次打开使用系统默认位置。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-            }
 
-            Section("深入体验") {
-                Button("打开体验版本库", systemImage: "rectangle.on.rectangle") {
-                    onOpenExperienceLibrary()
-                }
-                Text("预览、应用或恢复主窗口、桌面歌词和其他呈现版本。")
+                Button("清除所有歌词缓存", role: .destructive) { showClearConfirmation = true }
+                Text("只删除 SQLite 中的歌词版本和行，保留歌曲元数据；操作前应先创建备份。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
             }
 
-            Section("设置中心") {
-                Picker("设置中心版本", selection: settingsCenterPresentationBinding) {
-                    Text("体验版本库集成（推荐）")
-                        .tag(SettingsCenterPresentationID.experienceIntegratedV2.rawValue)
-                    Text("经典导航")
-                        .tag(SettingsCenterPresentationID.classicNavigationV1.rawValue)
-                }
-                Text("两个设置中心共用同一份设置和 Keychain；切换不会删除体验版本库或重置已有设置。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                if settings.settingsCenterPresentation == .classicNavigationV1 {
-                    Button("恢复推荐设置中心", systemImage: "arrow.uturn.backward.circle") {
-                        settings.settingsCenterPresentation = .experienceIntegratedV2
+            Section("实用工具") {
+                Button {
+                    onOpenTool(.library)
+                } label: {
+                    HStack {
+                        Label("打开我的歌词库", systemImage: "music.note.list")
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .foregroundStyle(.secondary)
                     }
                 }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("btn_enter_library")
+
+                Button {
+                    onOpenTool(.history)
+                } label: {
+                    HStack {
+                        Label("查看最近播放", systemImage: "clock.arrow.circlepath")
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("btn_enter_history")
+
+                Button {
+                    onOpenTool(.statistics)
+                } label: {
+                    HStack {
+                        Label("查看听歌统计", systemImage: "chart.bar")
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("btn_enter_statistics")
             }
 
-            Section("Migration v2 规划") {
-                Text("当前数据库为 v1。历史 URI/ID stableKey 重复需要先备份，再按 Spotify ID 选择 canonical Track，重定向 aliases、lyrics_versions 和 lyric_lines，并保留 locked/manuallyEdited 版本。本阶段不执行合并。")
+            Section {
+                DisclosureGroup("深入体验", isExpanded: $isExperienceExpanded) {
+                    VStack(alignment: .leading, spacing: 14) {
+                        Button {
+                            onOpenTool(.experienceLibrary)
+                        } label: {
+                            HStack {
+                                Label("打开体验版本库", systemImage: "rectangle.on.rectangle")
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("btn_enter_experience_library")
+
+                        Text("预览、应用或恢复主窗口、桌面歌词和其他呈现版本。")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        Divider()
+
+                        VStack(alignment: .leading, spacing: 6) {
+                            Picker("设置中心版本", selection: settingsCenterPresentationBinding) {
+                                Text("体验版本库集成（推荐）")
+                                    .tag(SettingsCenterPresentationID.experienceIntegratedV2.rawValue)
+                                Text("经典导航")
+                                    .tag(SettingsCenterPresentationID.classicNavigationV1.rawValue)
+                            }
+                            Text("两个设置中心共用同一份设置和 Keychain；切换不会删除体验版本库或重置已有设置。")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                            if settings.settingsCenterPresentation == .classicNavigationV1 {
+                                Button("恢复推荐设置中心", systemImage: "arrow.uturn.backward.circle") {
+                                    settings.settingsCenterPresentation = .experienceIntegratedV2
+                                }
+                            }
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+            }
+
+            if !data.statusMessage.isEmpty {
+                Text(data.statusMessage)
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .formStyle(.grouped)
+        .onAppear { data.refreshStatistics() }
+        .confirmationDialog("清除所有歌词缓存？", isPresented: $showClearConfirmation, titleVisibility: .visible) {
+            Button("创建备份并清除", role: .destructive) {
+                data.backupAndClearLyricsCache()
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("这会删除 SQLite 中的 LyricsVersion 和 LyricLine，不会修改本地 LRC 文件。")
+        }
     }
 
     private var settingsCenterPresentationBinding: Binding<String> {
