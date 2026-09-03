@@ -356,19 +356,19 @@ struct AppleMusicImmersiveV3WindowView: View {
         switch regime {
         case .compact:
             horizontalPadding = 20
-            lyricHeight = max(220, min(286, canvasHeight * 0.52))
+            lyricHeight = max(110, min(170, canvasHeight * 0.28))
             hudWidth = min(420, canvasWidth - horizontalPadding * 2)
-            bottomPadding = 18
+            bottomPadding = 14
         case .regular:
             horizontalPadding = 48
-            lyricHeight = max(260, min(390, canvasHeight * 0.52))
+            lyricHeight = max(150, min(224, canvasHeight * 0.30))
             hudWidth = min(480, canvasWidth - horizontalPadding * 2)
-            bottomPadding = 28
+            bottomPadding = 22
         case .wide:
             horizontalPadding = 72
-            lyricHeight = max(300, min(470, canvasHeight * 0.50))
+            lyricHeight = max(180, min(260, canvasHeight * 0.29))
             hudWidth = min(520, canvasWidth - horizontalPadding * 2)
-            bottomPadding = 36
+            bottomPadding = 26
         }
 
         let lyricsWidth = min(
@@ -401,7 +401,7 @@ struct AppleMusicImmersiveV3WindowView: View {
             // Lyrics belong to the stage itself: one broad centered group,
             // with the active line and its nearby context supplied by the
             // existing viewport semantics.
-            VStack(spacing: regime == .compact ? 10 : 16) {
+            VStack(spacing: regime == .compact ? 8 : 12) {
                 lyricsCol
                     .frame(width: lyricsWidth, height: lyricHeight)
 
