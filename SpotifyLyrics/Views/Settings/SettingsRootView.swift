@@ -10,7 +10,6 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
     case advancedAndData = "高级与数据"
 
     // 过渡桥接隐藏目标 (Hidden Bridge Destinations, 不在侧边栏显示)
-    case lyricsSources = "歌词来源"
     case data = "数据与存储"
     case library = "我的歌词库"
     case history = "最近播放"
@@ -30,7 +29,6 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
         case .servicesAndSources: return "waveform.circle"
         case .aiTranslation: return "sparkles"
         case .advancedAndData: return "wrench.and.screwdriver"
-        case .lyricsSources: return "books.vertical"
         case .data: return "externaldrive"
         case .library: return "music.note.list"
         case .history: return "clock.arrow.circlepath"
@@ -131,7 +129,7 @@ private struct SettingsDetailView: View {
                 LyricsAndTextSettingsView()
                     .padding(28)
             case .servicesAndSources:
-                SpotifySettingsView(onNavigateToLyricsSources: { selection = .lyricsSources })
+                ServicesAndSourcesSettingsView()
                     .padding(28)
             case .aiTranslation:
                 AISettingsView()
@@ -144,11 +142,6 @@ private struct SettingsDetailView: View {
                 .padding(28)
 
             // Hidden Bridge Destinations
-            case .lyricsSources:
-                TransitionalBridgeContainer(title: "返回服务与来源", onBack: { selection = .servicesAndSources }) {
-                    LyricsSourcesSettingsView()
-                        .padding(28)
-                }
             case .data:
                 TransitionalBridgeContainer(title: "返回高级与数据", onBack: { selection = .advancedAndData }) {
                     DataSettingsView()
@@ -291,10 +284,12 @@ private struct GeneralSettingsView: View {
     }
 }
 
-private struct SpotifySettingsView: View {
+private struct ServicesAndSourcesSettingsView: View {
     @EnvironmentObject private var playbackState: PlaybackState
+    @EnvironmentObject private var settings: AppSettingsStore
     @State private var clientIDDraft = ""
-    let onNavigateToLyricsSources: () -> Void
+    @State private var discoveryQuery = ""
+    @State private var isExternalDiscoveryExpanded = false
 
     private var authorization: SpotifyAuthorizationManager {
         playbackState.spotifyAuthorizationManager
@@ -302,7 +297,10 @@ private struct SpotifySettingsView: View {
 
     var body: some View {
         Form {
-            SettingsPageHeader(title: "Spotify", detail: "Desktop 控制和 Web 在线目录授权彼此独立。Access Token 与 Refresh Token 永远不在此页面显示。")
+            SettingsPageHeader(
+                title: "服务与来源",
+                detail: "管理 Spotify 播放控制、在线曲库授权与多源歌词检索。"
+            )
 
             Section("Spotify Desktop") {
                 LabeledContent("连接状态", value: playbackState.providerStatus.userFacingMessage)
@@ -348,42 +346,6 @@ private struct SpotifySettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-
-            Section("歌词来源与 Provider（过渡入口）") {
-                Button {
-                    onNavigateToLyricsSources()
-                } label: {
-                    HStack {
-                        Label("进入歌词来源与 Provider 设置", systemImage: "books.vertical")
-                        Spacer()
-                        Image(systemName: "chevron.right")
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("btn_enter_lyrics_sources")
-            }
-        }
-        .formStyle(.grouped)
-        .onAppear { clientIDDraft = authorization.clientID ?? "" }
-    }
-
-    private func authorize() {
-        authorization.updateClientID(clientIDDraft)
-        authorization.authorize()
-    }
-}
-
-private struct LyricsSourcesSettingsView: View {
-    @EnvironmentObject private var settings: AppSettingsStore
-    @State private var discoveryQuery = ""
-
-    var body: some View {
-        Form {
-            SettingsPageHeader(
-                title: "歌词来源",
-                detail: "单一免费来源模式控制是否调用实验接口；SQLite 已保存版本始终可恢复，不受模式切换影响。"
-            )
 
             Section("歌词来源模式") {
                 Picker("模式", selection: Binding(
@@ -433,35 +395,46 @@ private struct LyricsSourcesSettingsView: View {
                 }
             }
 
-            Section("外部发现（仅浏览器）") {
-                Text("Uta-Net、UtaTime、AWA 只用于「可能存在歌词」时的外链与复制检索词，不会自动提取、缓存或再分发歌词正文。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            Section {
+                DisclosureGroup("外部发现（仅浏览器）", isExpanded: $isExternalDiscoveryExpanded) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Uta-Net、UtaTime、AWA 只用于「可能存在歌词」时的外链与复制检索词，不会自动提取、缓存或再分发歌词正文。")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
 
-                TextField("歌曲名 艺人（可选）", text: $discoveryQuery)
-                    .textFieldStyle(.roundedBorder)
+                        TextField("歌曲名 艺人（可选）", text: $discoveryQuery)
+                            .textFieldStyle(.roundedBorder)
 
-                HStack {
-                    Button("复制检索词") {
-                        let text = discoveryQuery.trimmingCharacters(in: .whitespacesAndNewlines)
-                        guard !text.isEmpty else { return }
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(text, forType: .string)
-                    }
-                    .disabled(discoveryQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        HStack {
+                            Button("复制检索词") {
+                                let text = discoveryQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+                                guard !text.isEmpty else { return }
+                                NSPasteboard.general.clearContents()
+                                NSPasteboard.general.setString(text, forType: .string)
+                            }
+                            .disabled(discoveryQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
 
-                    ForEach(LyricsDiscoverySite.allCases) { site in
-                        Button(site.title) {
-                            if let url = site.browserURL(query: discoveryQuery) {
-                                NSWorkspace.shared.open(url)
+                            ForEach(LyricsDiscoverySite.allCases) { site in
+                                Button(site.title) {
+                                    if let url = site.browserURL(query: discoveryQuery) {
+                                        NSWorkspace.shared.open(url)
+                                    }
+                                }
+                                .help(site.detail)
                             }
                         }
-                        .help(site.detail)
                     }
+                    .padding(.vertical, 4)
                 }
             }
         }
         .formStyle(.grouped)
+        .onAppear { clientIDDraft = authorization.clientID ?? "" }
+    }
+
+    private func authorize() {
+        authorization.updateClientID(clientIDDraft)
+        authorization.authorize()
     }
 
     private func providerRow(id: LyricsProviderID, index: Int) -> some View {
