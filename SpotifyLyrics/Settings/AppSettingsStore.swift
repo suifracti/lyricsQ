@@ -47,7 +47,7 @@ public enum V3ArtworkPresentation: String, CaseIterable, Codable, Identifiable, 
     public var detail: String {
         switch self {
         case .ambient: return "抽取封面的低频色彩，前景保留完整封面"
-        case .stage: return "以单张专辑封面构成全景舞台，左下融入控制，右侧悬浮歌词"
+        case .stage: return "以单张完整专辑封面为舞台主体，底部融入歌词与播放信息"
         case .classic: return "保留原来的局部放大封面背景"
         }
     }
