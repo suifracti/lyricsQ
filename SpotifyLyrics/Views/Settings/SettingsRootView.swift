@@ -10,7 +10,6 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
     case advancedAndData = "高级与数据"
 
     // 过渡桥接隐藏目标 (Hidden Bridge Destinations, 不在侧边栏显示)
-    case data = "数据与存储"
     case library = "我的歌词库"
     case history = "最近播放"
     case statistics = "听歌统计"
@@ -29,7 +28,6 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
         case .servicesAndSources: return "waveform.circle"
         case .aiTranslation: return "sparkles"
         case .advancedAndData: return "wrench.and.screwdriver"
-        case .data: return "externaldrive"
         case .library: return "music.note.list"
         case .history: return "clock.arrow.circlepath"
         case .statistics: return "chart.bar"
@@ -135,18 +133,12 @@ private struct SettingsDetailView: View {
                 AISettingsView()
                     .padding(28)
             case .advancedAndData:
-                AdvancedSettingsView(
-                    onNavigateToData: { selection = .data },
+                AdvancedAndDataSettingsView(
                     onOpenTool: { tool in selection = tool }
                 )
                 .padding(28)
 
             // Hidden Bridge Destinations
-            case .data:
-                TransitionalBridgeContainer(title: "返回高级与数据", onBack: { selection = .advancedAndData }) {
-                    DataSettingsView()
-                        .padding(28)
-                }
             case .library:
                 TransitionalBridgeContainer(title: "返回高级与数据", onBack: { selection = .advancedAndData }) {
                     PersonalLyricsLibraryView()
@@ -485,62 +477,6 @@ private struct ServicesAndSourcesSettingsView: View {
         }
         .help(id.detail)
         .opacity(blockedByMode ? 0.55 : 1)
-    }
-}
-
-private struct DataSettingsView: View {
-    @EnvironmentObject private var data: SettingsDataController
-    @State private var showClearConfirmation = false
-
-    var body: some View {
-        Form {
-            SettingsPageHeader(title: "数据与存储", detail: "数据库操作在后台执行；本地歌词目录仍保持只读。")
-
-            Section("SQLite 数据库") {
-                LabeledContent("路径", value: data.statistics?.databaseURL.path ?? SQLiteLyricsRepository.defaultDatabaseURL.path)
-                    .textSelection(.enabled)
-                LabeledContent("Migration", value: "v\(data.statistics?.schemaVersion ?? DatabaseMigrator.currentVersion)")
-                LabeledContent("Track 数量", value: "\(data.statistics?.trackCount ?? 0)")
-                LabeledContent("LyricsVersion 数量", value: "\(data.statistics?.lyricsVersionCount ?? 0)")
-                LabeledContent("LyricLine 数量", value: "\(data.statistics?.lyricLineCount ?? 0)")
-                LabeledContent("数据库大小", value: data.statistics.map { ByteCountFormatter.string(fromByteCount: $0.fileSize, countStyle: .file) } ?? "未知")
-                HStack {
-                    Button("刷新统计") { data.refreshStatistics() }
-                    Button("在 Finder 中显示") { data.revealDatabase() }
-                    Button("创建备份") { data.createBackup() }
-                }
-            }
-
-            Section("本地歌词") {
-                Button("重建本地歌词索引") { data.rebuildLocalIndex() }
-                Text("只扫描 ~/Music/SpotifyLyrics/Lyrics、应用支持目录和 Debug 兼容目录，不写入或修改用户文件。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Section("危险操作") {
-                Button("清除所有歌词缓存", role: .destructive) { showClearConfirmation = true }
-                Text("只删除 SQLite 中的歌词版本和行，保留歌曲元数据；操作前应先创建备份。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            if !data.statusMessage.isEmpty {
-                Text(data.statusMessage)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .formStyle(.grouped)
-        .onAppear { data.refreshStatistics() }
-        .confirmationDialog("清除所有歌词缓存？", isPresented: $showClearConfirmation, titleVisibility: .visible) {
-            Button("创建备份并清除", role: .destructive) {
-                data.backupAndClearLyricsCache()
-            }
-            Button("取消", role: .cancel) {}
-        } message: {
-            Text("这会删除 SQLite 中的 LyricsVersion 和 LyricLine，不会修改本地 LRC 文件。")
-        }
     }
 }
 
@@ -995,11 +931,13 @@ private struct TranslationPromptPreviewView: View {
     }
 }
 
-private struct AdvancedSettingsView: View {
+private struct AdvancedAndDataSettingsView: View {
     @EnvironmentObject private var settings: AppSettingsStore
     @EnvironmentObject private var data: SettingsDataController
-    let onNavigateToData: () -> Void
     let onOpenTool: (SettingsCategory) -> Void
+
+    @State private var showClearConfirmation = false
+    @State private var isExperienceExpanded = false
 
     private var appVersion: String {
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "开发构建"
@@ -1009,7 +947,30 @@ private struct AdvancedSettingsView: View {
 
     var body: some View {
         Form {
-            SettingsPageHeader(title: "高级", detail: "仅放置诊断和开发相关入口，不显示原始日志或授权敏感数据。")
+            SettingsPageHeader(
+                title: "高级与数据",
+                detail: "数据库维护、系统诊断、窗口状态与实用工具。"
+            )
+
+            Section("数据与存储") {
+                LabeledContent("路径", value: data.statistics?.databaseURL.path ?? SQLiteLyricsRepository.defaultDatabaseURL.path)
+                    .textSelection(.enabled)
+                LabeledContent("Migration", value: "v\(data.statistics?.schemaVersion ?? DatabaseMigrator.currentVersion)")
+                LabeledContent("Track 数量", value: "\(data.statistics?.trackCount ?? 0)")
+                LabeledContent("LyricsVersion 数量", value: "\(data.statistics?.lyricsVersionCount ?? 0)")
+                LabeledContent("LyricLine 数量", value: "\(data.statistics?.lyricLineCount ?? 0)")
+                LabeledContent("数据库大小", value: data.statistics.map { ByteCountFormatter.string(fromByteCount: $0.fileSize, countStyle: .file) } ?? "未知")
+                HStack {
+                    Button("刷新统计") { data.refreshStatistics() }
+                    Button("在 Finder 中显示") { data.revealDatabase() }
+                    Button("创建备份") { data.createBackup() }
+                }
+
+                Button("重建本地歌词索引") { data.rebuildLocalIndex() }
+                Text("只扫描 ~/Music/SpotifyLyrics/Lyrics、应用支持目录和 Debug 兼容目录，不写入或修改用户文件。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
 
             Section("诊断") {
                 LabeledContent("App Build", value: appVersion)
@@ -1020,34 +981,24 @@ private struct AdvancedSettingsView: View {
                 Button("导出脱敏诊断摘要") { data.exportDiagnostics() }
             }
 
-            Section("窗口状态") {
+            Section("重置与危险操作") {
                 Button("重置窗口状态") { settings.resetWindowState() }
                 Text("会删除保存的窗口位置，下次打开使用系统默认位置。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+
+                Button("清除所有歌词缓存", role: .destructive) { showClearConfirmation = true }
+                Text("只删除 SQLite 中的歌词版本和行，保留歌曲元数据；操作前应先创建备份。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
-            Section("数据与存储（过渡入口）") {
-                Button {
-                    onNavigateToData()
-                } label: {
-                    HStack {
-                        Label("进入数据库与存储维护", systemImage: "externaldrive")
-                        Spacer()
-                        Image(systemName: "chevron.right")
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("btn_enter_data")
-            }
-
-            Section("实用工具（过渡桥接）") {
+            Section("实用工具") {
                 Button {
                     onOpenTool(.library)
                 } label: {
                     HStack {
-                        Label("打开我的歌词库", systemImage: "books.vertical")
+                        Label("打开我的歌词库", systemImage: "music.note.list")
                         Spacer()
                         Image(systemName: "chevron.right")
                             .foregroundStyle(.secondary)
@@ -1083,51 +1034,67 @@ private struct AdvancedSettingsView: View {
                 .accessibilityIdentifier("btn_enter_statistics")
             }
 
-            Section("深入体验") {
-                Button {
-                    onOpenTool(.experienceLibrary)
-                } label: {
-                    HStack {
-                        Label("打开体验版本库", systemImage: "rectangle.on.rectangle")
-                        Spacer()
-                        Image(systemName: "chevron.right")
+            Section {
+                DisclosureGroup("深入体验", isExpanded: $isExperienceExpanded) {
+                    VStack(alignment: .leading, spacing: 14) {
+                        Button {
+                            onOpenTool(.experienceLibrary)
+                        } label: {
+                            HStack {
+                                Label("打开体验版本库", systemImage: "rectangle.on.rectangle")
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("btn_enter_experience_library")
+
+                        Text("预览、应用或恢复主窗口、桌面歌词和其他呈现版本。")
+                            .font(.caption)
                             .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        Divider()
+
+                        VStack(alignment: .leading, spacing: 6) {
+                            Picker("设置中心版本", selection: settingsCenterPresentationBinding) {
+                                Text("体验版本库集成（推荐）")
+                                    .tag(SettingsCenterPresentationID.experienceIntegratedV2.rawValue)
+                                Text("经典导航")
+                                    .tag(SettingsCenterPresentationID.classicNavigationV1.rawValue)
+                            }
+                            Text("两个设置中心共用同一份设置和 Keychain；切换不会删除体验版本库或重置已有设置。")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                            if settings.settingsCenterPresentation == .classicNavigationV1 {
+                                Button("恢复推荐设置中心", systemImage: "arrow.uturn.backward.circle") {
+                                    settings.settingsCenterPresentation = .experienceIntegratedV2
+                                }
+                            }
+                        }
                     }
+                    .padding(.vertical, 4)
                 }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("btn_enter_experience_library")
-                Text("预览、应用或恢复主窗口、桌面歌词和其他呈现版本。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
             }
 
-            Section("设置中心") {
-                Picker("设置中心版本", selection: settingsCenterPresentationBinding) {
-                    Text("体验版本库集成（推荐）")
-                        .tag(SettingsCenterPresentationID.experienceIntegratedV2.rawValue)
-                    Text("经典导航")
-                        .tag(SettingsCenterPresentationID.classicNavigationV1.rawValue)
-                }
-                Text("两个设置中心共用同一份设置和 Keychain；切换不会删除体验版本库或重置已有设置。")
+            if !data.statusMessage.isEmpty {
+                Text(data.statusMessage)
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                if settings.settingsCenterPresentation == .classicNavigationV1 {
-                    Button("恢复推荐设置中心", systemImage: "arrow.uturn.backward.circle") {
-                        settings.settingsCenterPresentation = .experienceIntegratedV2
-                    }
-                }
-            }
-
-            Section("Migration v2 规划") {
-                Text("当前数据库为 v1。历史 URI/ID stableKey 重复需要先备份，再按 Spotify ID 选择 canonical Track，重定向 aliases、lyrics_versions 和 lyric_lines，并保留 locked/manuallyEdited 版本。本阶段不执行合并。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .formStyle(.grouped)
+        .onAppear { data.refreshStatistics() }
+        .confirmationDialog("清除所有歌词缓存？", isPresented: $showClearConfirmation, titleVisibility: .visible) {
+            Button("创建备份并清除", role: .destructive) {
+                data.backupAndClearLyricsCache()
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("这会删除 SQLite 中的 LyricsVersion 和 LyricLine，不会修改本地 LRC 文件。")
+        }
     }
 
     private var settingsCenterPresentationBinding: Binding<String> {
