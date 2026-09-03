@@ -59,7 +59,7 @@ struct AppleMusicImmersiveV3WindowView: View {
 
                 layout(for: geometry)
 
-                toolBar
+                toolBar(for: geometry.size)
                     .padding(.top, 18)
                     .padding(.trailing, 26)
                     .opacity(toolsVisible || isVisualTuningPresented || isSearchPresented || isCurrentSongOperationsPresented ? 1 : 0)
@@ -611,14 +611,23 @@ struct AppleMusicImmersiveV3WindowView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private var toolBar: some View {
+    private func isCompact(for size: CGSize) -> Bool {
+        size.width <= MainWindowResponsiveThresholds.comfortableMinimumSize.width
+            || size.height <= MainWindowResponsiveThresholds.comfortableMinimumSize.height
+    }
+
+    private func toolBar(for size: CGSize) -> some View {
         HStack(spacing: LyricsDesignTokens.Spacing.xs + 2) {
             windowModeMenu
             providerStatusMenu
             currentSongOperationsButton
-            searchButton
-            layoutMenu
-            preferencesButton
+            if isCompact(for: size) {
+                compactMoreMenu
+            } else {
+                searchButton
+                layoutMenu
+                preferencesButton
+            }
         }
         .font(.system(size: 13, weight: .medium))
         .padding(.horizontal, 14)
@@ -634,6 +643,42 @@ struct AppleMusicImmersiveV3WindowView: View {
         )
         .shadow(color: Color.black.opacity(0.25), radius: 10, x: 0, y: 4)
         .foregroundStyle(.white.opacity(LyricsDesignTokens.Material.primaryTextOpacity))
+    }
+
+    private var compactMoreMenu: some View {
+        Menu {
+            Button {
+                isSearchPresented = true
+            } label: {
+                Label("搜索歌曲", systemImage: "magnifyingglass")
+            }
+            Button {
+                isVisualTuningPresented = true
+            } label: {
+                Label("视觉与布局调节", systemImage: "rectangle.3.group")
+            }
+            Divider()
+            SettingsLink {
+                Label("显示设置", systemImage: "gearshape")
+            }
+        } label: {
+            iconLabel("ellipsis", description: "更多操作")
+        }
+        .menuStyle(.borderlessButton)
+        .buttonStyle(.plain)
+        .popover(isPresented: $isSearchPresented, arrowEdge: .top) {
+            SongSearchPopover(
+                manager: state.songSearchManager,
+                playbackState: state
+            )
+        }
+        .popover(isPresented: $isVisualTuningPresented, arrowEdge: .top) {
+            V3VisualTuningPopoverView(
+                settings: settings,
+                layoutStyleRawValue: $layoutStyleRawValue
+            )
+        }
+        .accessibilityLabel("更多操作")
     }
 
     private var windowModeMenu: some View {
