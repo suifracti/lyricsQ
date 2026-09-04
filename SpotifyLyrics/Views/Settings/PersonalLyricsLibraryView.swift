@@ -844,3 +844,59 @@ public struct PersonalDataImportPreviewSheet: View {
         .cornerRadius(5)
     }
 }
+
+// MARK: - Unified Library & Listening History Window
+
+public struct UnifiedLibraryHistoryWindowView: View {
+    @EnvironmentObject private var playback: PlaybackState
+    @EnvironmentObject private var appSettings: AppSettingsStore
+
+    public init() {}
+
+    public var body: some View {
+        VStack(spacing: 0) {
+            topBar
+            Divider()
+            contentArea
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .frame(minWidth: 880, minHeight: 560)
+        .background(Color(nsColor: .windowBackgroundColor))
+    }
+
+    private var topBar: some View {
+        ZStack {
+            HStack {
+                Text("歌词库与收听记录")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                Spacer()
+            }
+
+            Picker("视图", selection: $playback.selectedLibraryToolTab) {
+                ForEach(LibraryToolTab.allCases) { tab in
+                    Text(tab.rawValue).tag(tab)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .frame(width: 320)
+            .accessibilityIdentifier("segmented_library_tool_tabs")
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 10)
+        .background(Color(nsColor: .windowBackgroundColor))
+    }
+
+    @ViewBuilder
+    private var contentArea: some View {
+        switch playback.selectedLibraryToolTab {
+        case .library:
+            PersonalLyricsLibraryView()
+        case .history:
+            ListeningHistoryView()
+        case .statistics:
+            ListeningStatisticsView()
+        }
+    }
+}

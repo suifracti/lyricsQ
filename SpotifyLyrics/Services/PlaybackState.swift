@@ -7,6 +7,14 @@ import Network
 import os
 #endif
 
+public enum LibraryToolTab: String, CaseIterable, Identifiable {
+    case library = "我的歌词库"
+    case history = "最近播放"
+    case statistics = "听歌统计"
+
+    public var id: String { rawValue }
+}
+
 @MainActor
 public final class PlaybackState: ObservableObject {
 #if DEBUG
@@ -28,6 +36,7 @@ public final class PlaybackState: ObservableObject {
     @Published public private(set) var searchPreviewTrack: Track?
     @Published public private(set) var listeningHistory: [ListeningHistoryEntry] = []
     @Published public private(set) var listeningStatistics: ListeningStatistics?
+    @Published public var selectedLibraryToolTab: LibraryToolTab = .library
 
     // Auxiliary display states remain available to the existing window manager.
     @Published public var showFloatingWindow = false
@@ -513,6 +522,10 @@ public final class PlaybackState: ObservableObject {
             identity: identity
         )
         return true
+    }
+
+    public func openLibraryTool(tab: LibraryToolTab = .library) {
+        selectedLibraryToolTab = tab
     }
 
     public func prepareLyricsEditorForOpening() {

@@ -90,6 +90,17 @@ struct SpotifyLyricsApp: App {
             appCommands
         }
 
+        Window("歌词库与收听记录", id: "personal-library-activity") {
+            UnifiedLibraryHistoryWindowView()
+                .environmentObject(playbackState)
+                .environmentObject(appSettings)
+                .environmentObject(settingsData)
+        }
+        .defaultSize(width: 1000, height: 680)
+        .commands {
+            appCommands
+        }
+
 #if DEBUG
         // Real Direction D main-window entry.  The root view is the formal
         // DirectionDMainWindowView, not the Phase 3.3 product-state host or
@@ -164,6 +175,12 @@ struct SpotifyLyricsApp: App {
                 openWindow(id: "lyrics-editor")
             }
             .keyboardShortcut("e", modifiers: [.command, .shift])
+
+            Button("歌词库与收听记录") {
+                playbackState.selectedLibraryToolTab = .library
+                openWindow(id: "personal-library-activity")
+            }
+            .keyboardShortcut("l", modifiers: [.command, .shift])
 
             Divider()
 
