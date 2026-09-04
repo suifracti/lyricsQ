@@ -515,6 +515,19 @@ public final class PlaybackState: ObservableObject {
         return true
     }
 
+    public func prepareLyricsEditorForOpening() {
+        guard hasLiveTrack else {
+            lyricsEditorSession.beginDetached()
+            return
+        }
+
+        if canOpenLyricsEditor {
+            prepareLyricsEditor()
+        } else if canCreateManualLyrics {
+            prepareBlankLyricsEditor()
+        }
+    }
+
     public func prepareLyricsEditor() {
         guard canOpenLyricsEditor,
               let identity = lyricsSession.activeIdentity,

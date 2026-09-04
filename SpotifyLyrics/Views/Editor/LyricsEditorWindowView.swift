@@ -29,7 +29,7 @@ struct LyricsEditorWindowView: View {
         .preferredColorScheme(.dark)
         .background(Color(nsColor: .windowBackgroundColor))
         .onAppear {
-            if editor.draft == nil { state.prepareLyricsEditor() }
+            if editor.draft == nil { state.prepareLyricsEditorForOpening() }
             // Partial-save confirmation (AppKit alert; no second session).
             editor.confirmPartialSave = { timed, untimed in
                 let alert = NSAlert()
@@ -78,7 +78,7 @@ struct LyricsEditorWindowView: View {
                     Text("歌词编辑")
                         .font(.headline.weight(.semibold))
                         .foregroundStyle(LyricsDesignTokens.primaryText)
-                    let title = editor.draft?.title ?? state.currentTrack.title
+                    let title = editor.draft?.title ?? (editor.draft?.identity == nil ? "" : state.currentTrack.title)
                     if !title.isEmpty {
                         Text("·")
                             .foregroundStyle(LyricsDesignTokens.mutedText)
@@ -88,7 +88,8 @@ struct LyricsEditorWindowView: View {
                             .lineLimit(1)
                     }
                 }
-                Text(editor.draft?.artist ?? state.currentTrack.artist)
+                let artistText = editor.draft?.artist ?? (editor.draft?.identity == nil ? "未关联播放曲目" : state.currentTrack.artist)
+                Text(artistText)
                     .font(.caption)
                     .foregroundStyle(LyricsDesignTokens.secondaryText)
                     .lineLimit(1)
@@ -222,9 +223,13 @@ struct LyricsEditorWindowView: View {
             Button("保存人工版本") { editor.save() }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.regular)
+                .disabled(editor.draft?.identity == nil || !editor.canSave)
+                .help(editor.draft?.identity == nil ? "当前未关联播放曲目，无法直接保存到数据库；请先在 Spotify 播放歌曲" : "")
             Button("保存并锁定", systemImage: "lock.fill") { editor.save(lockLyrics: true, lockTranslation: true) }
                 .buttonStyle(.borderless)
                 .controlSize(.regular)
+                .disabled(editor.draft?.identity == nil || !editor.canSave)
+                .help(editor.draft?.identity == nil ? "当前未关联播放曲目，无法直接保存到数据库；请先在 Spotify 播放歌曲" : "")
         }
         .buttonStyle(.borderless)
         .padding(.horizontal, 14)
@@ -536,16 +541,16 @@ struct LyricsEditorWindowView: View {
     }
 
     private func exportOriginal() {
-        guard let draft = editor.draft else { return }
+        guard let draft = editor.draft, let document = draft.document(source: draft.source) else { return }
         saveFile(contents: LRCExporter.original(
-            document: draft.document(source: draft.source),
+            document: document,
             source: draft.source.rawValue,
             locked: false
         ), suggestedName: "\(draft.title ?? "lyrics").lrc")
     }
 
     private func exportTranslation() {
-        guard let draft = editor.draft else { return }
+        guard let draft = editor.draft, let document = draft.document(source: draft.source) else { return }
         let selected = editor.selectedTranslation
         let translations = selected?.lines
             .sorted { $0.lineIndex < $1.lineIndex }
@@ -553,7 +558,7 @@ struct LyricsEditorWindowView: View {
             ?? draft.lines.map { $0.translationText ?? "" }
         guard translations.contains(where: { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) else { return }
         saveFile(contents: LRCExporter.translation(
-            document: draft.document(source: draft.source),
+            document: document,
             translations: translations,
             targetLanguage: selected?.record.targetLanguage ?? "und",
             source: selected?.record.sourceKind.rawValue ?? "legacyEmbedded",

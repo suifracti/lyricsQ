@@ -88,7 +88,7 @@ public struct LyricsEditorLineDraft: Identifiable, Equatable, Hashable, Sendable
 /// snapshot, which keeps undo/redo deterministic when rows are split, merged,
 /// reordered, or deleted.
 public struct LyricsEditorDraft: Equatable, Sendable {
-    public let identity: TrackIdentity
+    public let identity: TrackIdentity?
     public let title: String?
     public let artist: String?
     public let album: String?
@@ -103,7 +103,7 @@ public struct LyricsEditorDraft: Equatable, Sendable {
     private var redoStack: [[LyricsEditorLineDraft]] = []
 
     public init(
-        identity: TrackIdentity,
+        identity: TrackIdentity?,
         title: String?,
         artist: String?,
         album: String?,
@@ -122,6 +122,21 @@ public struct LyricsEditorDraft: Equatable, Sendable {
         self.sourceVersionID = sourceVersionID
         self.sourceContentHash = sourceContentHash
         self.source = source
+        self.savedLines = lines
+    }
+
+    public init(
+        lines: [LyricsEditorLineDraft] = [LyricsEditorLineDraft(originalText: "")]
+    ) {
+        self.identity = nil
+        self.title = nil
+        self.artist = nil
+        self.album = nil
+        self.duration = nil
+        self.sourceVersionID = UUID()
+        self.sourceContentHash = ""
+        self.source = .manualCreate
+        self.lines = lines
         self.savedLines = lines
     }
 
@@ -154,7 +169,8 @@ public struct LyricsEditorDraft: Equatable, Sendable {
         redoStack.removeAll()
     }
 
-    public func document(source: LyricsSource = .manualEdit, isSynchronized: Bool? = nil) -> LyricsDocument {
+    public func document(source: LyricsSource = .manualEdit, isSynchronized: Bool? = nil) -> LyricsDocument? {
+        guard let identity else { return nil }
         let validation = LyricsTimelineValidator.validate(lines: lines, duration: duration)
         let synced = isSynchronized ?? validation.isSynchronized
         let timedIndices: Set<Int>? = {
