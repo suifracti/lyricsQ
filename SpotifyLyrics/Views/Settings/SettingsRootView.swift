@@ -932,6 +932,8 @@ private struct TranslationPromptPreviewView: View {
 }
 
 private struct AdvancedAndDataSettingsView: View {
+    @Environment(\.openWindow) private var openWindow
+    @EnvironmentObject private var playback: PlaybackState
     @EnvironmentObject private var settings: AppSettingsStore
     @EnvironmentObject private var data: SettingsDataController
     let onOpenTool: (SettingsCategory) -> Void
@@ -995,7 +997,8 @@ private struct AdvancedAndDataSettingsView: View {
 
             Section("实用工具") {
                 Button {
-                    onOpenTool(.library)
+                    playback.selectedLibraryToolTab = .library
+                    openWindow(id: "personal-library-activity")
                 } label: {
                     HStack {
                         Label("打开我的歌词库", systemImage: "music.note.list")
@@ -1008,7 +1011,8 @@ private struct AdvancedAndDataSettingsView: View {
                 .accessibilityIdentifier("btn_enter_library")
 
                 Button {
-                    onOpenTool(.history)
+                    playback.selectedLibraryToolTab = .history
+                    openWindow(id: "personal-library-activity")
                 } label: {
                     HStack {
                         Label("查看最近播放", systemImage: "clock.arrow.circlepath")
@@ -1021,7 +1025,8 @@ private struct AdvancedAndDataSettingsView: View {
                 .accessibilityIdentifier("btn_enter_history")
 
                 Button {
-                    onOpenTool(.statistics)
+                    playback.selectedLibraryToolTab = .statistics
+                    openWindow(id: "personal-library-activity")
                 } label: {
                     HStack {
                         Label("查看听歌统计", systemImage: "chart.bar")
