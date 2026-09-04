@@ -10,6 +10,7 @@ struct SpotifyLyricsApp: App {
     /// window and the DEBUG acceptance host. It does not own playback or a
     /// second lyric session.
     @StateObject private var directionDMainWindowAdapter: DirectionDProductStateAdapter
+    @Environment(\.openWindow) private var openWindow
 #if DEBUG
     @NSApplicationDelegateAdaptor(DirectionDMainWindowDebugDelegate.self)
     private var directionDMainWindowDebugDelegate
@@ -75,6 +76,9 @@ struct SpotifyLyricsApp: App {
         .defaultSize(width: 1152, height: 720)
         .windowStyle(.hiddenTitleBar)
         .windowToolbarStyle(.unified)
+        .commands {
+            appCommands
+        }
 
         Window("歌词编辑", id: "lyrics-editor") {
             LyricsEditorWindowView()
@@ -82,6 +86,9 @@ struct SpotifyLyricsApp: App {
                 .environmentObject(appSettings)
         }
         .defaultSize(width: 1100, height: 720)
+        .commands {
+            appCommands
+        }
 
 #if DEBUG
         // Real Direction D main-window entry.  The root view is the formal
@@ -134,101 +141,113 @@ struct SpotifyLyricsApp: App {
         // hosted by a custom SwiftUI window configuration. Keep a stable,
         // native macOS entry point in addition to SettingsLink controls.
         .commands {
-            CommandGroup(replacing: .appSettings) {
-                SettingsLink {
-                    Text("设置…")
-                }
-                .keyboardShortcut(",", modifiers: .command)
-            }
-            CommandMenu("窗口") {
-                Button("显示/隐藏悬浮歌词") {
-                    WindowManager.shared.toggleFloatingLyrics(state: playbackState)
-                }
-                .keyboardShortcut("f", modifiers: [.command, .option])
-
-                Button("显示/隐藏顶部胶囊") {
-                    WindowManager.shared.toggleCapsule(state: playbackState)
-                }
-                .keyboardShortcut("c", modifiers: [.command, .option])
-
-                Button("显示/隐藏全屏歌词") {
-                    WindowManager.shared.toggleFullScreen(state: playbackState)
-                }
-                .keyboardShortcut("g", modifiers: [.command, .option])
-
-                Button("收起顶部胶囊") {
-                    WindowManager.shared.collapseCapsulePlayer()
-                }
-                Button("展开顶部胶囊") {
-                    WindowManager.shared.expandCapsulePlayer()
-                }
-
-                Button("解除悬浮歌词鼠标穿透") {
-                    WindowManager.shared.restoreFloatingInteractiveMode(state: playbackState)
-                }
-                .keyboardShortcut("l", modifiers: [.command, .option])
-
-                Divider()
-
-                Button("锁定悬浮歌词") {
-                    WindowManager.shared.setFloatingInteractionMode(.locked, state: playbackState)
-                }
-                Button("启用悬浮歌词鼠标穿透") {
-                    WindowManager.shared.setFloatingInteractionMode(.passThrough, state: playbackState)
-                }
-                Button("恢复悬浮歌词可编辑") {
-                    WindowManager.shared.setFloatingInteractionMode(.interactive, state: playbackState)
-                }
-
-            }
-#if DEBUG
-            CommandMenu("胶囊锚点（调试）") {
-                Button("左上") {
-                    WindowManager.shared.setCapsuleDebugAnchor(.topLeft)
-                }
-                Button("顶部居中") {
-                    WindowManager.shared.setCapsuleDebugAnchor(.topCenter)
-                }
-                Button("右上") {
-                    WindowManager.shared.setCapsuleDebugAnchor(.topRight)
-                }
-            }
-            CommandMenu("胶囊呈现（调试）") {
-                Button("验证 v4 外壳与尺寸") {
-                    activateDebugCapsuleV4()
-                }
-                Button("恢复当前正式呈现") {
-                    WindowManager.shared.setCapsuleDebugPresentation(
-                        nil,
-                        state: playbackState
-                    )
-                }
-            }
-            CommandMenu("排轴捕获 Spike（调试）") {
-                Button("开始 Spotify 音频 Spike (S1)") {
-                    Task { await SpotifyScreenCaptureAudioSpike.shared.start(autoStopAfter: 25) }
-                }
-                Button("停止 Spotify 音频 Spike (S1)") {
-                    Task { await SpotifyScreenCaptureAudioSpike.shared.stop(reason: "menu") }
-                }
-                Divider()
-                Button("开始 Live Capture (S2)") {
-                    LiveCaptureCoordinator.shared.bind(playback: playbackState)
-                    Task { await LiveCaptureCoordinator.shared.start(autoStopAfter: 90, runPartialAlignment: false) }
-                }
-                Button("开始 Partial 对齐 (S3A)") {
-                    LiveCaptureCoordinator.shared.bind(playback: playbackState)
-                    Task { await LiveCaptureCoordinator.shared.start(autoStopAfter: 75, runPartialAlignment: true) }
-                }
-                Button("停止 Live Capture / S3A") {
-                    Task { await LiveCaptureCoordinator.shared.stop(reason: .userStop) }
-                }
-            }
-#endif
+            appCommands
         }
 #if DEBUG
         .commands {
             PresentationPreviewCommands()
+        }
+#endif
+    }
+
+    @CommandsBuilder
+    private var appCommands: some Commands {
+        CommandGroup(replacing: .appSettings) {
+            SettingsLink {
+                Text("设置…")
+            }
+            .keyboardShortcut(",", modifiers: .command)
+        }
+        CommandMenu("窗口") {
+            Button("歌词编辑器") {
+                playbackState.prepareLyricsEditorForOpening()
+                openWindow(id: "lyrics-editor")
+            }
+            .keyboardShortcut("e", modifiers: [.command, .shift])
+
+            Divider()
+
+            Button("显示/隐藏悬浮歌词") {
+                WindowManager.shared.toggleFloatingLyrics(state: playbackState)
+            }
+            .keyboardShortcut("f", modifiers: [.command, .option])
+
+            Button("显示/隐藏顶部胶囊") {
+                WindowManager.shared.toggleCapsule(state: playbackState)
+            }
+            .keyboardShortcut("c", modifiers: [.command, .option])
+
+            Button("显示/隐藏全屏歌词") {
+                WindowManager.shared.toggleFullScreen(state: playbackState)
+            }
+            .keyboardShortcut("g", modifiers: [.command, .option])
+
+            Button("收起顶部胶囊") {
+                WindowManager.shared.collapseCapsulePlayer()
+            }
+            Button("展开顶部胶囊") {
+                WindowManager.shared.expandCapsulePlayer()
+            }
+
+            Button("解除悬浮歌词鼠标穿透") {
+                WindowManager.shared.restoreFloatingInteractiveMode(state: playbackState)
+            }
+            .keyboardShortcut("l", modifiers: [.command, .option])
+
+            Divider()
+
+            Button("锁定悬浮歌词") {
+                WindowManager.shared.setFloatingInteractionMode(.locked, state: playbackState)
+            }
+            Button("启用悬浮歌词鼠标穿透") {
+                WindowManager.shared.setFloatingInteractionMode(.passThrough, state: playbackState)
+            }
+            Button("恢复悬浮歌词可编辑") {
+                WindowManager.shared.setFloatingInteractionMode(.interactive, state: playbackState)
+            }
+        }
+#if DEBUG
+        CommandMenu("胶囊锚点（调试）") {
+            Button("左上") {
+                WindowManager.shared.setCapsuleDebugAnchor(.topLeft)
+            }
+            Button("顶部居中") {
+                WindowManager.shared.setCapsuleDebugAnchor(.topCenter)
+            }
+            Button("右上") {
+                WindowManager.shared.setCapsuleDebugAnchor(.topRight)
+            }
+        }
+        CommandMenu("胶囊呈现（调试）") {
+            Button("验证 v4 外壳与尺寸") {
+                activateDebugCapsuleV4()
+            }
+            Button("恢复当前正式呈现") {
+                WindowManager.shared.setCapsuleDebugPresentation(
+                    nil,
+                    state: playbackState
+                )
+            }
+        }
+        CommandMenu("排轴捕获 Spike（调试）") {
+            Button("开始 Spotify 音频 Spike (S1)") {
+                Task { await SpotifyScreenCaptureAudioSpike.shared.start(autoStopAfter: 25) }
+            }
+            Button("停止 Spotify 音频 Spike (S1)") {
+                Task { await SpotifyScreenCaptureAudioSpike.shared.stop(reason: "menu") }
+            }
+            Divider()
+            Button("开始 Live Capture (S2)") {
+                LiveCaptureCoordinator.shared.bind(playback: playbackState)
+                Task { await LiveCaptureCoordinator.shared.start(autoStopAfter: 90, runPartialAlignment: false) }
+            }
+            Button("开始 Partial 对齐 (S3A)") {
+                LiveCaptureCoordinator.shared.bind(playback: playbackState)
+                Task { await LiveCaptureCoordinator.shared.start(autoStopAfter: 75, runPartialAlignment: true) }
+            }
+            Button("停止 Live Capture / S3A") {
+                Task { await LiveCaptureCoordinator.shared.stop(reason: .userStop) }
+            }
         }
 #endif
     }

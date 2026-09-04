@@ -27,8 +27,9 @@ struct LyricsEditorWindowView: View {
         }
         .frame(minWidth: 980, minHeight: 620)
         .preferredColorScheme(.dark)
+        .background(Color(nsColor: .windowBackgroundColor))
         .onAppear {
-            if editor.draft == nil { state.prepareLyricsEditor() }
+            if editor.draft == nil { state.prepareLyricsEditorForOpening() }
             // Partial-save confirmation (AppKit alert; no second session).
             editor.confirmPartialSave = { timed, untimed in
                 let alert = NSAlert()
@@ -72,12 +73,26 @@ struct LyricsEditorWindowView: View {
 
     private var header: some View {
         HStack(spacing: 14) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(editor.draft?.title ?? state.currentTrack.title)
-                    .font(.title3.weight(.semibold))
-                Text(editor.draft?.artist ?? state.currentTrack.artist)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text("歌词编辑")
+                        .font(.headline.weight(.semibold))
+                        .foregroundStyle(LyricsDesignTokens.primaryText)
+                    let title = editor.draft?.title ?? (editor.draft?.identity == nil ? "" : state.currentTrack.title)
+                    if !title.isEmpty {
+                        Text("·")
+                            .foregroundStyle(LyricsDesignTokens.mutedText)
+                        Text(title)
+                            .font(.headline.weight(.medium))
+                            .foregroundStyle(LyricsDesignTokens.primaryText)
+                            .lineLimit(1)
+                    }
+                }
+                let artistText = editor.draft?.artist ?? (editor.draft?.identity == nil ? "未关联播放曲目" : state.currentTrack.artist)
+                Text(artistText)
+                    .font(.caption)
+                    .foregroundStyle(LyricsDesignTokens.secondaryText)
+                    .lineLimit(1)
             }
             Spacer()
             versionPicker
@@ -89,8 +104,10 @@ struct LyricsEditorWindowView: View {
             Button("导出翻译", systemImage: "text.badge.plus") { exportTranslation() }
             Button("关闭") { dismiss() }
         }
-        .padding(.horizontal, 18)
-        .padding(.vertical, 12)
+        .buttonStyle(.borderless)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(Color.black.opacity(0.12))
     }
 
     private var versionPicker: some View {
@@ -143,17 +160,18 @@ struct LyricsEditorWindowView: View {
                     .frame(width: 360, alignment: .leading)
             }
             .font(.caption.weight(.semibold))
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 12)
+            .foregroundStyle(LyricsDesignTokens.secondaryText)
+            .padding(.horizontal, 14)
             .padding(.vertical, 8)
-            .background(.quaternary.opacity(0.35))
+            .background(Color.white.opacity(0.04))
             ScrollView {
-                LazyVStack(spacing: 6) {
+                LazyVStack(spacing: 4) {
                     ForEach(Array(draft.lines.enumerated()), id: \.element.id) { index, line in
                         lineRow(index: index, line: line, total: draft.lines.count)
                     }
                 }
-                .padding(12)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
             }
         }
     }
@@ -164,10 +182,10 @@ struct LyricsEditorWindowView: View {
                 .keyboardShortcut("z", modifiers: [.command])
             Button("重做", systemImage: "arrow.uturn.forward") { editor.redo() }
                 .keyboardShortcut("z", modifiers: [.command, .shift])
-            Divider().frame(height: 18)
+            Divider().frame(height: 16)
             Button("插入空行", systemImage: "plus") { editor.insertBlank(after: nil) }
             Button("重新生成整首读音", systemImage: "textformat.abc") { editor.regenerateAllReadings() }
-            Divider().frame(height: 18)
+            Divider().frame(height: 16)
             Button("后退 2 秒", systemImage: "gobackward.2") {
                 state.seek(to: max(0, state.currentTime - 2), source: "lyrics-editor")
             }
@@ -179,7 +197,8 @@ struct LyricsEditorWindowView: View {
             }
             Text(Self.formatTime(state.currentTime) + " / " + Self.formatTime(state.currentTrack.duration))
                 .font(.caption.monospacedDigit())
-                .foregroundStyle(.secondary)
+                .foregroundStyle(LyricsDesignTokens.secondaryText)
+            Divider().frame(height: 16)
             Button("记当前行", systemImage: "scope") {
                 markFocusedLineAtCurrentTime(advance: false)
             }
@@ -199,14 +218,23 @@ struct LyricsEditorWindowView: View {
             if let draft = editor.draft {
                 Text("已排 \(draft.timedNonBlankLineCount) · 未排 \(draft.untimedNonBlankLineCount)")
                     .font(.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(LyricsDesignTokens.mutedText)
             }
             Button("保存人工版本") { editor.save() }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.regular)
+                .disabled(editor.draft?.identity == nil || !editor.canSave)
+                .help(editor.draft?.identity == nil ? "当前未关联播放曲目，无法直接保存到数据库；请先在 Spotify 播放歌曲" : "")
             Button("保存并锁定", systemImage: "lock.fill") { editor.save(lockLyrics: true, lockTranslation: true) }
+                .buttonStyle(.borderless)
+                .controlSize(.regular)
+                .disabled(editor.draft?.identity == nil || !editor.canSave)
+                .help(editor.draft?.identity == nil ? "当前未关联播放曲目，无法直接保存到数据库；请先在 Spotify 播放歌曲" : "")
         }
         .buttonStyle(.borderless)
-        .padding(.horizontal, 12)
+        .padding(.horizontal, 14)
         .padding(.vertical, 8)
+        .background(Color.white.opacity(0.02))
     }
 
     private func lineRow(index: Int, line: LyricsEditorLineDraft, total: Int) -> some View {
@@ -219,7 +247,7 @@ struct LyricsEditorWindowView: View {
                 HStack(spacing: 4) {
                     Text("\(index + 1)")
                         .font(.caption.monospacedDigit())
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(LyricsDesignTokens.mutedText)
                         .frame(width: 28, alignment: .trailing)
                     if isSuggested {
                         Text("建议")
@@ -239,10 +267,12 @@ struct LyricsEditorWindowView: View {
                 }
                 HStack(spacing: 4) {
                     timeField(lineID: line.id, placeholder: isUntimed ? "未排" : "开始")
-                    Text("→").foregroundStyle(.secondary)
+                    Text("→")
+                        .font(.caption2.monospaced())
+                        .foregroundStyle(LyricsDesignTokens.mutedText)
                     timeField(lineID: line.id, placeholder: "结束", isEnd: true)
                 }
-                .frame(width: 150)
+                .frame(width: 156)
             }
             TextField("原文", text: textBinding(lineID: line.id, key: .original))
                 .textFieldStyle(.roundedBorder)
@@ -254,7 +284,7 @@ struct LyricsEditorWindowView: View {
                 HStack(spacing: 8) {
                     Text(line.kanaText ?? "—")
                     Text(line.romajiText ?? "—")
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(LyricsDesignTokens.secondaryText)
                         .lineLimit(1)
                     Spacer()
                     Button("试听") {
@@ -292,8 +322,8 @@ struct LyricsEditorWindowView: View {
         .padding(6)
         .background(
             isFocused
-                ? Color.accentColor.opacity(0.08)
-                : (index.isMultiple(of: 2) ? Color.white.opacity(0.035) : .clear)
+                ? Color.accentColor.opacity(0.12)
+                : (index.isMultiple(of: 2) ? Color.white.opacity(0.03) : Color.clear)
         )
         .clipShape(RoundedRectangle(cornerRadius: 6))
         .contentShape(Rectangle())
@@ -330,8 +360,9 @@ struct LyricsEditorWindowView: View {
                 }
             }
         ))
+        .font(.system(size: 11, design: .monospaced))
         .textFieldStyle(.roundedBorder)
-        .frame(width: 68)
+        .frame(width: 70)
     }
 
     private func markFocusedLineAtCurrentTime(advance: Bool) {
@@ -382,28 +413,30 @@ struct LyricsEditorWindowView: View {
     }
 
     private var footer: some View {
-        HStack(alignment: .top, spacing: 12) {
-            Image(systemName: editor.validation.isSaveAllowed ? "checkmark.circle" : "exclamationmark.triangle")
+        HStack(alignment: .center, spacing: 12) {
+            Image(systemName: editor.validation.isSaveAllowed ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
                 .foregroundStyle(editor.validation.isSaveAllowed ? .green : .orange)
             VStack(alignment: .leading, spacing: 2) {
                 Text(editor.validation.isSynchronized ? "同步歌词时间轴有效" : "纯文本或部分时间轴：不会自动平均铺开")
                     .font(.caption.weight(.medium))
+                    .foregroundStyle(LyricsDesignTokens.primaryText)
                 if !editor.validation.issues.isEmpty {
                     Text(editor.validation.issues.map(\.message).joined(separator: "；"))
                         .font(.caption2)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(LyricsDesignTokens.secondaryText)
                         .lineLimit(2)
                 } else if let message = editor.message {
-                    Text(message).font(.caption2).foregroundStyle(.secondary)
+                    Text(message).font(.caption2).foregroundStyle(LyricsDesignTokens.secondaryText)
                 }
             }
             Spacer()
             Text(editor.state.userFacingMessage)
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(LyricsDesignTokens.secondaryText)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 9)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(Color.black.opacity(0.15))
     }
 
     private func importPreview(_ preview: LyricsEditorImportPreview) -> some View {
@@ -430,6 +463,7 @@ struct LyricsEditorWindowView: View {
                 Spacer()
                 Button("确认导入并锁定") { editor.confirmImport(lock: true) }
                 Button("确认导入") { editor.confirmImport() }
+                    .buttonStyle(.borderedProminent)
             }
         }
         .padding(28)
@@ -507,16 +541,16 @@ struct LyricsEditorWindowView: View {
     }
 
     private func exportOriginal() {
-        guard let draft = editor.draft else { return }
+        guard let draft = editor.draft, let document = draft.document(source: draft.source) else { return }
         saveFile(contents: LRCExporter.original(
-            document: draft.document(source: draft.source),
+            document: document,
             source: draft.source.rawValue,
             locked: false
         ), suggestedName: "\(draft.title ?? "lyrics").lrc")
     }
 
     private func exportTranslation() {
-        guard let draft = editor.draft else { return }
+        guard let draft = editor.draft, let document = draft.document(source: draft.source) else { return }
         let selected = editor.selectedTranslation
         let translations = selected?.lines
             .sorted { $0.lineIndex < $1.lineIndex }
@@ -524,7 +558,7 @@ struct LyricsEditorWindowView: View {
             ?? draft.lines.map { $0.translationText ?? "" }
         guard translations.contains(where: { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) else { return }
         saveFile(contents: LRCExporter.translation(
-            document: draft.document(source: draft.source),
+            document: document,
             translations: translations,
             targetLanguage: selected?.record.targetLanguage ?? "und",
             source: selected?.record.sourceKind.rawValue ?? "legacyEmbedded",

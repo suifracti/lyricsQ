@@ -95,7 +95,7 @@ public final class LyricsEditorSessionController: ObservableObject {
     }
 
     public var canSave: Bool {
-        draft != nil && !isStale && state != .saving && validation.isSaveAllowed
+        draft != nil && !isStale && state != .saving && validation.isSaveAllowed && identity != nil && track != nil
     }
 
     public var hasUnsavedChanges: Bool {
@@ -256,6 +256,36 @@ public final class LyricsEditorSessionController: ObservableObject {
             sourceContentHash: LyricsPersistenceMapper.sourceContentHash(document: enriched)
         )
         self.sourceContentHash = LyricsPersistenceMapper.sourceContentHash(document: enriched)
+        self.draft = newDraft
+        self.baseLyricsLines = newDraft.lines.map(Self.lyricsProjection)
+        self.baseTranslationLines = newDraft.lines.map(Self.translationText)
+        self.lockedReadingIDs = []
+        self.baseLockedReadingIDs = []
+        self.assistSuggestedLineIDs = []
+        self.validation = LyricsTimelineValidator.validate(lines: newDraft.lines, duration: newDraft.duration)
+        self.state = .editing
+    }
+
+    public func beginDetached(lines: [LyricsEditorLineDraft] = [LyricsEditorLineDraft(originalText: "")]) {
+        generation &+= 1
+        loadTask?.cancel()
+        saveTask?.cancel()
+        self.track = nil
+        self.identity = nil
+        self.sourceVersionID = UUID()
+        self.sourceContentHash = ""
+        self.sourceRevision = 0
+        self.availableVersions = []
+        self.availableTranslations = []
+        self.selectedTranslation = nil
+        self.pendingImport = nil
+        self.pendingTextImport = nil
+        self.message = nil
+        self.isStale = false
+        self.isNewSourceSession = false
+        self.newSourceKind = .manualCreate
+        self.pendingTextImportSource = .manualCreate
+        let newDraft = LyricsEditorDraft(lines: lines)
         self.draft = newDraft
         self.baseLyricsLines = newDraft.lines.map(Self.lyricsProjection)
         self.baseTranslationLines = newDraft.lines.map(Self.translationText)
@@ -461,8 +491,9 @@ public final class LyricsEditorSessionController: ObservableObject {
 
     public func selectTranslation(versionID: UUID) {
         guard let version = availableTranslations.first(where: { $0.record.id == versionID }), version.isComplete,
-              let draft else { return }
-        let document = Self.documentByProjecting(version, onto: draft.document(source: draft.source))
+              let draft,
+              let baseDoc = draft.document(source: draft.source) else { return }
+        let document = Self.documentByProjecting(version, onto: baseDoc)
         let replacement = LyricsEditorDraft(document: document, sourceVersionID: draft.sourceVersionID, sourceContentHash: draft.sourceContentHash)
         self.draft = replacement
         self.selectedTranslation = version
@@ -677,10 +708,10 @@ public final class LyricsEditorSessionController: ObservableObject {
             }
         }
 
-        let document = draft.document(
+        guard let document = draft.document(
             source: isNewSourceSession ? newSourceKind : .manualEdit,
             isSynchronized: validation.isSynchronized
-        )
+        ) else { return }
         let translation = shouldSaveTranslation ? ManualTranslationEdit(
             targetLanguage: selectedTranslation?.record.targetLanguage ?? translationConfiguration.targetLanguage,
             model: selectedTranslation?.record.model ?? "",

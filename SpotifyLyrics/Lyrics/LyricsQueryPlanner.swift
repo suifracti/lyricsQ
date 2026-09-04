@@ -188,6 +188,12 @@ public enum LyricsQueryPlanner {
                 title: manualQuery,
                 artist: fullArtist
             )
+            add(
+                .manualOverride,
+                kind: .manualOverride,
+                title: manualQuery,
+                artist: nil
+            )
         }
 
         func differsBeyondCaseAndWidth(_ original: String, _ normalized: String) -> Bool {

@@ -117,6 +117,13 @@ public enum LyricsSafeMatcher {
             // have a persisted TrackAlias record. They still expand recall,
             // but receive less title evidence than a confirmed alias.
             add("titleAliasQuery", queryVariant.queryKind == .romajiAlias ? 0.10 : 0.12)
+        } else if let queryVariant,
+                  queryVariant.queryKind == .manualOverride,
+                  !candidateTitle.isEmpty,
+                  (TrackTextNormalizer.normalize(queryVariant.titleQuery) == candidateTitle ||
+                   candidateTitle.contains(TrackTextNormalizer.normalize(queryVariant.titleQuery)) ||
+                   TrackTextNormalizer.normalize(queryVariant.titleQuery).contains(candidateTitle)) {
+            add("manualTitleMatch", 0.20)
         } else if !candidateTitle.isEmpty,
                   !metadataTitle.isEmpty,
                   (candidateTitle.contains(metadataTitle) || metadataTitle.contains(candidateTitle)) {
@@ -161,9 +168,13 @@ public enum LyricsSafeMatcher {
             incompleteArtistSet = true
             add("featuredArtistOnly", -0.18)
         } else if candidatePrimary.isEmpty {
-            add("primaryArtistMissing", -0.30, hard: true)
+            let isManual = queryVariant?.queryKind == .manualOverride
+            add("primaryArtistMissing", -0.30, hard: !isManual)
+            if isManual { incompleteArtistSet = true }
         } else {
-            add("primaryArtistConflict", -0.40, hard: true)
+            let isManual = queryVariant?.queryKind == .manualOverride
+            add("primaryArtistConflict", -0.40, hard: !isManual)
+            if isManual { incompleteArtistSet = true }
         }
 
         if metadataPrimaryMatches || matchingArtistAlias(candidatePrimary, metadata: metadata) != nil {
@@ -287,6 +298,8 @@ public enum LyricsSafeMatcher {
                     || reasons.contains("titleAliasConfirmed")
                     || reasons.contains("titleAliasQuery")
                 tier = minTier(tier, titleEvidence && score >= 0.10 ? .candidates : .reject)
+            } else if queryVariant?.queryKind == .manualOverride {
+                tier = minTier(tier, (score >= 0.10 || reasons.contains("manualTitleMatch")) ? .candidates : .reject)
             } else if incompleteArtistSet {
                 tier = minTier(tier, score >= 0.25 ? .candidates : .reject)
             }
@@ -316,6 +329,8 @@ public enum LyricsSafeMatcher {
                 || reasons.contains("titleAliasConfirmed")
                 || reasons.contains("titleAliasQuery")
             tier = titleEvidence && score >= 0.10 ? .candidates : .reject
+        } else if queryVariant?.queryKind == .manualOverride {
+            tier = (score >= 0.10 || reasons.contains("manualTitleMatch")) ? .candidates : .reject
         } else if incompleteArtistSet && !hasStrongIndependentIdentity {
             // A missing/extra featured artist is not proof of a different
             // song, but it is insufficient for unattended adoption.

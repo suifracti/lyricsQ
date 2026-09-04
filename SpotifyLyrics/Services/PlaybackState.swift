@@ -515,6 +515,19 @@ public final class PlaybackState: ObservableObject {
         return true
     }
 
+    public func prepareLyricsEditorForOpening() {
+        guard hasLiveTrack else {
+            lyricsEditorSession.beginDetached()
+            return
+        }
+
+        if canOpenLyricsEditor {
+            prepareLyricsEditor()
+        } else if canCreateManualLyrics {
+            prepareBlankLyricsEditor()
+        }
+    }
+
     public func prepareLyricsEditor() {
         guard canOpenLyricsEditor,
               let identity = lyricsSession.activeIdentity,
@@ -1891,6 +1904,31 @@ public final class PlaybackState: ObservableObject {
 
     public func adoptLyricsCandidate(_ candidate: LyricsCandidate) {
         lyricsSession.adopt(candidate: candidate)
+    }
+
+    /// Adopts the lyrics currently loaded in search preview to the live playback session.
+    public func adoptSearchPreviewLyrics() {
+        guard hasLiveTrack, let liveIdentity = currentTrackIdentity else { return }
+        guard let previewDocument = searchPreviewSession.activeDocument,
+              !previewDocument.lines.isEmpty else { return }
+
+        let adoptedDocument = LyricsDocument(
+            identity: liveIdentity,
+            title: currentTrack.title,
+            artist: currentTrack.artist,
+            album: currentTrack.album,
+            duration: currentTrack.duration,
+            lines: previewDocument.lines,
+            isSynchronized: previewDocument.isSynchronized,
+            source: previewDocument.source,
+            confidence: previewDocument.confidence,
+            providerSourceID: previewDocument.providerSourceID,
+            spotifyTrackID: currentTrack.spotifyId,
+            isrc: currentTrack.isrc,
+            language: previewDocument.language
+        )
+        clearSearchPreview()
+        lyricsSession.adopt(document: adoptedDocument)
     }
 
     public var currentLineIndex: Int? {
