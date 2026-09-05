@@ -17,21 +17,37 @@ public struct ListeningHistoryView: View {
             }
             .padding(.bottom, 10)
 
-            if playback.listeningHistory.isEmpty {
-                VStack(spacing: 8) {
-                    Spacer()
-                    Image(systemName: "clock.arrow.circlepath")
-                        .font(.system(size: 34))
-                        .foregroundStyle(.tertiary)
-                    Text("暂无 Lyric Island 观察记录")
-                        .font(.headline)
+            if let error = playback.listeningHistoryError {
+                HStack {
+                    Label(error, systemImage: "exclamationmark.triangle")
                         .foregroundStyle(.secondary)
-                    Text("播放歌曲后，这里会显示本次运行期间观察到的记录。")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
                     Spacer()
+                    Button("重试") { playback.refreshListeningHistory() }
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(.vertical, 12)
+            }
+            if playback.isListeningHistoryLoading {
+                ProgressView("读取最近播放…")
+                    .padding(.vertical, 12)
+            }
+
+            if playback.listeningHistory.isEmpty {
+                if playback.listeningHistoryError == nil && !playback.isListeningHistoryLoading {
+                    VStack(spacing: 8) {
+                        Spacer()
+                        Image(systemName: "clock.arrow.circlepath")
+                            .font(.system(size: 34))
+                            .foregroundStyle(.tertiary)
+                        Text("暂无 Lyric Island 观察记录")
+                            .font(.headline)
+                            .foregroundStyle(.secondary)
+                        Text("播放歌曲后，这里会显示本次运行期间观察到的记录。")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                        Spacer()
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
             } else {
                 List(playback.listeningHistory) { entry in
                     HStack(spacing: 12) {

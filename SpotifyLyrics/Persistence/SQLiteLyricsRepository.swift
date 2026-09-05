@@ -219,6 +219,15 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         try stepDone(statement)
     }
 
+    /// Never turn a locked, interrupted or otherwise failed read into an empty/partial success.
+    private func stepListeningHistoryRow(_ statement: OpaquePointer) throws -> Bool {
+        switch sqlite3_step(statement) {
+        case SQLITE_ROW: return true
+        case SQLITE_DONE: return false
+        default: throw lastError()
+        }
+    }
+
     public func loadListeningHistory(limit: Int) async throws -> [ListeningHistoryEntry] {
         try prepare()
         let statement = try prepare("""
@@ -233,7 +242,7 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         try bindInt(max(1, min(limit, 500)), at: 1, to: statement)
 
         var entries: [ListeningHistoryEntry] = []
-        while sqlite3_step(statement) == SQLITE_ROW {
+        while try stepListeningHistoryRow(statement) {
             guard let sessionIDText = columnText(statement, index: 0),
                   let sessionID = UUID(uuidString: sessionIDText),
                   let stableKey = columnText(statement, index: 1),
@@ -275,6 +284,7 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         let totalListeningTime = sqlite3_column_double(summaryStatement, 0)
         let sessionCount = Int(sqlite3_column_int(summaryStatement, 1))
         let uniqueSongCount = Int(sqlite3_column_int(summaryStatement, 2))
+        guard sqlite3_step(summaryStatement) == SQLITE_DONE else { throw lastError() }
 
         let songsStatement = try prepare("""
             SELECT track_stable_key, MIN(title), MIN(artist),
@@ -288,7 +298,7 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         defer { sqlite3_finalize(songsStatement) }
         try bindDouble(lowerBound, at: 1, to: songsStatement)
         var topSongs: [ListeningStatisticsSong] = []
-        while sqlite3_step(songsStatement) == SQLITE_ROW {
+        while try stepListeningHistoryRow(songsStatement) {
             guard let stableKey = columnText(songsStatement, index: 0),
                   let title = columnText(songsStatement, index: 1),
                   let artist = columnText(songsStatement, index: 2) else {
@@ -314,7 +324,7 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         defer { sqlite3_finalize(artistsStatement) }
         try bindDouble(lowerBound, at: 1, to: artistsStatement)
         var topArtists: [ListeningStatisticsArtist] = []
-        while sqlite3_step(artistsStatement) == SQLITE_ROW {
+        while try stepListeningHistoryRow(artistsStatement) {
             guard let artist = columnText(artistsStatement, index: 0) else { continue }
             topArtists.append(ListeningStatisticsArtist(
                 artist: artist,
@@ -338,7 +348,7 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         defer { sqlite3_finalize(trendStatement) }
         try bindDouble(trendLowerBound, at: 1, to: trendStatement)
         var countsByDateString: [String: Int] = [:]
-        while sqlite3_step(trendStatement) == SQLITE_ROW {
+        while try stepListeningHistoryRow(trendStatement) {
             if let dateString = columnText(trendStatement, index: 0) {
                 countsByDateString[dateString] = Int(sqlite3_column_int(trendStatement, 1))
             }

@@ -26,6 +26,9 @@ swiftc -parse-as-library \
   SpotifyLyrics/Lyrics/LyricsSearchManager.swift \
   SpotifyLyrics/Lyrics/CompositeLyricsProvider.swift \
   SpotifyLyrics/Lyrics/LRCParser.swift \
+  SpotifyLyrics/Lyrics/PersonalLyricsLibraryModels.swift \
+  SpotifyLyrics/Lyrics/ListeningHistoryModels.swift \
+  SpotifyLyrics/Lyrics/ListeningStatisticsModels.swift \
   SpotifyLyrics/Lyrics/LocalAlignedLyricsStore.swift \
   SpotifyLyrics/Search/SongSearchModels.swift \
   SpotifyLyrics/Search/TrackSearchModels.swift \

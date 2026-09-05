@@ -35,12 +35,11 @@ This file describes what is present in the repository and how mature it is. It i
 
 ## Current phase & next steps
 
-- 当前阶段为: `Concentrated user experience / reliability triage`（明确不是 C6）。
-- **下一步原则**: 只有真实确认的 **Blocker** 或必须解决的 **Relevant** 缺陷，才允许触发代码工作。
-- **Reliability 候选项（仅列为 Deferred，非已发生运行时 bug）**:
-  - statistics read failure 可能被表现为空状态
-  - listening history read failure 缺独立 failed state
-  - statistics contract 有午夜日期边界稳定性问题
+- 用户于 2026-09-05 明确授权修复可靠性问题，恢复灵动岛、完善桌面歌词和三种封面风格，并自主迭代。该范围重新开放；历史 C1–C5 合并记录与冻结 release 不改写。
+- 工作分支 `codex/experience-restoration`，从 `fb95a9e` 建立；未合入 main。
+- 预览候选采用路由、菜单栏设置入口、历史/统计读取错误表达已修复；五项定向合同与独立审查通过。实际 SQLite 锁读取失败会报错，界面保留上次结果并支持重试。
+- 灵动岛、桌面歌词和三种风格仍在原生视觉与交互验证中；不标记为最终体验验收或已发布。
+- statistics contract 午夜日期夹具稳定性仍为既有 Deferred。
 
 ## Implemented in the repository
 

@@ -25,8 +25,23 @@ public struct ListeningStatisticsView: View {
                 }
                 .pickerStyle(.segmented)
 
-                if let statistics = playback.listeningStatistics,
-                   statistics.timeRange == selectedTimeRange {
+                if let error = playback.listeningStatisticsError {
+                    HStack {
+                        Label(error, systemImage: "exclamationmark.triangle")
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Button("重试") { playback.refreshListeningStatistics(for: selectedTimeRange) }
+                    }
+                }
+                if playback.isListeningStatisticsLoading {
+                    ProgressView("读取统计…")
+                }
+                if let statistics = playback.listeningStatistics {
+                    if statistics.timeRange != selectedTimeRange {
+                        Text("上次成功读取：\(statistics.timeRange.title)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                     if statistics.isEmpty {
                         emptyState
                     } else {
@@ -37,9 +52,6 @@ public struct ListeningStatisticsView: View {
                         topSongs(statistics.topSongs)
                         topArtists(statistics.topArtists)
                     }
-                } else {
-                    ProgressView("读取统计…")
-                        .frame(maxWidth: .infinity, minHeight: 180)
                 }
             }
             .frame(maxWidth: 760, alignment: .leading)

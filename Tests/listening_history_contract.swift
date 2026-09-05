@@ -1,4 +1,5 @@
 import Foundation
+import SQLite3
 
 @main
 @MainActor
@@ -46,19 +47,36 @@ struct ListeningHistoryContract {
         defer { try? FileManager.default.removeItem(at: root) }
 
         let databaseURL = root.appendingPathComponent("SpotifyLyrics.sqlite3")
-        let repository = SQLiteLyricsRepository(databaseURL: databaseURL)
+        let repository = SQLiteLyricsRepository(databaseURL: databaseURL, alignmentProvenanceDirectory: root.appendingPathComponent("provenance"))
         try await repository.prepare()
         try await repository.upsertListeningHistory(sessionA.entry)
         try await repository.upsertListeningHistory(sessionA.entry)
         try await repository.upsertListeningHistory(sessionB.entry)
 
-        let restartedRepository = SQLiteLyricsRepository(databaseURL: databaseURL)
+        let restartedRepository = SQLiteLyricsRepository(databaseURL: databaseURL, alignmentProvenanceDirectory: root.appendingPathComponent("provenance"))
         let entries = try await restartedRepository.loadListeningHistory(limit: 10)
         precondition(entries.count == 2)
         precondition(entries[0].stableKey == identityB.stableKey)
         precondition(entries[1].stableKey == identityA.stableKey)
         precondition(entries[1].observedPlaybackDuration == 15)
 
-        print("listening history contract passed")
+        var lock: OpaquePointer?
+        precondition(sqlite3_open(databaseURL.path, &lock) == SQLITE_OK)
+        defer { sqlite3_exec(lock, "ROLLBACK", nil, nil, nil); sqlite3_close(lock) }
+        precondition(sqlite3_exec(lock, "BEGIN EXCLUSIVE", nil, nil, nil) == SQLITE_OK)
+        var rejectedLockedRead = false
+        do { _ = try await restartedRepository.loadListeningHistory(limit: 10) }
+        catch { rejectedLockedRead = true }
+        precondition(rejectedLockedRead, "Locked history must throw instead of returning an empty success")
+        var rejectedStatistics = false
+        do { _ = try await restartedRepository.loadListeningStatistics(for: .allTime) }
+        catch { rejectedStatistics = true }
+        precondition(rejectedStatistics, "Locked statistics must throw")
+        precondition(sqlite3_exec(lock, "ROLLBACK", nil, nil, nil) == SQLITE_OK)
+        let recovered = try await restartedRepository.loadListeningHistory(limit: 10)
+        precondition(recovered.count == 2, "History retry must recover after unlock")
+        let recoveredStatistics = try await restartedRepository.loadListeningStatistics(for: .allTime)
+        precondition(recoveredStatistics.sessionCount == 2)
+        print("listening history contract passed (lock errors and retry verified)")
     }
 }

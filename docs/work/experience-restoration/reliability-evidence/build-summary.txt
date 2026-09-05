@@ -1,0 +1,26 @@
+Base HEAD: b971c7fe181315f8f8ad5a784a7b8ba14bce24fe + shared uncommitted source edits
+Command: xcodebuild -project SpotifyLyrics.xcodeproj -scheme SpotifyLyrics -configuration Debug -derivedDataPath /tmp/lyrics-reliability-restoration-deriveddata CODE_SIGNING_ALLOWED=NO build
+Exit: 0
+/tmp/spotifylyrics-experience-restoration-20260905/SpotifyLyrics/Capture/WhisperCLISpeechEngine.swift:16:17: warning: stored property 'fileManager' of 'Sendable'-conforming struct 'WhisperCLISpeechEngine' has non-Sendable type 'FileManager'; this is an error in the Swift 6 language mode
+/tmp/spotifylyrics-experience-restoration-20260905/SpotifyLyrics/Views/Components/LyricLineView.swift:563:10: warning: 'onChange(of:perform:)' was deprecated in macOS 14.0: Use `onChange` with a two or zero parameter action closure instead.
+/tmp/spotifylyrics-experience-restoration-20260905/SpotifyLyrics/Lyrics/SpeechForcedAlignmentService.swift:74:52: warning: 'duration' was deprecated in macOS 13.0: Use load(.duration) instead
+/tmp/spotifylyrics-experience-restoration-20260905/SpotifyLyrics/Windows/WindowManager.swift:30:19: warning: main actor-isolated property 'fullScreenAuxiliaryVisibilitySnapshot' can not be mutated from a Sendable closure
+/tmp/spotifylyrics-experience-restoration-20260905/SpotifyLyrics/Windows/WindowManager.swift:31:41: warning: main actor-isolated property 'onDidHide' can not be mutated from a Sendable closure
+/tmp/spotifylyrics-experience-restoration-20260905/SpotifyLyrics/Windows/WindowManager.swift:31:19: warning: main actor-isolated property 'fullScreenController' can not be referenced from a Sendable closure
+/tmp/spotifylyrics-experience-restoration-20260905/SpotifyLyrics/Capture/SpotifyScreenCaptureAudioSpike.swift:338:13: warning: variable 'blockBuffer' was never used; consider replacing with '_' or removing it
+/tmp/spotifylyrics-experience-restoration-20260905/SpotifyLyrics/Capture/LiveCaptureCoordinator.swift:476:13: warning: variable 'session' was never mutated; consider changing to 'let' constant
+/tmp/spotifylyrics-experience-restoration-20260905/SpotifyLyrics/Capture/LiveCaptureCoordinator.swift:527:19: warning: variable 'segment' was never mutated; consider changing to 'let' constant
+/tmp/spotifylyrics-experience-restoration-20260905/SpotifyLyrics/Capture/LiveCaptureCoordinator.swift:764:19: warning: variable 'segment' was never mutated; consider changing to 'let' constant
+/tmp/spotifylyrics-experience-restoration-20260905/SpotifyLyrics/Capture/SegmentPartialAlignmentPipeline.swift:543:13: warning: variable 'byIndex' was never mutated; consider changing to 'let' constant
+/tmp/spotifylyrics-experience-restoration-20260905/SpotifyLyrics/Capture/WhisperCLISpeechEngine.swift:135:43: warning: 'duration' was deprecated in macOS 13.0: Use load(.duration) instead
+/tmp/spotifylyrics-experience-restoration-20260905/SpotifyLyrics/Capture/WhisperCLISpeechEngine.swift:135:14: warning: no calls to throwing functions occur within 'try' expression
+/tmp/spotifylyrics-experience-restoration-20260905/SpotifyLyrics/Lyrics/AudioPCMConverter.swift:205:47: warning: 'duration' was deprecated in macOS 13.0: Use load(.duration) instead
+/tmp/spotifylyrics-experience-restoration-20260905/SpotifyLyrics/Lyrics/AudioPCMConverter.swift:217:25: warning: 'commonMetadata' was deprecated in macOS 13.0: Use load(.commonMetadata) instead
+/tmp/spotifylyrics-experience-restoration-20260905/SpotifyLyrics/Lyrics/AudioPCMConverter.swift:219:18: warning: 'stringValue' was deprecated in macOS 13.0: Use load(.stringValue) instead
+/tmp/spotifylyrics-experience-restoration-20260905/SpotifyLyrics/Lyrics/AudioPCMConverter.swift:221:25: warning: 'commonMetadata' was deprecated in macOS 13.0: Use load(.commonMetadata) instead
+/tmp/spotifylyrics-experience-restoration-20260905/SpotifyLyrics/Lyrics/AudioPCMConverter.swift:223:18: warning: 'stringValue' was deprecated in macOS 13.0: Use load(.stringValue) instead
+/tmp/spotifylyrics-experience-restoration-20260905/SpotifyLyrics/Spotify/SpotifyTokenStore.swift:82:52: warning: 'kSecUseAuthenticationUIFail' was deprecated in macOS 11.0: Instead of kSecUseAuthenticationUI, use kSecUseAuthenticationContext and set LAContext.interactionNotAllowed property
+/tmp/spotifylyrics-experience-restoration-20260905/SpotifyLyrics/Spotify/SpotifyTokenStore.swift:212:29: warning: 'SecTrustedApplicationCreateFromPath' was deprecated in macOS 10.10: SecKeychain is deprecated
+/tmp/spotifylyrics-experience-restoration-20260905/SpotifyLyrics/Spotify/SpotifyTokenStore.swift:219:28: warning: 'SecAccessCreate' was deprecated in macOS 10.10: SecKeychain is deprecated
+2026-09-05 16:48:52.601 appintentsmetadataprocessor[86459:57119851] warning: Metadata extraction skipped. No AppIntents.framework dependency found.
+** BUILD SUCCEEDED **

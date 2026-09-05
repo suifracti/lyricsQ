@@ -68,6 +68,7 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     private var openMainWindowHandler: (@MainActor () -> Void)?
     private var openLibraryHandler: (@MainActor () -> Void)?
+    private var openSettingsHandler: (@MainActor () -> Void)?
 
     private override init() {
         self.currentSnapshot = MenuBarLyricsSnapshot(
@@ -109,6 +110,10 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
         self.openLibraryHandler = handler
     }
 
+    public func setOpenSettingsHandler(_ handler: @escaping @MainActor () -> Void) {
+        openSettingsHandler = handler
+    }
+
     public func openMainWindow() {
         popover?.performClose(nil)
 
@@ -145,7 +150,7 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
     public func openSettings() {
         popover?.performClose(nil)
         NSApp.activate(ignoringOtherApps: true)
-        NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+        openSettingsHandler?()
     }
 
     public func quit() {

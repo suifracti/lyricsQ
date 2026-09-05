@@ -9,7 +9,7 @@ struct ListeningStatisticsContract {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
 
-        let repository = SQLiteLyricsRepository(databaseURL: root.appendingPathComponent("SpotifyLyrics.sqlite3"))
+        let repository = SQLiteLyricsRepository(databaseURL: root.appendingPathComponent("SpotifyLyrics.sqlite3"), alignmentProvenanceDirectory: root.appendingPathComponent("provenance"))
         try await repository.prepare()
 
         try await repository.upsertListeningHistory(entry(
@@ -63,7 +63,8 @@ struct ListeningStatisticsContract {
         precondition(updatedStats.dailyPlayCounts.dropLast().allSatisfy { $0.count == 0 })
 
         let emptyRepository = SQLiteLyricsRepository(
-            databaseURL: root.appendingPathComponent("empty.sqlite3")
+            databaseURL: root.appendingPathComponent("empty.sqlite3"),
+            alignmentProvenanceDirectory: root.appendingPathComponent("empty-provenance")
         )
         let emptyStatistics = try await emptyRepository.loadListeningStatistics(for: .allTime)
         precondition(emptyStatistics.isEmpty)
