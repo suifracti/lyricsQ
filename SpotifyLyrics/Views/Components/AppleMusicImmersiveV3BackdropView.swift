@@ -298,7 +298,7 @@ struct AppleMusicImmersiveV3BackdropView: View {
             1.3,
             style.paletteSaturation * 1.18 + (increaseContrast ? 0.06 : 0)
         )
-        let diffusionRadius = normalizedBlur * 66.0
+        let diffusionRadius = normalizedBlur * 24.0
 
         // A luminance-clamped album field keeps very bright artwork legible
         // without falling back to an unrelated black canvas.
@@ -312,7 +312,7 @@ struct AppleMusicImmersiveV3BackdropView: View {
             endPoint: settings.v3ArtworkPosition == "right" ? .topLeading : .bottomTrailing
         )
 
-        // The 48px derivative owns only the diffused end of the slider.
+        // Retain album structure before applying the user-controlled diffusion.
         if let ambientImage {
             Image(nsImage: ambientImage)
                 .resizable()
@@ -709,7 +709,7 @@ public actor AppleMusicImmersiveV3BackdropCache {
         // when the user explicitly selects 0%; keep the derivative small,
         // but retain enough resolution for the actual artwork plane.
         let reducedArtwork = thumbnailData(from: artworkData, maxPixel: 1280)
-        let ambientArtwork = thumbnailData(from: artworkData, maxPixel: 48)
+        let ambientArtwork = thumbnailData(from: artworkData, maxPixel: 384)
         let palette = BackdropPalette.from(imageData: reducedArtwork)
         let noise = makeNoiseData(seed: seed)
         return AppleMusicImmersiveV3BackdropSnapshot(

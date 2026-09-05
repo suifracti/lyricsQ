@@ -180,6 +180,15 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
 
     public func upsertListeningHistory(_ entry: ListeningHistoryEntry) async throws {
         try prepare()
+        if entry.artworkURL != nil {
+            let key = try resolvedCanonicalStableKey(entry.stableKey)
+            if try fetchTrack(stableKey: key)?.artworkURL == nil {
+                try upsertTrack(DatabaseTrackRecord(stableKey: key, spotifyID: nil, spotifyURI: nil, isrc: nil,
+                    title: entry.title, artistDisplay: entry.artist, album: entry.album,
+                    duration: entry.trackDuration ?? 0, artworkURL: entry.artworkURL?.absoluteString,
+                    createdAt: entry.startedAt, updatedAt: entry.lastObservedAt))
+            }
+        }
         let statement = try prepare("""
             INSERT INTO listening_history_sessions(
                 session_id, track_stable_key, title, artist, album,
@@ -223,6 +232,13 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         }
     }
 
+    private func listeningArtworkURL(stableKey: String) throws -> URL? {
+        for key in try resolvedIdentityFamily(stableKey: stableKey) {
+            if let text = try fetchTrack(stableKey: key)?.artworkURL, let url = URL(string: text) { return url }
+        }
+        return nil
+    }
+
     public func loadListeningHistory(limit: Int) async throws -> [ListeningHistoryEntry] {
         try prepare()
         let statement = try prepare("""
@@ -256,7 +272,8 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
                 lastObservedAt: Date(timeIntervalSince1970: sqlite3_column_double(statement, 6)),
                 observedPlaybackDuration: sqlite3_column_double(statement, 7),
                 trackDuration: columnDouble(statement, index: 8),
-                completionRatio: columnDouble(statement, index: 9)
+                completionRatio: columnDouble(statement, index: 9),
+                artworkURL: try listeningArtworkURL(stableKey: stableKey)
             ))
         }
         return entries
@@ -304,7 +321,8 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
                 title: title,
                 artist: artist,
                 observedListeningTime: sqlite3_column_double(songsStatement, 3),
-                sessionCount: Int(sqlite3_column_int(songsStatement, 4))
+                sessionCount: Int(sqlite3_column_int(songsStatement, 4)),
+                artworkURL: try listeningArtworkURL(stableKey: stableKey)
             ))
         }
 

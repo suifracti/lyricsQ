@@ -86,7 +86,7 @@ struct FloatingLyricsView: View {
         .buttonStyle(.plain)
         .foregroundStyle(.white.opacity(0.9))
         .padding(.horizontal, 10)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
+        .background(Color.black.opacity(0.72), in: RoundedRectangle(cornerRadius: 10))
         .padding(.horizontal, 6)
         .opacity((isHovering || showsStyle) && windowController.interactionMode != .passThrough ? 1 : 0)
         .allowsHitTesting((isHovering || showsStyle) && windowController.interactionMode != .passThrough)
@@ -106,12 +106,7 @@ struct FloatingLyricsView: View {
         case .transparentV2:
             switch presentationStyle {
             case .ultraTransparent:
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(Color.clear)
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .stroke(Color.white.opacity(isHovering ? 0.14 : 0), lineWidth: 1)
-                    }
+                Color.clear
             case .lightMaterial:
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .fill(.regularMaterial.opacity(0.66))
@@ -256,12 +251,8 @@ struct FloatingLyricsView: View {
     }
 
     private func outlined(_ text: Text) -> some View {
-        text
-            .shadow(color: .black, radius: 0.6, x: -1.2, y: 0)
-            .shadow(color: .black, radius: 0.6, x: 1.2, y: 0)
-            .shadow(color: .black, radius: 0.6, x: 0, y: -1.2)
-            .shadow(color: .black, radius: 0.6, x: 0, y: 1.2)
-            .shadow(color: .black.opacity(0.75), radius: 3, y: 2)
+        // One tight shadow; chained shadows compound into a fuzzy dark halo.
+        text.shadow(color: .black.opacity(0.9), radius: 1, x: 0, y: 1)
     }
 
     @ViewBuilder

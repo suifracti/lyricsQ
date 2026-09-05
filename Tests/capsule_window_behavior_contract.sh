@@ -41,7 +41,7 @@ require "$CONTROLLER" 'didChangeScreenParametersNotification' 'capsule observes 
 require "$CONTROLLER" 'NSEvent\.addGlobalMonitorForEvents' 'expanded outside click collapse has a global monitor'
 require "$CONTROLLER" 'removeMonitor' 'event monitor is removed'
 require "$CONTROLLER" 'deinit' 'controller has explicit cleanup'
-require "$CONTROLLER" '350_000_000' 'hover collapse uses the confirmed debounce'
+require "$CONTROLLER" '220_000_000' 'hover collapse uses the responsive debounce'
 require "$CONTROLLER" 'presentationState == \.expanded' 'expanded state is the only draggable state'
 ! grep -Eq '\.modalPanel' "$CONTROLLER" || {
   echo 'FAIL: capsule uses a modal window level' >&2

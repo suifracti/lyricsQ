@@ -25,6 +25,7 @@ struct AppleMusicImmersiveV3WindowView: View {
     @State private var isSearchPresented = false
     @State private var isWindowMenuPresented = false
     @State private var isMorePresented = false
+    @State private var isDisplayPresented = false
     @State private var morePage = "root"
     // The canvas starts clean. Controls reveal only when the pointer reaches
     // the top edge, so playback remains content-first without sacrificing
@@ -574,7 +575,7 @@ struct AppleMusicImmersiveV3WindowView: View {
     }
 
     private var toolbarPanelIsPresented: Bool {
-        isWindowMenuPresented || isMorePresented || isSearchPresented
+        isWindowMenuPresented || isMorePresented || isSearchPresented || isDisplayPresented
     }
 
     private func toolBar(for size: CGSize) -> some View {
@@ -591,9 +592,27 @@ struct AppleMusicImmersiveV3WindowView: View {
                 .frame(width: 1, height: 18)
                 .padding(.horizontal, 3)
                 .accessibilityHidden(true)
-            libraryToolButton(.library, symbol: "music.note.list", title: "我的歌词库")
-            libraryToolButton(.history, symbol: "clock.arrow.circlepath", title: "最近播放")
-            libraryToolButton(.statistics, symbol: "chart.bar", title: "听歌统计")
+            Button { openWindow(id: "personal-library-activity") } label: {
+                iconLabel("books.vertical", description: "歌词库与收听记录")
+            }
+            Button { isDisplayPresented.toggle() } label: {
+                iconLabel("character.bubble", description: "歌词显示")
+            }
+            .popover(isPresented: $isDisplayPresented, arrowEdge: .top) {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("歌词显示").font(.headline)
+                    Toggle("显示假名", isOn: displayBinding(\.showKana))
+                    Toggle("显示罗马音", isOn: displayBinding(\.showRomaji))
+                    Toggle("显示翻译", isOn: displayBinding(\.showTranslation))
+                    if settings.displayPreferences.showKana {
+                        Picker("假名排版", selection: displayBinding(\.kanaDisplayMode)) {
+                            Text("汉字上方注音").tag(KanaDisplayMode.inlineRuby)
+                            Text("独立假名行").tag(KanaDisplayMode.independentLine)
+                            Text("假名替换").tag(KanaDisplayMode.kanaReplacement)
+                        }
+                    }
+                }.padding(18).frame(width: 260)
+            }
             Button { isMorePresented.toggle() } label: {
                 iconLabel("ellipsis", description: "更多操作")
             }
@@ -612,13 +631,12 @@ struct AppleMusicImmersiveV3WindowView: View {
         }
     }
 
-    private func libraryToolButton(_ tab: LibraryToolTab, symbol: String, title: String) -> some View {
-        Button {
-            state.selectedLibraryToolTab = tab
-            openWindow(id: "personal-library-activity")
-        } label: {
-            iconLabel(symbol, description: title)
-        }
+    private func displayBinding<Value>(_ keyPath: WritableKeyPath<DisplayPreferences, Value>) -> Binding<Value> {
+        Binding(get: { settings.displayPreferences[keyPath: keyPath] }, set: { value in
+            var next = settings.displayPreferences
+            next[keyPath: keyPath] = value
+            settings.displayPreferences = next
+        })
     }
 
     private var windowModePanel: some View {
@@ -1863,8 +1881,8 @@ private struct AppleMusicImmersiveV3LyricRow: View {
     private var rowBlur: CGFloat {
         guard isSynchronized, distance > 1 else { return 0 }
         switch distance {
-        case 2: return 1.1
-        default: return min(2.0, 1.1 + CGFloat(distance - 2) * 0.25)
+        case 2: return 0.2
+        default: return min(0.6, 0.2 + CGFloat(distance - 2) * 0.1)
         }
     }
 

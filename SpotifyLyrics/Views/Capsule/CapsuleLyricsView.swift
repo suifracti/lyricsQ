@@ -7,7 +7,7 @@ private enum CapsuleV4Motion {
     static let collapsedToHoverDuration = 0.24
     static let hoverToExpandedDuration = 0.36
     static let contentFadeDuration = 0.12
-    static let contentFadeDelay = 0.05
+    static let contentFadeDelay = 0.0
 
     static func geometryAnimation(
         for targetState: CapsulePresentationState,
@@ -19,9 +19,9 @@ private enum CapsuleV4Motion {
 
         switch targetState {
         case .collapsed, .hover:
-            return .easeOut(duration: collapsedToHoverDuration)
+            return .spring(response: 0.28, dampingFraction: 0.9)
         case .expanded:
-            return .easeInOut(duration: hoverToExpandedDuration)
+            return .spring(response: 0.34, dampingFraction: 0.9)
         }
     }
 

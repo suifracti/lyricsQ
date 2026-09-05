@@ -82,3 +82,9 @@ If the worktree is dirty, describe the version as `base HEAD + uncommitted chang
 
 - 歌词库可编辑原文/开始时间并保存独立修订版，原版保留；保存后可用“设为当前”切换新旧版。schema9 显式采用选择、资产包往返及原始数据保留已通过隔离验证。
 - Debug/Release与相关持久化、编辑器、迁移检查通过；新版已启动，原生编辑弹窗完整验收因 CUA 失效仍待验证。详见 `docs/work/experience-restoration/library-content-revisions-report.md`。
+
+## 2026-09-06 User feedback preview
+
+- 右上角合并曲库/历史/统计入口，新增歌词显示开关；观察到的单曲循环独立落库，历史/统计显示可用专辑封面并接受延迟封面补齐。
+- 环境光和远处歌词降低模糊，透明桌面歌词移除整窗阴影与叠加光晕，胶囊缩短悬停等待并使用弹簧几何动画。窗口自由缩放保留。
+- 相关回归、Debug/Release通过，原生历史/统计封面可见；动态残影/胶囊手感及自动隐藏工具栏的直接交互仍待实机验收。详见 `docs/work/experience-restoration/experience-feedback-report.md`。

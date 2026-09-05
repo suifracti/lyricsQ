@@ -258,7 +258,7 @@ final class CapsuleLyricsWindowController: NSObject, ObservableObject, NSWindowD
         guard presentationState != .expanded else { return }
         setPresentationState(.hover)
         hoverExpandTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: 450_000_000)
+            try? await Task.sleep(nanoseconds: 140_000_000)
             guard !Task.isCancelled, let self, self.pointerIsInside else { return }
             self.expand(explicit: false)
         }
@@ -270,7 +270,7 @@ final class CapsuleLyricsWindowController: NSObject, ObservableObject, NSWindowD
         guard presentationState != .collapsed, expansionInteraction.permitsHoverCollapse(menuPresented: menuIsPresented),
               !isSeeking, hoverCollapseTask == nil else { return }
         hoverCollapseTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: 350_000_000)
+            try? await Task.sleep(nanoseconds: 220_000_000)
             guard !Task.isCancelled, let self, !self.pointerIsInside,
                   self.expansionInteraction.permitsHoverCollapse(menuPresented: self.menuIsPresented) else { return }
             self.collapse()

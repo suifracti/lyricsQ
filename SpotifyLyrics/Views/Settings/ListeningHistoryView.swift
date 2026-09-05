@@ -51,11 +51,8 @@ public struct ListeningHistoryView: View {
             } else {
                 List(playback.listeningHistory) { entry in
                     HStack(spacing: 12) {
-                        Image(systemName: "music.note")
-                            .frame(width: 28, height: 28)
-                            .foregroundStyle(.secondary)
-                            .background(Color.secondary.opacity(0.12))
-                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                        ListeningArtwork(url: entry.artworkURL)
+
 
                         VStack(alignment: .leading, spacing: 3) {
                             Text(entry.title)
@@ -92,6 +89,31 @@ public struct ListeningHistoryView: View {
         }
         .onAppear {
             playback.refreshListeningHistory()
+        }
+    }
+}
+
+/// Shared cached cover for observed playback, with a neutral missing-art fallback.
+struct ListeningArtwork: View {
+    let url: URL?
+    @State private var image: NSImage?
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 7).fill(Color.secondary.opacity(0.1))
+            if let image {
+                Image(nsImage: image).resizable().scaledToFill()
+            } else {
+                Image(systemName: "music.note").foregroundStyle(.secondary)
+            }
+        }
+        .frame(width: 40, height: 40)
+        .clipShape(RoundedRectangle(cornerRadius: 7))
+        .accessibilityLabel("专辑封面")
+        .task(id: url) {
+            image = nil
+            let loaded = await ArtworkImageLoader.shared.image(for: url)
+            guard !Task.isCancelled else { return }
+            image = loaded
         }
     }
 }

@@ -12,7 +12,7 @@ public struct ListeningStatisticsView: View {
                 VStack(alignment: .leading, spacing: 5) {
                     Text("听歌统计")
                         .font(.system(size: 25, weight: .semibold, design: .rounded))
-                    Text("仅统计 Lyric Island 运行期间实际观察到的播放，不代表 Spotify 完整历史。")
+                    Text("仅统计应用运行期间观察到的播放；新版会分别记录单曲循环，旧记录中合并的循环次数无法还原。")
                         .font(.system(size: 12, design: .rounded))
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -178,6 +178,7 @@ public struct ListeningStatisticsView: View {
                             .font(.system(.caption, design: .monospaced))
                             .foregroundStyle(.tertiary)
                             .frame(width: 22, alignment: .leading)
+                        ListeningArtwork(url: song.artworkURL)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(song.title)
                                 .font(.system(size: 13, weight: .semibold))

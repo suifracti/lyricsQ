@@ -816,8 +816,10 @@ public final class PlaybackState: ObservableObject {
         isListeningStatisticsLoading = true
         listeningStatisticsError = nil
         let repository = lyricsRepository
+        let pendingWrite = listeningHistoryWriteTask
         listeningStatisticsLoadTask = Task { @MainActor [weak self, repository] in
             do {
+                await pendingWrite?.value
                 let statistics = try await repository.loadListeningStatistics(for: timeRange)
                 guard !Task.isCancelled, let self else { return }
                 self.listeningStatistics = statistics
@@ -850,7 +852,9 @@ public final class PlaybackState: ObservableObject {
             entriesByID[entry.sessionID] = entry
         }
         for entry in current {
-            entriesByID[entry.sessionID] = entry
+            var enriched = entry
+            enriched.artworkURL = entry.artworkURL ?? entriesByID[entry.sessionID]?.artworkURL
+            entriesByID[entry.sessionID] = enriched
         }
         return entriesByID.values.sorted { lhs, rhs in
             if lhs.lastObservedAt != rhs.lastObservedAt {
@@ -1207,6 +1211,7 @@ public final class PlaybackState: ObservableObject {
             return
         }
 
+        listeningHistorySession?.noteExplicitSeek()
         let seekTime = time
         let previousPosition = currentTime
         #if DEBUG
@@ -2189,7 +2194,9 @@ public final class PlaybackState: ObservableObject {
         isPlaying: Bool
     ) {
         var session = ListeningHistorySession(track: track, identity: identity, startedAt: date)
-        session.observe(at: date, position: position, isPlaying: isPlaying)
+        if let completed = session.observe(at: date, position: position, isPlaying: isPlaying) {
+            publishListeningHistory(completed)
+        }
         listeningHistorySession = session
         publishListeningHistory(session.entry)
     }
@@ -2200,7 +2207,10 @@ public final class PlaybackState: ObservableObject {
         isPlaying: Bool
     ) {
         guard var session = listeningHistorySession else { return }
-        session.observe(at: date, position: position, isPlaying: isPlaying)
+        session.updateArtwork(currentTrack.artworkURL)
+        if let completed = session.observe(at: date, position: position, isPlaying: isPlaying) {
+            publishListeningHistory(completed)
+        }
         listeningHistorySession = session
         publishListeningHistory(session.entry)
     }
