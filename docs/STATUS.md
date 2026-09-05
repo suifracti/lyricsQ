@@ -2,6 +2,8 @@
 
 Status snapshot: 2026-09-06.
 
+V3 direct shortcuts: “外观背景” directly opens the existing cover/ambient/layout popover (removed from nested More menu); its open state prevents toolbar auto-hide. Lyric-version shortcut: a labeled “歌词版本” button now opens the existing saved-version picker directly from the top-right toolbar. The picker marks the current version and includes “查找更多歌词版本”. Track changes dismiss the old picker; open picker keeps toolbar visible. Existing adoption/storage logic is reused.
+
 Latest task preview (feature branch `codex/lyrics-search-ambient-fix`, based on main PR #22 / `54a73a2`): piano-version searches retain raw Japanese base titles and semicolon-separated primary artists; original-arrangement lyrics remain explicit candidates with a warning. A live QQ lookup recovered 72 lines for stb《アーカイブ - Piano Ver.》, with no timeline and no automatic adoption. Ambient 0% retains artwork; increasing diffusion softens it without increasing opacity. Classic split layout uses spacing instead of a vertical divider. See [verification report](work/experience-restoration/search-ambient-correction-report.md). Native feel still awaits user feedback; this is not a release or main merge.
 
 Library preview: per-version local names and notes can be edited for lyrics, translations, readings and timing. Original labels remain visible; Restore Default clears only local presentation metadata. Metadata does not travel in asset exports.

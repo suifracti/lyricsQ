@@ -26,6 +26,8 @@ struct AppleMusicImmersiveV3WindowView: View {
     @State private var isWindowMenuPresented = false
     @State private var isMorePresented = false
     @State private var isDisplayPresented = false
+    @State private var isVersionPickerPresented = false
+    @State private var isAppearancePresented = false
     @State private var morePage = "root"
     // The canvas starts clean. Controls reveal only when the pointer reaches
     // the top edge, so playback remains content-first without sacrificing
@@ -556,7 +558,7 @@ struct AppleMusicImmersiveV3WindowView: View {
     }
 
     private var toolbarPanelIsPresented: Bool {
-        isWindowMenuPresented || isMorePresented || isSearchPresented || isDisplayPresented
+        isWindowMenuPresented || isMorePresented || isSearchPresented || isDisplayPresented || isVersionPickerPresented || isAppearancePresented
     }
 
     private func toolBar(for size: CGSize) -> some View {
@@ -575,6 +577,19 @@ struct AppleMusicImmersiveV3WindowView: View {
                 .accessibilityHidden(true)
             Button { openWindow(id: "personal-library-activity") } label: {
                 iconLabel("books.vertical", description: "歌词库与收听记录")
+            }
+            CurrentSongOperationsView(state: state, versionShortcutOnly: true, onVersionPickerPresentationChange: { isVersionPickerPresented = $0 })
+                .environmentObject(settings)
+            Button { isAppearancePresented.toggle() } label: {
+                Label("外观背景", systemImage: "slider.horizontal.3")
+                    .font(.system(size: 12, weight: .medium))
+                    .padding(.horizontal, 8)
+                    .frame(height: 32)
+            }
+            .help("调整外观、封面与环境光")
+            .accessibilityIdentifier("appearance.shortcut")
+            .popover(isPresented: $isAppearancePresented, arrowEdge: .top) {
+                V3VisualTuningPopoverView(settings: settings, layoutStyleRawValue: $layoutStyleRawValue)
             }
             Button { isDisplayPresented.toggle() } label: {
                 iconLabel("character.bubble", description: "歌词显示")
@@ -669,8 +684,6 @@ struct AppleMusicImmersiveV3WindowView: View {
             }
             if morePage == "lyrics" {
                 CurrentSongOperationsView(state: state).environmentObject(settings)
-            } else if morePage == "appearance" {
-                V3VisualTuningPopoverView(settings: settings, layoutStyleRawValue: $layoutStyleRawValue)
             } else {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("更多")
@@ -679,7 +692,6 @@ struct AppleMusicImmersiveV3WindowView: View {
                         .padding(.horizontal, 10)
                         .padding(.vertical, 6)
                     toolbarAction("当前歌曲与歌词", symbol: "music.note.list") { morePage = "lyrics" }
-                    toolbarAction("外观与背景", symbol: "slider.horizontal.3") { morePage = "appearance" }
                     SettingsLink {
                         Label("设置", systemImage: "gearshape")
                             .frame(maxWidth: .infinity, alignment: .leading)

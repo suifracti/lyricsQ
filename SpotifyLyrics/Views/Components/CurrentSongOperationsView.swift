@@ -5,6 +5,8 @@ import SwiftUI
 /// this view owns no repository, search task, timer, or playback command.
 struct CurrentSongOperationsView: View {
     @ObservedObject var state: PlaybackState
+    var versionShortcutOnly = false
+    var onVersionPickerPresentationChange: (Bool) -> Void = { _ in }
     @ObservedObject private var autoAlign = AutomaticAlignmentJobController.shared
     @EnvironmentObject private var settings: AppSettingsStore
     @Environment(\.openWindow) private var openWindow
@@ -36,40 +38,27 @@ struct CurrentSongOperationsView: View {
     }
 
     var body: some View {
-        ScrollView(.vertical) {
-            VStack(alignment: .leading, spacing: 14) {
-                header
-                Divider()
-                lyricsSection
-                versionStatusSection
-                Divider()
-                languageSection
-                Divider()
-                readingSection
-                if !state.liveLyrics.isEmpty {
-                    Divider()
-                    translationSection
+        Group {
+            if versionShortcutOnly {
+                Button { openLyricsVersionPicker() } label: {
+                    Label("歌词版本", systemImage: "text.badge.checkmark")
+                        .font(.system(size: 12, weight: .medium))
+                        .padding(.horizontal, 8)
+                        .frame(height: 32)
                 }
-                if showsAutomaticAlignmentSection {
-                    Divider()
-                    automaticAlignmentSection
-                }
-                if hasAlignmentAction {
-                    Divider()
-                    alignmentSection
-                }
-                if !notice.isEmpty {
-                    Text(notice)
-                        .font(.system(size: 11, design: .rounded))
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+                .help("切换当前歌曲的歌词版本")
+                .accessibilityIdentifier("lyrics.versionShortcut")
+            } else {
+                operationsPanel
             }
-            .padding(18)
         }
-        .scrollIndicators(.hidden)
-        .frame(width: 360, alignment: .leading)
-        .frame(maxHeight: 560, alignment: .leading)
+        .onChange(of: state.currentTrackIdentity) { _, _ in
+            showLyricsVersionPicker = false
+            adoptingLyricsVersionID = nil
+        }
+        .onChange(of: showLyricsVersionPicker) { _, presented in
+            onVersionPickerPresentationChange(presented)
+        }
         .preferredColorScheme(.dark)
         .confirmationDialog(
             "删除当前翻译版本？",
@@ -128,10 +117,51 @@ struct CurrentSongOperationsView: View {
                 isLoading: isLoadingLyricsVersions,
                 message: lyricsVersionMessage,
                 adoptingVersionID: adoptingLyricsVersionID,
-                onAdopt: adoptLyricsVersion
+                onAdopt: adoptLyricsVersion,
+                onSearch: {
+                    showLyricsVersionPicker = false
+                    state.retryLyrics()
+                }
             )
             .preferredColorScheme(.dark)
         }
+    }
+
+    private var operationsPanel: some View {
+        ScrollView(.vertical) {
+            VStack(alignment: .leading, spacing: 14) {
+                header
+                Divider()
+                lyricsSection
+                versionStatusSection
+                Divider()
+                languageSection
+                Divider()
+                readingSection
+                if !state.liveLyrics.isEmpty {
+                    Divider()
+                    translationSection
+                }
+                if showsAutomaticAlignmentSection {
+                    Divider()
+                    automaticAlignmentSection
+                }
+                if hasAlignmentAction {
+                    Divider()
+                    alignmentSection
+                }
+                if !notice.isEmpty {
+                    Text(notice)
+                        .font(.system(size: 11, design: .rounded))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .padding(18)
+        }
+        .scrollIndicators(.hidden)
+        .frame(width: 360, alignment: .leading)
+        .frame(maxHeight: 560, alignment: .leading)
     }
 
     private var header: some View {
@@ -925,6 +955,7 @@ private struct LyricsVersionPickerView: View {
     let message: String
     let adoptingVersionID: UUID?
     let onAdopt: (UUID) -> Void
+    let onSearch: () -> Void
 
     @Environment(\.dismiss) private var dismiss
 
@@ -960,6 +991,9 @@ private struct LyricsVersionPickerView: View {
                     }
                 }
             }
+
+            Button("查找更多歌词版本", systemImage: "magnifyingglass", action: onSearch)
+                .disabled(adoptingVersionID != nil)
 
             if !message.isEmpty, !isLoading, !versions.isEmpty {
                 Text(message)
