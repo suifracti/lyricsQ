@@ -265,7 +265,7 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         let lowerBound = timeRange.lowerBound.timeIntervalSince1970
 
         let summaryStatement = try prepare("""
-            SELECT COALESCE(SUM(observed_playback_duration), 0), COUNT(*)
+            SELECT COALESCE(SUM(observed_playback_duration), 0), COUNT(*), COUNT(DISTINCT track_stable_key)
             FROM listening_history_sessions
             WHERE last_observed_at >= ?;
             """)
@@ -274,6 +274,7 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         guard sqlite3_step(summaryStatement) == SQLITE_ROW else { throw lastError() }
         let totalListeningTime = sqlite3_column_double(summaryStatement, 0)
         let sessionCount = Int(sqlite3_column_int(summaryStatement, 1))
+        let uniqueSongCount = Int(sqlite3_column_int(summaryStatement, 2))
 
         let songsStatement = try prepare("""
             SELECT track_stable_key, MIN(title), MIN(artist),
@@ -322,12 +323,54 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
             ))
         }
 
+        let calendar = Calendar.current
+        let now = Date()
+        let startOfToday = calendar.startOfDay(for: now)
+        let sevenDaysAgo = calendar.date(byAdding: .day, value: -6, to: startOfToday) ?? startOfToday
+
+        let trendLowerBound = sevenDaysAgo.timeIntervalSince1970
+        let trendStatement = try prepare("""
+            SELECT strftime('%Y-%m-%d', started_at, 'unixepoch', 'localtime'), COUNT(*)
+            FROM listening_history_sessions
+            WHERE started_at >= ?
+            GROUP BY 1;
+            """)
+        defer { sqlite3_finalize(trendStatement) }
+        try bindDouble(trendLowerBound, at: 1, to: trendStatement)
+        var countsByDateString: [String: Int] = [:]
+        while sqlite3_step(trendStatement) == SQLITE_ROW {
+            if let dateString = columnText(trendStatement, index: 0) {
+                countsByDateString[dateString] = Int(sqlite3_column_int(trendStatement, 1))
+            }
+        }
+
+        let isoFormatter = DateFormatter()
+        isoFormatter.dateFormat = "yyyy-MM-dd"
+        isoFormatter.locale = Locale(identifier: "en_US_POSIX")
+        isoFormatter.timeZone = .current
+
+        let labelFormatter = DateFormatter()
+        labelFormatter.dateFormat = "M/d"
+        labelFormatter.locale = Locale(identifier: "zh_CN")
+        labelFormatter.timeZone = .current
+
+        var dailyPlayCounts: [ListeningStatisticsDailyCount] = []
+        for offset in 0..<7 {
+            guard let dayDate = calendar.date(byAdding: .day, value: offset, to: sevenDaysAgo) else { continue }
+            let key = isoFormatter.string(from: dayDate)
+            let count = countsByDateString[key] ?? 0
+            let label = labelFormatter.string(from: dayDate)
+            dailyPlayCounts.append(ListeningStatisticsDailyCount(date: dayDate, dayLabel: label, count: count))
+        }
+
         return ListeningStatistics(
             timeRange: timeRange,
             totalListeningTime: totalListeningTime,
             sessionCount: sessionCount,
+            uniqueSongCount: uniqueSongCount,
             topSongs: topSongs,
-            topArtists: topArtists
+            topArtists: topArtists,
+            dailyPlayCounts: dailyPlayCounts
         )
     }
 

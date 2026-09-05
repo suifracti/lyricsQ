@@ -31,6 +31,9 @@ public struct ListeningStatisticsView: View {
                         emptyState
                     } else {
                         summary(statistics)
+                        if !statistics.dailyPlayCounts.isEmpty {
+                            trendSection(statistics.dailyPlayCounts)
+                        }
                         topSongs(statistics.topSongs)
                         topArtists(statistics.topArtists)
                     }
@@ -83,9 +86,14 @@ public struct ListeningStatisticsView: View {
                 icon: "clock"
             )
             summaryCard(
-                title: "观察 session 数",
+                title: "播放记录",
                 value: "\(statistics.sessionCount)",
                 icon: "music.note.list"
+            )
+            summaryCard(
+                title: "独立歌曲数",
+                value: "\(statistics.uniqueSongCount)",
+                icon: "music.quarternote.3"
             )
         }
     }
@@ -104,53 +112,104 @@ public struct ListeningStatisticsView: View {
         .clipShape(RoundedRectangle(cornerRadius: 10))
     }
 
-    private func topSongs(_ songs: [ListeningStatisticsSong]) -> some View {
-        statisticsGroup(title: "Top Songs", icon: "music.note") {
-            ForEach(Array(songs.enumerated()), id: \.element.id) { index, song in
-                HStack(spacing: 10) {
-                    Text("\(index + 1)")
-                        .font(.system(.caption, design: .monospaced))
-                        .foregroundStyle(.tertiary)
-                        .frame(width: 22, alignment: .leading)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(song.title)
-                            .font(.system(size: 13, weight: .semibold))
-                            .lineLimit(1)
-                        Text(song.artist)
+    private func trendSection(_ dailyCounts: [ListeningStatisticsDailyCount]) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                Label("最近 7 天", systemImage: "chart.bar")
+                    .font(.headline)
+                Text("每日观察播放记录")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            HStack(alignment: .bottom, spacing: 12) {
+                let maxCount = max(dailyCounts.map(\.count).max() ?? 0, 1)
+                ForEach(dailyCounts) { item in
+                    VStack(spacing: 6) {
+                        Text("\(item.count)")
+                            .font(.system(size: 10, weight: .medium, design: .monospaced))
+                            .foregroundStyle(item.count > 0 ? .primary : .tertiary)
+
+                        let barHeight = item.count > 0
+                            ? max(6, CGFloat(item.count) / CGFloat(maxCount) * 56)
+                            : 4
+
+                        VStack {
+                            Spacer(minLength: 0)
+                            RoundedRectangle(cornerRadius: 3)
+                                .fill(item.count > 0 ? Color.accentColor : Color.secondary.opacity(0.18))
+                                .frame(height: barHeight)
+                        }
+                        .frame(height: 60)
+
+                        Text(item.dayLabel)
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
-                            .lineLimit(1)
                     }
-                    Spacer(minLength: 8)
-                    Text(formattedDuration(song.observedListeningTime))
-                        .font(.system(.caption, design: .monospaced))
-                        .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity)
                 }
-                if song.id != songs.last?.id {
-                    Divider()
+            }
+            .padding(14)
+            .background(Color(nsColor: .controlBackgroundColor))
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+        }
+    }
+
+    @ViewBuilder
+    private func topSongs(_ songs: [ListeningStatisticsSong]) -> some View {
+        let displaySongs = Array(songs.prefix(5))
+        if !displaySongs.isEmpty {
+            statisticsGroup(title: "Top Songs", icon: "music.note") {
+                ForEach(Array(displaySongs.enumerated()), id: \.element.id) { index, song in
+                    HStack(spacing: 10) {
+                        Text("\(index + 1)")
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundStyle(.tertiary)
+                            .frame(width: 22, alignment: .leading)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(song.title)
+                                .font(.system(size: 13, weight: .semibold))
+                                .lineLimit(1)
+                            Text(song.artist)
+                                .font(.system(size: 11))
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+                        Spacer(minLength: 8)
+                        Text("\(song.sessionCount) 次 · \(formattedDuration(song.observedListeningTime))")
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                    }
+                    if song.id != displaySongs.last?.id {
+                        Divider()
+                    }
                 }
             }
         }
     }
 
+    @ViewBuilder
     private func topArtists(_ artists: [ListeningStatisticsArtist]) -> some View {
-        statisticsGroup(title: "Top Artists", icon: "person.2") {
-            ForEach(Array(artists.enumerated()), id: \.element.id) { index, artist in
-                HStack(spacing: 10) {
-                    Text("\(index + 1)")
-                        .font(.system(.caption, design: .monospaced))
-                        .foregroundStyle(.tertiary)
-                        .frame(width: 22, alignment: .leading)
-                    Text(artist.artist)
-                        .font(.system(size: 13, weight: .semibold))
-                        .lineLimit(1)
-                    Spacer(minLength: 8)
-                    Text(formattedDuration(artist.observedListeningTime))
-                        .font(.system(.caption, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                }
-                if artist.id != artists.last?.id {
-                    Divider()
+        let displayArtists = Array(artists.prefix(5))
+        if !displayArtists.isEmpty {
+            statisticsGroup(title: "Top Artists", icon: "person.2") {
+                ForEach(Array(displayArtists.enumerated()), id: \.element.id) { index, artist in
+                    HStack(spacing: 10) {
+                        Text("\(index + 1)")
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundStyle(.tertiary)
+                            .frame(width: 22, alignment: .leading)
+                        Text(artist.artist)
+                            .font(.system(size: 13, weight: .semibold))
+                            .lineLimit(1)
+                        Spacer(minLength: 8)
+                        Text("\(artist.sessionCount) 次 · \(formattedDuration(artist.observedListeningTime))")
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                    }
+                    if artist.id != displayArtists.last?.id {
+                        Divider()
+                    }
                 }
             }
         }
