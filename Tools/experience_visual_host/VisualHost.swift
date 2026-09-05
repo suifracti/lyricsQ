@@ -1,0 +1,227 @@
+// Appended only to a temporary Main.swift by build.py. Production entry is retained
+// as an ordinary type; this test-only App is the sole executable entry point.
+import SQLite3
+
+private enum ExperienceArguments {
+    static func value(_ key: String, fallback: String) -> String {
+        let args = ProcessInfo.processInfo.arguments
+        guard let index = args.firstIndex(of: key), args.indices.contains(index + 1) else { return fallback }
+        return args[index + 1]
+    }
+    static let root = URL(fileURLWithPath: "/tmp/lyrics-experience-visual-host/fixtures/run-\(UUID().uuidString)", isDirectory: true)
+    static let surface = value("--surface", fallback: "main")
+    static let size = CGSize(width: Double(value("--width", fallback: "1152")) ?? 1152, height: Double(value("--height", fallback: "720")) ?? 720)
+}
+
+@MainActor
+private final class ExperiencePlaybackProvider: PlaybackProvider {
+    let displayName = "Isolated visual fixture"
+    var position: TimeInterval = Double(ExperienceArguments.value("--time", fallback: "18")) ?? 18
+    var playing = false
+    var track: ProviderTrack
+    init(artwork: URL?) {
+        track = ProviderTrack(id: "spotify:track:visualfixture", title: "夜を越えて · After the rain", artist: "Visual Fixture", album: "Native rendering study", duration: 240, artworkURL: artwork)
+    }
+    func refresh() async -> PlaybackSnapshot { PlaybackSnapshot(status: .ready, track: track, position: position, isPlaying: playing) }
+    func play() async throws { playing = true }
+    func pause() async throws { playing = false }
+    func previous() async throws { position = 8 }
+    func next() async throws { position = 28 }
+    func seek(to position: TimeInterval) async throws { self.position = position }
+}
+private struct ExperienceLyricsProvider: LyricsProvider {
+    let name = "Generated fixture lyrics"
+    func lookup(track: Track, identity: TrackIdentity) async -> LyricsLookupResult {
+        let rows = [
+            "窓の向こうで 雨が静かにほどけてゆく",
+            "灯りをたどって 僕らは歩き出す",
+            "この夜を越えて、まだ見ぬ朝へ",
+            "让每一句歌词，都能被安静地读完",
+            "We keep the whole picture, even when the world grows small.",
+            "そして また 会える日まで"
+        ]
+        var lines = rows.enumerated().map { index, text in
+            var line = LyricLine(timestamp: Double(index) * 8, originalText: text)
+            line.translationText = ["窗外的雨正在静静散去", "沿着灯光，我们开始前行", "越过今夜，走向未见的清晨", "Every line deserves a little room to breathe.", "即使世界变小，也保留完整的画面。", "直到我们再次相见"][index]
+            return line
+        }
+        if ExperienceArguments.value("--language", fallback: "japanese") == "chinese" {
+            lines[2].originalText = "沿着微光前行，让歌声陪你到天明"
+            lines[2].translationText = "Follow the light, let the song carry you to dawn."
+        }
+        if ProcessInfo.processInfo.arguments.contains("--long-line") {
+            lines[2].originalText =  "この夜を越えて、まだ見ぬ朝へ。長い歌詞が表示領域を越えて切り落とされることなく、静かな読みやすさを保ちながら流れていく。"
+        }
+        if ProcessInfo.processInfo.arguments.contains("--aux-layers") {
+            lines[2].kanaText = "このよるをこえて、まだみぬあさへ"
+            lines[2].romajiText = "Kono yoru o koete, mada minu asa e"
+        }
+        if ProcessInfo.processInfo.arguments.contains("--timed") {
+            var offset = 0
+            lines[2].timedSpans = lines[2].originalText.enumerated().map { index, character in
+                let text = String(character)
+                defer { offset += text.utf16.count }
+                return TimedTextSpan(id: index, text: text, startTime: 16 + Double(index) * 0.4,
+                                     endTime: 16 + Double(index + 1) * 0.4,
+                                     utf16Start: offset, utf16Length: text.utf16.count)
+            }
+        }
+        return .match(LyricsDocument(identity: identity, title: track.title, artist: track.artist, album: track.album, duration: track.duration, lines: lines, isSynchronized: true, source: .local, confidence: 1))
+    }
+}
+
+@MainActor
+private enum ExperienceArtwork {
+    static func make() -> URL? {
+        let kind = ExperienceArguments.value("--artwork", fallback: "square")
+        guard kind != "none" else { return nil }
+        let size: CGSize = kind == "panorama" ? CGSize(width: 1800, height: 360) : kind == "portrait" ? CGSize(width: 600, height: 900) : kind == "landscape" ? CGSize(width: 900, height: 540) : CGSize(width: 800, height: 800)
+        let image = NSImage(size: size)
+        image.lockFocus()
+        let bounds = CGRect(origin: .zero, size: size)
+        let bright = kind == "bright"
+        NSColor(calibratedRed: bright ? 0.97 : 0.08, green: bright ? 0.94 : 0.12, blue: bright ? 0.86 : 0.20, alpha: 1).setFill()
+        bounds.fill()
+        let colors: [NSColor] = [.systemOrange, .systemPink, .systemIndigo]
+        for (index, color) in colors.enumerated() {
+            color.withAlphaComponent(0.72).setFill()
+            NSBezierPath(ovalIn: CGRect(x: size.width * (0.05 + Double(index) * 0.19), y: size.height * (0.10 + Double(index) * 0.11), width: size.width * 0.73, height: size.height * 0.65)).fill()
+        }
+        NSColor.white.setStroke()
+        let border = NSBezierPath(rect: bounds.insetBy(dx: 5, dy: 5)); border.lineWidth = 10; border.stroke()
+        let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.monospacedSystemFont(ofSize: 28, weight: .bold), .foregroundColor: bright ? NSColor.black : NSColor.white]
+        for (text, point) in [("TOP LEFT", CGPoint(x: 18, y: size.height-46)), ("TOP RIGHT", CGPoint(x:size.width-186,y:size.height-46)),("BOTTOM LEFT",CGPoint(x:18,y:18)),("BOTTOM RIGHT",CGPoint(x:size.width-230,y:18))] {
+            (text as NSString).draw(at: point, withAttributes: attrs)
+        }
+        ("AFTER\nTHE RAIN" as NSString).draw(in: CGRect(x: 50, y: size.height*0.36, width: size.width-100, height: 210), withAttributes: [.font:NSFont.systemFont(ofSize:56,weight:.black),.foregroundColor:NSColor.white])
+        image.unlockFocus()
+        guard let tiff=image.tiffRepresentation, let bitmap=NSBitmapImageRep(data:tiff), let png=bitmap.representation(using:.png,properties:[:]) else { return nil }
+        let url=ExperienceArguments.root.appendingPathComponent("\(kind).png")
+        try? png.write(to:url)
+        guard let base = ProcessInfo.processInfo.environment["VISUAL_ARTWORK_BASE_URL"] else { return nil }
+        return URL(string: base + "/" + ExperienceArguments.root.lastPathComponent + "/" + url.lastPathComponent)
+    }
+}
+
+@main
+struct ExperienceVisualHostApp: App {
+    @StateObject private var settings: AppSettingsStore
+    @StateObject private var playback: PlaybackState
+    @StateObject private var adapter = DirectionDProductStateAdapter()
+    init() {
+        let root=ExperienceArguments.root
+        try! FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let defaults=UserDefaults(suiteName:"com.lyricsq.visual-fixture.\(UUID().uuidString)")!
+        defaults.set(false,forKey:AppSettingsStore.Key.restoreWindowState)
+        defaults.set(false,forKey:AppSettingsStore.Key.automaticAlignmentEnabled)
+        if ProcessInfo.processInfo.arguments.contains("--aux-layers") {
+            defaults.set(KanaDisplayMode.independentLine.rawValue, forKey: AppSettingsStore.Key.kanaDisplayMode)
+        }
+        for (argument, key) in [("--desktop-mode", "desktopLyrics.lineMode"), ("--desktop-theme", "desktopLyrics.theme"), ("--desktop-companion", "desktopLyrics.companion")] {
+            let value = ExperienceArguments.value(argument, fallback: "")
+            if !value.isEmpty { defaults.set(value, forKey: key) }
+        }
+        if let font = Double(ExperienceArguments.value("--desktop-font", fallback: "")) { defaults.set(font, forKey: "desktopLyrics.fontSize") }
+        let settings=AppSettingsStore(defaults:defaults)
+        settings.floatingWindowAlwaysOnTop = true
+        settings.v3ArtworkPresentation = V3ArtworkPresentation.allCases.first { $0.title == ExperienceArguments.value("--style-title",fallback:"") } ?? (ExperienceArguments.value("--style",fallback:"ambient") == "stage" ? .stage : ExperienceArguments.value("--style",fallback:"ambient") == "classic" ? .classic : .ambient)
+        settings.v3ArtworkPosition=ExperienceArguments.value("--position",fallback:"left")
+        if let scale=Double(ExperienceArguments.value("--scale",fallback:"")) { settings.v3ArtworkSizeScale=scale }
+        if let blur=Double(ExperienceArguments.value("--blur",fallback:"")) { settings.v3BackdropBlurRadius=blur }
+        let provider=ExperiencePlaybackProvider(artwork:ExperienceArtwork.make())
+        let repository=SQLiteLyricsRepository(databaseURL:root.appendingPathComponent("fixture.sqlite3"), alignmentProvenanceDirectory:root.appendingPathComponent("provenance"))
+        _settings=StateObject(wrappedValue:settings)
+        _playback=StateObject(wrappedValue:PlaybackState(provider:provider,lyricsProvider:ExperienceLyricsProvider(),lyricsRepository:repository,settings:settings))
+        print("VISUAL_FIXTURE_ROOT",root.path)
+    }
+    var body: some Scene {
+        WindowGroup("Experience visual fixture",id:"fixture-main") {
+            ExperienceFixtureRoot(playback:playback,settings:settings)
+                .environmentObject(settings)
+                .environmentObject(playback)
+                .environmentObject(adapter)
+        }
+        .defaultSize(width:ExperienceArguments.size.width,height:ExperienceArguments.size.height)
+        .windowStyle(.hiddenTitleBar)
+        Settings { SettingsRootView().environmentObject(settings).environmentObject(playback).environmentObject(SettingsDataController()) }
+    }
+}
+private struct ExperienceFixtureRoot: View {
+    @ObservedObject var playback:PlaybackState
+    @ObservedObject var settings:AppSettingsStore
+    @StateObject private var floatingController = FloatingLyricsWindowController()
+    @StateObject private var capsuleController = CapsuleLyricsWindowController()
+    @State private var layout=MainWindowLayoutStyle.appleMusicImmersiveV3.rawValue
+    private var targetWindow: NSWindow? {
+        NSApp.windows.first {
+            switch ExperienceArguments.surface {
+            case "floating": return String(describing: type(of: $0)).contains("FloatingLyricsPanel")
+            case "capsule": return String(describing: type(of: $0)).contains("CapsuleLyricsPanel")
+            default: return $0.title == "Experience visual fixture"
+            }
+        }
+    }
+    var body:some View {
+        AppleMusicImmersiveV3WindowView(state:playback,settings:settings,layoutStyleRawValue:$layout)
+            .preferredColorScheme(.dark)
+            .onChange(of: floatingController.interactionMode) { mode in
+                print("FLOATING_MODE", mode.rawValue)
+                fflush(stdout)
+            }
+            .onChange(of: capsuleController.presentationState) { state in
+                print("CAPSULE_STATE", String(describing: state))
+                fflush(stdout)
+            }
+            .task {
+                playback.startProvider()
+                try? await Task.sleep(for:.seconds(1))
+                if ExperienceArguments.surface == "floating" { floatingController.show(state: playback, settings: settings) }
+                if ExperienceArguments.surface == "capsule" {
+                    capsuleController.show(state: playback, settings: settings)
+                    if ExperienceArguments.value("--capsule-state", fallback: "collapsed") == "expanded" { capsuleController.expand() }
+                }
+                try? await Task.sleep(for:.seconds(2))
+                for window in NSApp.windows where window.title == "Experience visual fixture" {
+                    window.setContentSize(ExperienceArguments.size)
+                    window.center()
+                }
+                if ExperienceArguments.surface == "floating", let panel = targetWindow as? NSPanel {
+                    panel.setContentSize(ExperienceArguments.size)
+                    panel.center()
+                    if ExperienceArguments.value("--desktop-backdrop", fallback: "") == "light", let content = panel.contentView {
+                        let backing = NSView(frame: content.frame)
+                        backing.wantsLayer = true
+                        backing.layer?.backgroundColor = NSColor.white.cgColor
+                        panel.contentView = backing
+                        content.frame = backing.bounds
+                        content.autoresizingMask = [.width, .height]
+                        backing.addSubview(content)
+                    }
+                    if ProcessInfo.processInfo.arguments.contains("--floating-behavior-checks") {
+                        floatingController.setInteractionMode(.locked)
+                        precondition(!panel.isMovable && !panel.isMovableByWindowBackground && !panel.styleMask.contains(.resizable) && !panel.ignoresMouseEvents)
+                        floatingController.setInteractionMode(.passThrough)
+                        precondition(panel.ignoresMouseEvents && !panel.isMovable && !panel.styleMask.contains(.resizable))
+                        floatingController.restoreInteractiveMode()
+                        precondition(panel.isMovable && panel.isMovableByWindowBackground && panel.styleMask.contains(.resizable) && !panel.ignoresMouseEvents)
+                        let visible = NSRect(x: -1280, y: -200, width: 1280, height: 800)
+                        let safe = FloatingLyricsWindowPersistence.shared.clamp(NSRect(x: -2000, y: -400, width: 2000, height: 1000), to: visible)
+                        precondition(visible.contains(safe) && safe.width == 960 && safe.height == 640)
+                        print("FLOATING_BEHAVIOR_CHECKS_PASSED")
+                    }
+                    floatingController.setInteractionMode(FloatingLyricsInteractionMode(rawValue: ExperienceArguments.value("--floating-mode", fallback: "interactive")) ?? .interactive)
+                }
+                try? await Task.sleep(for:.seconds(1))
+                let output=ExperienceArguments.value("--output",fallback:"")
+                if !output.isEmpty, let window=targetWindow, let view=window.contentView, let bitmap=view.bitmapImageRepForCachingDisplay(in:view.bounds) {
+                    view.cacheDisplay(in:view.bounds,to:bitmap)
+                    if let png=bitmap.representation(using:.png,properties:[:]) { try? png.write(to:URL(fileURLWithPath:output)); print("RENDERED",output) }
+                }
+                print("WINDOWS",NSApp.windows.map { "\($0.windowNumber):\($0.title):\($0.frame)" })
+                if ProcessInfo.processInfo.arguments.contains("--keep-open"), ExperienceArguments.surface != "main", let panel = targetWindow {
+                    NSApp.windows.first { $0.title == "Experience visual fixture" }?.orderOut(nil)
+                    panel.makeKeyAndOrderFront(nil)
+                } else if !ProcessInfo.processInfo.arguments.contains("--keep-open") { NSApp.terminate(nil) }
+            }
+    }
+}

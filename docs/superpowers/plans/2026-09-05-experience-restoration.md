@@ -59,3 +59,10 @@ Files: Views/Components/AppleMusicImmersiveV3BackdropView.swift, Views/MainWindo
 - [ ] Focused contracts + Debug/Release build + actual native rendered/interaction evidence.
 - [ ] Update STATUS honestly, verify no user data staged, commit/push each completed stage.
 - [ ] Materialize named preview build with source/build manifest; sync Obsidian. Do not claim completion until all user requirements verified.
+
+## Task 4 addendum — desktop typography replacement
+
+- Add failing pure tests for font bounds, single/double companion selection and no fabricated word timing.
+- Add scoped persisted desktop typography/mode/theme fields; independently build outlined text and hover transport/style controls.
+- Keep shared auxiliary visibility controls and exact timed-span validation; retain old renderer ID and stored frames.
+- Root builds isolated native host; inspect large-text wide/compact, bright background, companion/readings and real timing fixtures before accepting.

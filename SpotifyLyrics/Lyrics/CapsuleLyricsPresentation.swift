@@ -17,7 +17,7 @@ public enum CapsuleLyricsPresentationVersion: String, CaseIterable, Sendable, Ca
     case controlFocusedV2 = "capsule.controlFocused.v2"
     case dynamicIslandDarkV4 = "capsule.dynamicIslandDark.v4"
 
-    public static let current: Self = .controlFocusedV2
+    public static let current: Self = .dynamicIslandDarkV4
     public static let archived: [Self] = [.legacyV1]
 
     public var id: String { rawValue }
@@ -32,10 +32,8 @@ public enum CapsuleDynamicIslandDarkV4 {
     public static let hoverSize = CGSize(width: 332, height: 44)
     public static let expandedSize = CGSize(width: 600, height: 168)
 
-    /// Debug-only host envelope for the top-attached prototype. The
-    /// production presentation still uses the state-sized panel frames; this
-    /// value is intentionally large enough to keep the AppKit window fixed
-    /// while the internal island grows downward.
+    /// Fixed production host envelope. The historic public name remains an
+    /// API compatibility alias for verification tools.
     public static let debugEnvelopeSize = CGSize(width: 680, height: 240)
 
     public static func targetSize(for state: CapsulePresentationState) -> CGSize {
@@ -60,8 +58,7 @@ public enum CapsuleDynamicIslandDarkV4 {
         )
     }
 
-    /// Returns the fixed transparent host frame for the Debug top-attached
-    /// prototype. AppKit coordinates use the physical screen frame, so the
+    /// Returns the fixed transparent host frame for the top-attached island. AppKit coordinates use the physical screen frame, so the
     /// envelope's top edge is exactly `screenFrame.maxY` with no visible-frame
     /// or legacy top-inset adjustment.
     public static func topAttachedEnvelopeFrame(
@@ -131,6 +128,90 @@ public enum CapsuleDynamicIslandDarkV4 {
         )
         return CGRect(x: x, y: y, width: size.width, height: size.height)
     }
+}
+
+/// Physical display geometry shared by rendering and mouse hit testing.
+/// Auxiliary regions are in global screen coordinates. A symmetric reserve
+/// also handles displays whose camera housing is slightly off-center.
+public struct CapsuleNotchGeometry: Equatable, Sendable {
+    public let reservedWidth: CGFloat
+    public let depth: CGFloat
+
+    public init(screenFrame: CGRect, safeTopInset: CGFloat,
+                auxiliaryLeft: CGRect? = nil, auxiliaryRight: CGRect? = nil) {
+        depth = max(0, safeTopInset)
+        if depth > 0, let left = auxiliaryLeft, let right = auxiliaryRight,
+           right.minX > left.maxX {
+            reservedWidth = min(screenFrame.width, 2 * max(screenFrame.midX - left.maxX,
+                right.minX - screenFrame.midX) + 16)
+        } else {
+            // Never put content in a possible hardware area when macOS has
+            // reported a safe inset but has not yet supplied auxiliary areas.
+            reservedWidth = depth > 0 ? min(screenFrame.width, 240) : 0
+        }
+    }
+
+    public var expandedContentTop: CGFloat { depth > 0 ? depth + 8 : 0 }
+
+    public func size(for state: CapsulePresentationState) -> CGSize {
+        let base = CapsuleDynamicIslandDarkV4.targetSize(for: state)
+        return CGSize(width: max(base.width, reservedWidth + (state == .expanded ? 120 : 100)),
+                      height: state == .expanded ? base.height + expandedContentTop : max(base.height, depth + 6))
+    }
+
+    public func islandFrame(for state: CapsulePresentationState, envelopeSize: CGSize) -> CGRect {
+        let requested = size(for: state)
+        let size = CGSize(width: min(requested.width, envelopeSize.width),
+                          height: min(requested.height, envelopeSize.height))
+        return CGRect(x: (envelopeSize.width - size.width) / 2,
+                      y: envelopeSize.height - size.height, width: size.width, height: size.height)
+    }
+
+    /// A growing shell only enables new click targets after its animation
+    /// settles. Intersecting both shapes also excludes each rounded corner.
+    public func contains(_ point: CGPoint, state: CapsulePresentationState,
+                         restrictingTo previous: CapsulePresentationState,
+                         envelopeSize: CGSize) -> Bool {
+        contains(point, state: state, envelopeSize: envelopeSize)
+            && contains(point, state: previous, envelopeSize: envelopeSize)
+    }
+
+    public func contains(_ point: CGPoint, state: CapsulePresentationState, envelopeSize: CGSize) -> Bool {
+        let rect = islandFrame(for: state, envelopeSize: envelopeSize)
+        guard rect.contains(point) else { return false }
+        let radius: CGFloat = min(state == .expanded ? 26 : 22, rect.height / 2)
+        // Exclude the transparent rounded bottom corners from the live target.
+        if point.y < rect.minY + radius {
+            let centerX = point.x < rect.midX ? rect.minX + radius : rect.maxX - radius
+            if point.x < rect.minX + radius || point.x > rect.maxX - radius {
+                return hypot(point.x - centerX, point.y - rect.minY - radius) <= radius
+            }
+        }
+        let topRadius: CGFloat = state == .expanded ? 14 : 11
+        if point.y > rect.maxY - topRadius {
+            let centerX = point.x < rect.midX ? rect.minX + topRadius : rect.maxX - topRadius
+            if point.x < rect.minX + topRadius || point.x > rect.maxX - topRadius {
+                return hypot(point.x - centerX, point.y - rect.maxY + topRadius) <= topRadius
+            }
+        }
+        return true
+    }
+}
+
+/// Explicit keyboard/AX expansion has no physical hover entry. Keep it open
+/// until a real entry, an outside click, or an explicit collapse occurs.
+public struct CapsuleExpansionInteraction: Equatable, Sendable {
+    public private(set) var awaitsPointerEntry = false
+    public init() {}
+    public var permitsHoverCollapse: Bool { !awaitsPointerEntry }
+    public func permitsHoverCollapse(menuPresented: Bool) -> Bool {
+        permitsHoverCollapse && !menuPresented
+    }
+    public mutating func expanded(explicit: Bool, pointerInside: Bool) {
+        awaitsPointerEntry = explicit && !pointerInside
+    }
+    public mutating func pointerEntered() { awaitsPointerEntry = false }
+    public mutating func reset() { awaitsPointerEntry = false }
 }
 
 public enum CapsulePresentationState: Equatable, Sendable {

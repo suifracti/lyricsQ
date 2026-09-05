@@ -99,6 +99,10 @@ public final class AppSettingsStore: ObservableObject {
         public static let floatingWindowAlwaysOnTop = "general.floatingWindowAlwaysOnTop"
         public static let floatingWindowInteractionMode = "general.floatingWindowInteractionMode"
         public static let floatingWindowWasVisible = "general.floatingWindowWasVisible"
+        public static let floatingDesktopFontSize = "desktopLyrics.fontSize"
+        public static let floatingDesktopLineMode = "desktopLyrics.lineMode"
+        public static let floatingDesktopTheme = "desktopLyrics.theme"
+        public static let floatingDesktopCompanion = "desktopLyrics.companion"
         public static let floatingWindowOpacity = "general.floatingWindowOpacity"
         public static let floatingLyricsPresentation = "general.floatingLyricsPresentation"
         public static let floatingLyricsSurfaceStyle = "general.floatingLyricsSurfaceStyle"
@@ -217,6 +221,19 @@ public final class AppSettingsStore: ObservableObject {
 
     @Published public var floatingWindowWasVisible: Bool {
         didSet { defaults.set(floatingWindowWasVisible, forKey: Key.floatingWindowWasVisible) }
+    }
+
+    @Published public var floatingDesktopFontSize: Double {
+        didSet { defaults.set(floatingDesktopFontSize, forKey: Key.floatingDesktopFontSize) }
+    }
+    @Published public var floatingDesktopLineMode: String {
+        didSet { defaults.set(floatingDesktopLineMode, forKey: Key.floatingDesktopLineMode) }
+    }
+    @Published public var floatingDesktopTheme: String {
+        didSet { defaults.set(floatingDesktopTheme, forKey: Key.floatingDesktopTheme) }
+    }
+    @Published public var floatingDesktopCompanion: String {
+        didSet { defaults.set(floatingDesktopCompanion, forKey: Key.floatingDesktopCompanion) }
     }
 
     @Published public var floatingWindowOpacity: Double {
@@ -413,6 +430,10 @@ public final class AppSettingsStore: ObservableObject {
         floatingWindowInteractionModeRawValue = defaults.string(forKey: Key.floatingWindowInteractionMode)
             ?? "interactive"
         floatingWindowWasVisible = defaults.object(forKey: Key.floatingWindowWasVisible) as? Bool ?? false
+        floatingDesktopFontSize = FloatingDesktopTypography.fontSize(defaults.object(forKey: Key.floatingDesktopFontSize) as? Double ?? 34)
+        floatingDesktopLineMode = defaults.string(forKey: Key.floatingDesktopLineMode) ?? "double"
+        floatingDesktopTheme = defaults.string(forKey: Key.floatingDesktopTheme) ?? "mint"
+        floatingDesktopCompanion = defaults.string(forKey: Key.floatingDesktopCompanion) ?? "translation"
         floatingWindowOpacity = defaults.object(forKey: Key.floatingWindowOpacity) as? Double ?? 0.96
         floatingLyricsPresentationRawValue = defaults.string(forKey: Key.floatingLyricsPresentation)
             ?? FloatingLyricsPresentationVersion.current.rawValue

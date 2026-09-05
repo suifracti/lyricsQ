@@ -20,10 +20,10 @@ struct PresentationCatalogPreviewContract {
 
         precondition(catalog.metadata(for: "capsule.immersiveCompact.v3")?.supportsMockPreview == false,
                      "design-only capsule v3 must not claim a runnable mock renderer")
-        precondition(catalog.metadata(for: "capsule.dynamicIslandDark.v4")?.status == .recommended,
+        precondition(catalog.metadata(for: "capsule.dynamicIslandDark.v4")?.status == .current,
                      "v4 must be the recommended capsule presentation")
-        precondition(catalog.metadata(for: "capsule.controlFocused.v2")?.status == .current,
-                     "v2 must remain the current runtime capsule presentation")
+        precondition(catalog.metadata(for: "capsule.controlFocused.v2")?.status == .classic,
+                     "v2 must remain a compatible classic presentation")
 
         for category in PresentationCategory.allCases {
             let categoryEntries = catalog.entries(for: category)

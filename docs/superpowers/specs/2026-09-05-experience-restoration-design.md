@@ -20,3 +20,9 @@ Use existing PlaybackState, LyricsSessionController and repository. Keep renderi
 ## Validation boundary
 
 A source-string contract cannot prove visual quality. Render and inspect each user-facing surface with deterministic temporary fixtures, then verify product routes. Never operate the real user database as test storage. Tests/probes must record source SHA and isolated data path. Known gate-repository save-binding risk is not yet a proven product failure; investigate only as it affects touched session behavior.
+
+## Desktop addendum — explicit QQ / NetEase reference request
+
+User explicitly rejected the initial generic small-text floating treatment and requested a high-quality desktop-lyrics experience informed by Windows QQ/NetEase. Autonomous design iteration remains authorized. Independently implement the recognizable behavior: large outlined transparent lettering, a restrained sung/unsung palette, single/double line choice, and a compact hover transport/style bar. Do not copy reference code or assets.
+
+Desktop-only settings: 34 pt default font (22–64 adjustable), mint/amber/ice palette, single/double mode. Double defaults to translation and falls back to the next verse; a companion selector also exposes enabled kana/romanized readings. Shared original/translation/reading visibility remains available in the popover. Actual timed spans may highlight sung units; a line timestamp alone never generates word progress. Default unsaved frame becomes wide and low on screen; stored user frames remain authoritative. No extra clock/session/provider.

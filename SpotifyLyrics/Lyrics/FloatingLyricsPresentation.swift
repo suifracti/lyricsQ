@@ -53,8 +53,8 @@ public enum FloatingLyricsPresentationHelper {
         currentIndex: Int?,
         isSynchronized: Bool,
         isPlaying: Bool,
-        precedingCount: Int = 2,
-        followingCount: Int = 2
+        precedingCount: Int = 0,
+        followingCount: Int = 1
     ) -> FloatingLyricsSelection {
         guard isSynchronized, !lines.isEmpty else {
             return FloatingLyricsSelection(
@@ -97,5 +97,66 @@ public enum FloatingLyricsPresentationHelper {
     ) -> TimeInterval {
         guard isPlaying, elapsed.isFinite, elapsed > 0 else { return currentTime }
         return currentTime + elapsed
+    }
+}
+
+/// Reserve the same control strip before and during hover so lyrics never jump
+/// or sit under controls. Short panels devote their scroll area to one verse.
+public struct FloatingLyricsLayout: Equatable, Sendable {
+    public let toolbarHeight: CGFloat = 36
+    public let contentWidth: CGFloat
+    public let followingCount: Int
+
+    public init(width: CGFloat, height: CGFloat) {
+        contentWidth = max(1, width.isFinite ? width - 32 : 328)
+        followingCount = height >= 280 ? 1 : 0
+    }
+}
+
+public enum FloatingDesktopLineMode: String, CaseIterable, Sendable {
+    case single, double
+    public var title: String { self == .single ? "单行" : "双行" }
+}
+
+public enum FloatingDesktopTheme: String, CaseIterable, Sendable {
+    case mint, amber, ice
+    public var title: String {
+        switch self { case .mint: return "薄荷"; case .amber: return "暖金"; case .ice: return "冰蓝" }
+    }
+}
+
+public enum FloatingDesktopTypography {
+    public static func firstVisible(_ values: [String?]) -> String? {
+        values.compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }.first { !$0.isEmpty }
+    }
+
+    public static func fittedFontSize(requested: Double, height: Double, doubleLine: Bool) -> Double {
+        max(22, min(fontSize(requested), (height - 23) / (doubleLine ? 2.15 : 1.3)))
+    }
+
+    /// Spatial reveal only: never used as word highlighting or a playback clock.
+    public static func ribbonOffset(textWidth: Double, viewport: Double, elapsed: Double, duration: Double) -> Double {
+        guard textWidth.isFinite, viewport.isFinite, elapsed.isFinite, duration.isFinite else { return 0 }
+        let overflow = max(0, textWidth - viewport)
+        let progress = min(1, max(0, (elapsed - 0.5) / max(1, duration - 1)))
+        return overflow * progress
+    }
+
+    public static func fontSize(_ value: Double) -> Double {
+        value.isFinite ? min(64, max(22, value)) : 34
+    }
+
+    public static func companion(mode: FloatingDesktopLineMode, translation: String?, next: String?) -> String? {
+        guard mode == .double else { return nil }
+        return [translation, next].compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first { !$0.isEmpty }
+    }
+
+    public static func segments(line: LyricLine, currentTime: TimeInterval) -> [TimedTextSegment]? {
+        guard let spans = line.timedSpans, !spans.isEmpty,
+              spans.allSatisfy({ $0.startTime.isFinite && $0.endTime.isFinite && $0.endTime > $0.startTime }),
+              currentTime.isFinite else { return nil }
+        return TimedTextComposer.composeSegments(displayText: line.originalText,
+            originalText: line.originalText, spans: spans, currentTime: currentTime)
     }
 }

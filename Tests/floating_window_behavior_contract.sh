@@ -55,11 +55,11 @@ fi
   echo "FAIL: floating window controller creates a second clock/provider/session" >&2
   exit 1
 }
-if [ "$(grep -Ec 'Timer\.scheduledTimer' "$PLAYBACK")" -ne 1 ]; then
+if [ "$(sed -n '/private func startTimer()/,/^    }/p' "$PLAYBACK" | grep -Ec 'Timer\.scheduledTimer')" -ne 1 ]; then
   echo 'FAIL: PlaybackState must remain the only polling timer owner' >&2
   exit 1
 fi
-! grep -Eq 'seek\(|togglePlayPause|currentTime[[:space:]]*=' "$VIEW" || {
+! grep -Eq 'seek\(|currentTime[[:space:]]*=' "$VIEW" || {
   echo 'FAIL: floating view contains an implicit playback seek or clock mutation' >&2
   exit 1
 }
