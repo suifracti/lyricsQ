@@ -1605,73 +1605,6 @@ private enum V3TimedLayoutCache {
 /// Adds presentation-only line breaks for long plain-text lyrics. Stored
 /// lyrics, translations, timing, search matching, and ruby tokens are never
 /// changed. Ruby rows already wrap at morphology-token boundaries.
-private enum V3LyricDisplayLineBreaker {
-    private static let strongBreakCharacters: Set<Character> = ["。", "！", "？", "!", "?", "；", ";"]
-    private static let softBreakCharacters: Set<Character> = ["、", "，", ",", "・", "／", "/"]
-    private static let phraseEndings = ["から", "けど", "なら", "ので", "のに", "ても", "って", "だけ", "まで", "より"]
-    private static let forbiddenLineStarts: Set<Character> = ["、", "。", "，", ",", "！", "？", "!", "?", "」", "』", "）", ")", "】", "]"]
-
-    static func breakText(_ text: String, preferredLineLength: Int) -> String {
-        guard !text.contains("\n") else { return text }
-        let preferred = max(10, preferredLineLength)
-        var remaining = Array(text)
-        guard remaining.count > preferred else { return text }
-
-        var lines: [String] = []
-        while remaining.count > preferred {
-            let lower = max(6, Int(Double(preferred) * 0.55))
-            let upper = min(remaining.count - 1, Int(Double(preferred) * 1.08))
-            guard lower <= upper else { break }
-
-            let candidates = (lower...upper).compactMap { index -> (index: Int, score: Int, distance: Int)? in
-                let previous = remaining[index - 1]
-                let prefix = String(remaining[..<index])
-                let score: Int
-                if strongBreakCharacters.contains(previous) {
-                    score = 5
-                } else if softBreakCharacters.contains(previous) {
-                    score = 4
-                } else if previous.isWhitespace {
-                    score = 3
-                } else if phraseEndings.contains(where: { prefix.hasSuffix($0) }) {
-                    score = 2
-                } else {
-                    return nil
-                }
-                return (index, score, abs(preferred - index))
-            }
-
-            let selected = candidates.max { lhs, rhs in
-                lhs.score == rhs.score
-                    ? lhs.distance > rhs.distance
-                    : lhs.score < rhs.score
-            }?.index
-
-            var splitIndex = selected ?? preferred
-            if splitIndex < remaining.count,
-               forbiddenLineStarts.contains(remaining[splitIndex]) {
-                splitIndex += 1
-            }
-            guard splitIndex > 0, splitIndex < remaining.count else { break }
-
-            let line = String(remaining[..<splitIndex])
-                .trimmingCharacters(in: .whitespaces)
-            guard !line.isEmpty else { break }
-            lines.append(line)
-            remaining = Array(
-                String(remaining[splitIndex...])
-                    .trimmingCharacters(in: .whitespaces)
-            )
-        }
-
-        guard !lines.isEmpty else { return text }
-        if !remaining.isEmpty {
-            lines.append(String(remaining))
-        }
-        return lines.joined(separator: "\n")
-    }
-}
-
 private struct AppleMusicImmersiveV3LyricRow: View {
     let line: LyricLine
     let isActive: Bool
@@ -1773,13 +1706,18 @@ private struct AppleMusicImmersiveV3LyricRow: View {
     }
 
     private var semanticDisplayText: String {
-        let estimatedCharacterWidth = max(1, baseSize * 0.78)
-        let preferredLength = max(10, Int((readableLineWidth / estimatedCharacterWidth).rounded(.down)))
-        return V3LyricDisplayLineBreaker.breakText(
-            effectiveOriginalText,
-            preferredLineLength: preferredLength
-        )
+        let key = V3TimedLayoutCache.key(kind: "balancedPlain", line: line, fontSize: baseSize, weight: rowWeight.nsWeightValue, availableWidth: readableLineWidth)
+        if let cached = Self.balancedTextCache.object(forKey: key as NSString) { return cached as String }
+        let text = V3LyricDisplayLineBreaker.breakText(effectiveOriginalText, fontSize: baseSize, weight: rowWeight.nsWeightValue, availableWidth: readableLineWidth)
+        Self.balancedTextCache.setObject(text as NSString, forKey: key as NSString)
+        return text
     }
+
+    private static let balancedTextCache: NSCache<NSString, NSString> = {
+        let cache = NSCache<NSString, NSString>()
+        cache.countLimit = 256
+        return cache
+    }()
 
     private var isPinyinProjection: Bool {
         guard let representation = line.readingRepresentationID else { return false }
@@ -2133,7 +2071,8 @@ private struct AppleMusicImmersiveV3LyricRow: View {
                 fontSize: fontSize,
                 weight: weight,
                 design: "rounded",
-                availableWidth: width
+                availableWidth: width,
+                balanced: true
             )
         }
     }
