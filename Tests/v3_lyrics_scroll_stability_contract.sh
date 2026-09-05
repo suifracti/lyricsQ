@@ -29,7 +29,8 @@ grep -q 'onChange(of: currentIndex)' <<<"$viewport" || {
   exit 1
 }
 
-grep -q 'let lines = state.liveLyrics' <<<"$viewport" || {
+# Main V3 intentionally includes search preview; live-only would break that route.
+grep -q 'let lines = state.lyrics' <<<"$viewport" || {
   echo 'FAIL: V3 does not snapshot the lyric projection once per refresh' >&2
   exit 1
 }

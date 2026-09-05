@@ -55,7 +55,7 @@ public enum V3ArtworkPresentation: String, CaseIterable, Codable, Identifiable, 
     public var blurControlTitle: String {
         switch self {
         case .ambient: return "环境扩散程度"
-        case .stage: return "封面柔化程度"
+        case .stage: return "舞台光晕扩散"
         case .classic: return "背景高斯模糊度"
         }
     }

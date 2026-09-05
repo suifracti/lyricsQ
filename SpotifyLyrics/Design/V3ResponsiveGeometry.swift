@@ -175,61 +175,56 @@ enum V3ResponsiveGeometry {
         )
     }
 
-    /// Computes the pure window-level aspect-fit rect for the single stage artwork.
-    /// Uses the entire App window as the geometric container with minimal system
-    /// insets, calculating the largest possible uncropped, aspect-preserved rect
-    /// (e.g. side = min(canvasWidth - insets, canvasHeight - insets) for 1:1 covers).
-    /// Lyrics and HUD float as responsive overlays rather than shrinking the artwork.
+    /// The lower reading band is shared by the cover and foreground so lyrics
+    /// and transport never hide a cover edge, even at the technical minimum.
+    static func stageReadingHeight(canvasSize: CGSize) -> CGFloat {
+        min(280, max(220, finitePositive(canvasSize.height) * 0.34))
+    }
+
+    static func stageReadingRect(canvasSize: CGSize, artworkAspectRatio: CGFloat, position: String) -> CGRect {
+        let width = finitePositive(canvasSize.width)
+        let height = finitePositive(canvasSize.height)
+        let aspect = artworkAspectRatio.isFinite && artworkAspectRatio > 0 ? artworkAspectRatio : 1
+        let fullHeight = max(1, height - 64 - 100)
+        let artworkWidth = fullHeight * aspect
+        let remaining = width - artworkWidth - 80
+        if position != "center", remaining >= min(360, width * 0.38) {
+            return CGRect(x: position == "right" ? 24 : artworkWidth + 56,
+                          y: 80, width: max(1, remaining), height: max(1, height - 196))
+        }
+        return CGRect(x: 24, y: height - stageReadingHeight(canvasSize: canvasSize),
+                      width: max(1, width - 48), height: max(1, stageReadingHeight(canvasSize: canvasSize) - 100))
+    }
+
     static func stageArtworkRect(
         canvasSize: CGSize,
         artworkAspectRatio: CGFloat,
         requestedScale: CGFloat = 1.0,
         position: String = "left",
-        horizontalMargin: CGFloat = 18,
-        topInset: CGFloat = 16,
+        horizontalMargin: CGFloat = 24,
+        topInset: CGFloat = 64,
         bottomInset: CGFloat = 16
     ) -> CGRect {
-        let canvasWidth = finitePositive(canvasSize.width)
-        let canvasHeight = finitePositive(canvasSize.height)
-        let aspect = min(4, max(0.25, finiteValue(artworkAspectRatio)))
-
-        let top = min(canvasHeight, finiteNonNegative(topInset))
-        let bottom = min(max(0, canvasHeight - top), finiteNonNegative(bottomInset))
-        let margin = min(canvasWidth / 2, finiteNonNegative(horizontalMargin))
-
-        let safeHeight = max(1, canvasHeight - top - bottom)
-        let safeWidth = max(1, canvasWidth - margin * 2)
-
-        // Pure window-level aspect-fit:
-        var targetWidth: CGFloat
-        var targetHeight: CGFloat
-        if safeWidth / safeHeight > aspect {
-            targetHeight = safeHeight
-            targetWidth = targetHeight * aspect
-        } else {
-            targetWidth = safeWidth
-            targetHeight = targetWidth / aspect
-        }
-
-        // Horizontal alignment based on stage position
-        let preferredX: CGFloat
+        let width = finitePositive(canvasSize.width)
+        let height = finitePositive(canvasSize.height)
+        let aspect = artworkAspectRatio.isFinite && artworkAspectRatio > 0 ? artworkAspectRatio : 1
+        let margin = min(width / 3, finiteNonNegative(horizontalMargin))
+        let top = min(height * 0.2, finiteNonNegative(topInset))
+        let reading = stageReadingRect(canvasSize: canvasSize, artworkAspectRatio: aspect, position: position)
+        let usesSideReading = reading.minY == 80
+        let availableWidth = max(1, width - margin * 2)
+        let availableHeight = max(1, (usesSideReading ? height - 100 : reading.minY - finiteNonNegative(bottomInset)) - top)
+        let scale = min(1.4, max(0.8, finiteValue(requestedScale)))
+        let occupancy = scale <= 1 ? 0.80 + (scale - 0.8) * 0.5 : 0.90 + (scale - 1) * 0.25
+        let fittedHeight = min(availableHeight, availableWidth / aspect) * occupancy
+        let fittedWidth = fittedHeight * aspect
+        let x: CGFloat
         switch position {
-        case "right":
-            preferredX = canvasWidth - margin - targetWidth / 2
-        case "center":
-            preferredX = canvasWidth / 2
-        default:
-            preferredX = margin + targetWidth / 2
+        case "right": x = width - margin - fittedWidth
+        case "center": x = (width - fittedWidth) / 2
+        default: x = margin
         }
-
-        let preferredY = top + safeHeight / 2
-
-        return CGRect(
-            x: preferredX - targetWidth / 2,
-            y: preferredY - targetHeight / 2,
-            width: targetWidth,
-            height: targetHeight
-        )
+        return CGRect(x: x, y: top + (availableHeight - fittedHeight) / 2, width: fittedWidth, height: fittedHeight)
     }
 
     private static func finitePositive(_ value: CGFloat) -> CGFloat {

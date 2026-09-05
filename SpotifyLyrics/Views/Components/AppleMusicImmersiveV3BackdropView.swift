@@ -25,6 +25,7 @@ struct AppleMusicImmersiveV3BackdropView: View {
     let identity: TrackIdentity?
     var isInstrumental: Bool = false
     @ObservedObject var settings: AppSettingsStore
+    var onArtworkAspectRatioChange: ((CGFloat) -> Void)? = nil
 
     @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
     @State private var artworkImage: NSImage?
@@ -177,7 +178,7 @@ struct AppleMusicImmersiveV3BackdropView: View {
 
     private var effectiveBlurRadius: Double {
         if settings.v3InstrumentalPureImmersion && isInstrumental {
-            return 4.0
+            return normalizedBlur * 4.0
         }
         // Crisp continuous linear mapping (0% = 0.0pt, 25% = 7.0pt, 60% = 16.8pt, 100% = 28.0pt)
         // 0% is 100% clear artwork image, 100% maxes out at a soft 28pt blur instead of heavy mush
@@ -186,7 +187,7 @@ struct AppleMusicImmersiveV3BackdropView: View {
 
     private var effectiveScreenBlurRadius: Double {
         if settings.v3InstrumentalPureImmersion && isInstrumental {
-            return 1.2
+            return normalizedBlur * 1.2
         }
         return normalizedBlur * 14.0
     }
@@ -216,38 +217,17 @@ struct AppleMusicImmersiveV3BackdropView: View {
 
     @ViewBuilder
     private func stageArtworkLayers(image: NSImage, ambientImage: NSImage?) -> some View {
-        let style = presentationStyle
-        let saturation = min(1.35, style.paletteSaturation * 1.15)
+        // Album-derived light fills the surrounding stage without introducing
+        // a second enlarged/cropped copy of the artwork.
+        LinearGradient(
+            colors: [ambientColor(palette.primary, saturation: 1.1, maximumLuminance: 0.30),
+                     ambientColor(palette.secondary, saturation: 1, maximumLuminance: 0.16)],
+            startPoint: coverLightCenter,
+            endPoint: .bottomTrailing
+        )
+        RadialGradient(colors: [color(palette.glow).opacity(0.16 + normalizedBlur * 0.20), .clear],
+                       center: coverLightCenter, startRadius: 12, endRadius: 320 + normalizedBlur * 600)
 
-        // 1. Non-Semantic Low-Frequency Ambient Stage Extension (Layer 0)
-        // Fills the window canvas with abstract color temperature and soft light.
-        // Uses low-resolution ambient derivative heavily diffused so NO face, text,
-        // hair, or object contours can be recognized.
-        if let ambientImage {
-            Image(nsImage: ambientImage)
-                .resizable()
-                .interpolation(.low)
-                .scaledToFill()
-                .scaleEffect(1.24)
-                .blur(radius: 64.0 + normalizedBlur * 32.0, opaque: true)
-                .saturation(1.05 + normalizedBlur * 0.10)
-                .brightness(-0.02 - normalizedBlur * 0.05)
-                .opacity(1.0)
-        } else {
-            Image(nsImage: image)
-                .resizable()
-                .interpolation(.low)
-                .scaledToFill()
-                .scaleEffect(1.24)
-                .blur(radius: 80.0 + normalizedBlur * 32.0, opaque: true)
-                .saturation(1.05 + normalizedBlur * 0.10)
-                .brightness(-0.02 - normalizedBlur * 0.05)
-                .opacity(1.0)
-        }
-
-        // 2. The ONE AND ONLY High-Definition Aspect-Fit Stage Cover (Layer 1)
-        // 100% complete, uncropped, aspect-preserved master cover whose 4 edges
-        // are clearly visible, floating cleanly on the ambient stage.
         GeometryReader { geometry in
             let artworkAspectRatio = image.size.width > 0 && image.size.height > 0
                 ? image.size.width / image.size.height
@@ -256,7 +236,7 @@ struct AppleMusicImmersiveV3BackdropView: View {
                 canvas: geometry.size,
                 artworkAspectRatio: artworkAspectRatio
             )
-            let cornerRadius = min(20, max(12, artworkRect.width * 0.035))
+            let cornerRadius: CGFloat = 2
 
             Image(nsImage: image)
                 .resizable()
@@ -265,15 +245,9 @@ struct AppleMusicImmersiveV3BackdropView: View {
                 .frame(width: artworkRect.width, height: artworkRect.height)
                 .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
                 .shadow(color: Color.black.opacity(0.35), radius: 24, x: 0, y: 8)
-                .blur(radius: normalizedBlur * 20.0)
-                .saturation(1.0 + normalizedBlur * (saturation - 1.0))
-                .brightness(-normalizedBlur * 0.06)
                 .position(x: artworkRect.midX, y: artworkRect.midY)
         }
 
-        // 3. Directional Stage Reading Veil (Layer 2)
-        // Softly enhances right-side lyrics contrast without darkening the top or left stage.
-        stageReadingVeil
     }
 
     /// Stage presentation sizing helper for geometry contracts.
@@ -284,23 +258,8 @@ struct AppleMusicImmersiveV3BackdropView: View {
         V3ResponsiveGeometry.stageArtworkRect(
             canvasSize: canvas,
             artworkAspectRatio: artworkAspectRatio,
+            requestedScale: settings.v3ArtworkSizeScale,
             position: settings.v3ArtworkPosition
-        )
-    }
-
-    @ViewBuilder
-    private var stageReadingVeil: some View {
-        // Stage lyrics are a broad lower composition now; keep the veil
-        // vertical so artwork position changes do not recreate a side rail.
-        LinearGradient(
-            stops: [
-                .init(color: .clear, location: 0.18),
-                .init(color: Color.black.opacity(0.06), location: 0.42),
-                .init(color: Color.black.opacity(0.24), location: 0.70),
-                .init(color: Color.black.opacity(0.52), location: 1.0)
-            ],
-            startPoint: .top,
-            endPoint: .bottom
         )
     }
 
@@ -324,20 +283,6 @@ struct AppleMusicImmersiveV3BackdropView: View {
             startPoint: coverLightCenter,
             endPoint: settings.v3ArtworkPosition == "right" ? .topLeading : .bottomTrailing
         )
-
-        // At 0% the slider means what it says: the high-resolution artwork is
-        // visible without an artificial blur. As diffusion increases it fades
-        // into the low-frequency derivative instead of abruptly becoming a
-        // different composition.
-        Image(nsImage: image)
-            .resizable()
-            .interpolation(.high)
-            .scaledToFill()
-            .scaleEffect(1.02 + normalizedBlur * 0.06)
-            .blur(radius: normalizedBlur * 8.0, opaque: true)
-            .saturation(1.0 + normalizedBlur * (saturation - 1.0))
-            .brightness(-normalizedBlur * 0.10)
-            .opacity(0.52 * (1.0 - normalizedBlur))
 
         // The 48px derivative owns only the diffused end of the slider.
         if let ambientImage {
@@ -572,6 +517,7 @@ struct AppleMusicImmersiveV3BackdropView: View {
         // A track without artwork must not inherit the previous track's
         // palette while its new snapshot is being resolved.
         palette = .neutral
+        onArtworkAspectRatioChange?(1)
 
         if debugForceNoArtwork {
             outgoingArtworkImage = nil
@@ -593,6 +539,11 @@ struct AppleMusicImmersiveV3BackdropView: View {
         guard key == requestKey, !Task.isCancelled else { return }
 
         let nextArtwork = NSImage(data: snapshot.artworkData)
+        if let nextArtwork, nextArtwork.size.width > 0, nextArtwork.size.height > 0 {
+            // Publish with the loaded snapshot rather than a preference inside
+            // GeometryReader, whose layout may not be evaluated by its parent.
+            onArtworkAspectRatioChange?(nextArtwork.size.width / nextArtwork.size.height)
+        }
         let nextAmbientArtwork = NSImage(data: snapshot.ambientArtworkData)
         let nextNoise = NSImage(data: snapshot.noiseData)
         withAnimation(.easeInOut(duration: artworkTransitionDuration)) {

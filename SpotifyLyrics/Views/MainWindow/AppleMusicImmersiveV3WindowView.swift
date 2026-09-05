@@ -22,6 +22,7 @@ struct AppleMusicImmersiveV3WindowView: View {
     @Environment(\.openWindow) private var openWindow
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    @State private var stageArtworkAspectRatio: CGFloat = 1
     @State private var isSearchPresented = false
     @State private var isVisualTuningPresented = false
     // The canvas starts clean. Controls reveal only when the pointer reaches
@@ -54,7 +55,8 @@ struct AppleMusicImmersiveV3WindowView: View {
                     track: state.currentTrack,
                     identity: state.currentTrackIdentity,
                     isInstrumental: isInst,
-                    settings: settings
+                    settings: settings,
+                    onArtworkAspectRatioChange: { stageArtworkAspectRatio = $0 }
                 )
 
                 layout(for: geometry)
@@ -243,7 +245,7 @@ struct AppleMusicImmersiveV3WindowView: View {
     private func classicExpandedLayout(in geometry: GeometryProxy) -> some View {
         switch V3ResponsiveGeometry.layoutRegime(canvasSize: geometry.size) {
         case .compact:
-            classicCompactLayout(in: geometry)
+            adaptiveSplitLayout(in: geometry)
         case .regular, .wide:
             classicSplitLayout(
                 in: geometry,
@@ -305,9 +307,10 @@ struct AppleMusicImmersiveV3WindowView: View {
         )
         let coverSize = V3ResponsiveGeometry.boundedCoverSize(
             availableWidth: max(1, split.artwork - 28),
-            availableHeight: max(1, availableHeight - 166),
-            desiredSize: min(split.artwork - 28, availableHeight * (regime == .wide ? 0.70 : 0.64)),
-            minimum: min(regime == .wide ? 250 : 220, split.artwork - 28),
+            availableHeight: max(1, availableHeight - 196),
+            desiredSize: min(split.artwork - 28, availableHeight - 196)
+                * (0.70 + (foregroundArtworkScale - 0.8) * 0.5),
+            minimum: 1,
             maximum: regime == .wide ? 560 : 460
         )
         let trackCol = trackColumn(
@@ -362,72 +365,22 @@ struct AppleMusicImmersiveV3WindowView: View {
     private func stageTheaterLayout(in geometry: GeometryProxy) -> some View {
         let canvasWidth = max(1, geometry.size.width)
         let canvasHeight = max(1, geometry.size.height)
-        let regime = V3ResponsiveGeometry.layoutRegime(canvasSize: geometry.size)
-        let horizontalPadding: CGFloat
-        let lyricHeight: CGFloat
-        let hudWidth: CGFloat
-        let bottomPadding: CGFloat
-
-        switch regime {
-        case .compact:
-            horizontalPadding = 20
-            lyricHeight = max(110, min(170, canvasHeight * 0.28))
-            hudWidth = min(420, canvasWidth - horizontalPadding * 2)
-            bottomPadding = 14
-        case .regular:
-            horizontalPadding = 48
-            lyricHeight = max(150, min(224, canvasHeight * 0.30))
-            hudWidth = min(480, canvasWidth - horizontalPadding * 2)
-            bottomPadding = 22
-        case .wide:
-            horizontalPadding = 72
-            lyricHeight = max(180, min(260, canvasHeight * 0.29))
-            hudWidth = min(520, canvasWidth - horizontalPadding * 2)
-            bottomPadding = 26
-        }
-
-        let lyricsWidth = min(
-            max(1, canvasWidth - horizontalPadding * 2),
-            regime == .wide ? 960 : (regime == .regular ? 840 : 720)
+        let compact = V3ResponsiveGeometry.layoutRegime(canvasSize: geometry.size) == .compact
+        let reading = V3ResponsiveGeometry.stageReadingRect(
+            canvasSize: geometry.size,
+            artworkAspectRatio: stageArtworkAspectRatio,
+            position: settings.v3ArtworkPosition
         )
-        let lyricsCol = lyricsColumn(
-            width: lyricsWidth,
-            compact: regime == .compact
-        )
-        let hudView = StageHUDView(state: state, width: hudWidth)
+        let hudWidth = max(1, min(960, canvasWidth - (compact ? 40 : 80)))
 
         return ZStack(alignment: .topLeading) {
-            // A single broad, lower-stage veil gives the lyric group a
-            // readable stage without introducing a floating side panel.
-            LinearGradient(
-                stops: [
-                    .init(color: .clear, location: 0.18),
-                    .init(color: Color.black.opacity(0.08), location: 0.42),
-                    .init(color: Color.black.opacity(0.44), location: 0.70),
-                    .init(color: Color.black.opacity(0.72), location: 1.0)
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .frame(height: max(220, canvasHeight * 0.82))
-            .frame(maxHeight: .infinity, alignment: .bottom)
-            .allowsHitTesting(false)
-
-            // Lyrics belong to the stage itself: one broad centered group,
-            // with the active line and its nearby context supplied by the
-            // existing viewport semantics.
-            VStack(spacing: regime == .compact ? 8 : 12) {
-                lyricsCol
-                    .frame(width: lyricsWidth, height: lyricHeight)
-
-                hudView
-                    .frame(width: hudWidth)
-                    .frame(maxWidth: .infinity, alignment: .center)
-            }
-            .frame(width: lyricsWidth)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-            .padding(.horizontal, horizontalPadding)
-            .padding(.bottom, bottomPadding)
+            lyricsColumn(width: reading.width, compact: compact,
+                         currentVerseOnly: reading.width >= canvasWidth - 48)
+                .frame(width: reading.width, height: reading.height)
+                .position(x: reading.midX, y: reading.midY)
+            StageHUDView(state: state, width: hudWidth)
+                .frame(width: hudWidth, height: 78)
+                .position(x: canvasWidth / 2, y: canvasHeight - 47)
         }
         .frame(width: canvasWidth, height: canvasHeight)
     }
@@ -448,7 +401,8 @@ struct AppleMusicImmersiveV3WindowView: View {
                     track: state.currentTrack,
                     size: coverSize,
                     showsAlbumLabel: false,
-                    cornerRadiusRatio: 0.06
+                    cornerRadiusRatio: 0.06,
+                    preservesCompleteArtwork: true
                 )
                 .shadow(color: Color.black.opacity(0.32), radius: 20, x: 0, y: 8)
 
@@ -526,7 +480,8 @@ struct AppleMusicImmersiveV3WindowView: View {
                     track: state.currentTrack,
                     size: coverSize,
                     showsAlbumLabel: false,
-                    cornerRadiusRatio: 0.06
+                    cornerRadiusRatio: 0.06,
+                    preservesCompleteArtwork: true
                 )
                 .frame(maxWidth: width, alignment: alignment == .center ? .center : .leading)
 
@@ -598,6 +553,7 @@ struct AppleMusicImmersiveV3WindowView: View {
         width: CGFloat,
         compact: Bool,
         lyricsFocus: Bool = false,
+        currentVerseOnly: Bool = false,
         onSearch: (() -> Void)? = nil
     ) -> some View {
         AppleMusicImmersiveV3LyricsViewport(
@@ -605,7 +561,8 @@ struct AppleMusicImmersiveV3WindowView: View {
             availableWidth: max(1, width - (compact ? 22 : 34)),
             compact: compact,
             lyricsFocus: lyricsFocus,
-            onSearch: onSearch
+            onSearch: onSearch,
+            currentVerseOnly: currentVerseOnly
         )
         .environmentObject(settings)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -1049,84 +1006,40 @@ private struct StageHUDView: View {
     let width: CGFloat
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            // Title and Artist/Album
-            VStack(alignment: .leading, spacing: 4) {
-                Text(state.currentTrack.title)
-                    .font(.system(size: 24, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white)
-                    .lineLimit(2)
-                    .shadow(color: Color.black.opacity(0.55), radius: 6, x: 0, y: 2)
-
-                Text("\(state.currentTrack.artist) — \(state.currentTrack.album)")
-                    .font(.system(size: 13, weight: .medium, design: .rounded))
-                    .foregroundStyle(.white.opacity(0.82))
-                    .lineLimit(1)
-                    .shadow(color: Color.black.opacity(0.45), radius: 4, x: 0, y: 1)
-            }
-
-            // Transport Buttons + Progress in a sleek horizontal HUD
-            VStack(spacing: 6) {
-                HStack(spacing: 12) {
-                    V3TransportIconButton(
-                        systemImage: "backward.fill",
-                        label: "上一首",
-                        enabled: state.canControlSpotify
-                    ) {
+        VStack(spacing: 8) {
+            HStack(spacing: 20) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(state.currentTrack.title)
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                    Text("\(state.currentTrack.artist) — \(state.currentTrack.album)")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.72))
+                        .lineLimit(1)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                HStack(spacing: 16) {
+                    V3TransportIconButton(systemImage: "backward.fill", label: "上一首", enabled: state.canControlSpotify) {
                         state.previousTrack()
                     }
-
-                    Button {
+                    V3TransportIconButton(systemImage: state.isPlaying ? "pause.fill" : "play.fill", label: state.isPlaying ? "暂停" : "播放", enabled: state.canInteractWithPlayback) {
                         state.togglePlayPause()
-                    } label: {
-                        Image(systemName: state.isPlaying ? "pause.fill" : "play.fill")
-                            .font(.system(size: 18, weight: .semibold))
-                            .foregroundStyle(.white)
-                            .frame(width: 40, height: 40)
-                            .background(.ultraThinMaterial.opacity(0.80), in: Circle())
-                            .overlay(
-                                Circle()
-                                    .stroke(Color.white.opacity(0.24), lineWidth: 0.8)
-                            )
-                            .shadow(color: Color.black.opacity(0.25), radius: 8, y: 3)
                     }
-                    .buttonStyle(V3BounceButtonStyle())
-                    .disabled(!state.canInteractWithPlayback)
-                    .opacity(state.canInteractWithPlayback ? 1 : 0.42)
-                    .accessibilityLabel(state.isPlaying ? "暂停" : "播放")
-
-                    V3TransportIconButton(
-                        systemImage: "forward.fill",
-                        label: "下一首",
-                        enabled: state.canControlSpotify
-                    ) {
+                    V3TransportIconButton(systemImage: "forward.fill", label: "下一首", enabled: state.canControlSpotify) {
                         state.nextTrack()
                     }
-
-                    Spacer()
-                }
-
-                HStack(spacing: 8) {
-                    Text(formatTime(state.currentTime))
-                        .font(.system(size: 10, weight: .medium, design: .rounded).monospacedDigit())
-                        .foregroundStyle(.white.opacity(0.70))
-                        .shadow(color: Color.black.opacity(0.40), radius: 3, y: 1)
-
-                    AppleMusicImmersiveV3PlaybackProgress(
-                        state: state,
-                        density: .small,
-                        maxWidth: .infinity
-                    )
-
-                    Text(formatTime(state.currentTrack.duration))
-                        .font(.system(size: 10, weight: .medium, design: .rounded).monospacedDigit())
-                        .foregroundStyle(.white.opacity(0.70))
-                        .shadow(color: Color.black.opacity(0.40), radius: 3, y: 1)
                 }
             }
-            .padding(.top, 4)
+            HStack(spacing: 10) {
+                Text(formatTime(state.currentTime))
+                AppleMusicImmersiveV3PlaybackProgress(state: state, density: .small, maxWidth: .infinity)
+                Text(formatTime(state.currentTrack.duration))
+            }
+            .font(.system(size: 10, weight: .medium).monospacedDigit())
+            .foregroundStyle(.white.opacity(0.72))
         }
-        .frame(maxWidth: width, alignment: .leading)
+        .frame(maxWidth: width)
     }
 
     private func formatTime(_ seconds: TimeInterval) -> String {
@@ -1304,6 +1217,7 @@ private struct AppleMusicImmersiveV3LyricsViewport: View {
     let compact: Bool
     let lyricsFocus: Bool
     let onSearch: (() -> Void)?
+    var currentVerseOnly: Bool = false
     @EnvironmentObject private var settings: AppSettingsStore
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -1330,6 +1244,21 @@ private struct AppleMusicImmersiveV3LyricsViewport: View {
                 } else {
                     emptyState
                 }
+            } else if currentVerseOnly, synchronized, !state.isShowingSearchPreview {
+                // A short stage band cannot safely center a multi-layer verse
+                // between faded neighbours. Preserve the complete current row,
+                // start at its original text, and allow long verses to scroll.
+                let index = currentIndex.flatMap { lines.indices.contains($0) ? $0 : nil } ?? 0
+                ScrollView(.vertical) {
+                    row(for: lines[index], index: index, currentIndex: currentIndex,
+                        synchronized: synchronized, language: language,
+                        trackStableKey: trackStableKey, artistDisplay: artistDisplay)
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                        .padding(.top, 4)
+                        .padding(.bottom, 8)
+                }
+                .scrollIndicators(.automatic)
+                .id("stage-verse-\(state.lyricsSessionRevision)-\(lines[index].id)")
             } else {
                 lyricsScroll(
                     lines: lines,
@@ -2456,7 +2385,7 @@ private struct V3VisualTuningPopoverView: View {
                 }
             }
 
-            if settings.v3ArtworkPresentation != .stage {
+            Group {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack {
                         Text(settings.v3ArtworkPresentation.artworkSizeControlTitle)
