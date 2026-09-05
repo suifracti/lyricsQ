@@ -2365,39 +2365,41 @@ private struct V3VisualTuningPopoverView: View {
                 }
             }
 
-            Group {
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack {
-                        Text(settings.v3ArtworkPresentation.artworkSizeControlTitle)
-                            .font(.system(size: 12, weight: .medium))
-                        Spacer()
-                        Text("\(sizePresetName) · \(Int(settings.v3ArtworkSizeScale * 100))%")
-                            .font(.system(size: 11, weight: .bold).monospacedDigit())
-                            .foregroundStyle(.secondary)
-                    }
-                    Slider(value: $settings.v3ArtworkSizeScale, in: 0.8...1.4, step: 0.05)
+            if settings.v3ArtworkPresentation != .stage {
+                Group {
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Text(settings.v3ArtworkPresentation.artworkSizeControlTitle)
+                                .font(.system(size: 12, weight: .medium))
+                            Spacer()
+                            Text("\(sizePresetName) · \(Int(settings.v3ArtworkSizeScale * 100))%")
+                                .font(.system(size: 11, weight: .bold).monospacedDigit())
+                                .foregroundStyle(.secondary)
+                        }
+                        Slider(value: $settings.v3ArtworkSizeScale, in: 0.8...1.4, step: 0.05)
 
-                    HStack(spacing: 0) {
-                        sizePresetButton("精巧 80%", val: 0.80)
-                        Spacer()
-                        sizePresetButton("标准 100%", val: 1.00)
-                        Spacer()
-                        sizePresetButton("大图 120%", val: 1.20)
-                        Spacer()
-                        sizePresetButton("巨幕 140%", val: 1.40)
+                        HStack(spacing: 0) {
+                            sizePresetButton("精巧 80%", val: 0.80)
+                            Spacer()
+                            sizePresetButton("标准 100%", val: 1.00)
+                            Spacer()
+                            sizePresetButton("大图 120%", val: 1.20)
+                            Spacer()
+                            sizePresetButton("巨幕 140%", val: 1.40)
+                        }
                     }
                 }
-            }
 
-            VStack(alignment: .leading, spacing: 5) {
-                Text(settings.v3ArtworkPresentation.artworkPositionControlTitle)
-                    .font(.system(size: 12, weight: .medium))
-                Picker("", selection: $settings.v3ArtworkPosition) {
-                    Text("居左 (分栏)").tag("left")
-                    Text("居中 (中置)").tag("center")
-                    Text("居右 (右侧)").tag("right")
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(settings.v3ArtworkPresentation.artworkPositionControlTitle)
+                        .font(.system(size: 12, weight: .medium))
+                    Picker("", selection: $settings.v3ArtworkPosition) {
+                        Text("居左 (分栏)").tag("left")
+                        Text("居中 (中置)").tag("center")
+                        Text("居右 (右侧)").tag("right")
+                    }
+                    .pickerStyle(.segmented)
                 }
-                .pickerStyle(.segmented)
             }
 
             Toggle("纯音乐极简通透沉浸", isOn: $settings.v3InstrumentalPureImmersion)

@@ -184,7 +184,7 @@ enum V3ResponsiveGeometry {
                       width: readingWidth, height: max(1, height - 180))
     }
 
-    /// Aspect-fill cover geometry. The smallest zoom still covers the whole canvas.
+    /// Largest centered aspect-fit image. Legacy zoom/position never crop the stage.
     static func stageArtworkRect(
         canvasSize: CGSize,
         artworkAspectRatio: CGFloat,
@@ -194,16 +194,9 @@ enum V3ResponsiveGeometry {
         let width = finitePositive(canvasSize.width)
         let height = finitePositive(canvasSize.height)
         let aspect = artworkAspectRatio.isFinite && artworkAspectRatio > 0 ? artworkAspectRatio : 1
-        let zoom = min(1.4, max(0.8, finiteValue(requestedScale))) / 0.8
-        let imageHeight = max(height, width / aspect) * zoom
+        let imageHeight = min(height, width / aspect)
         let imageWidth = imageHeight * aspect
-        let x: CGFloat
-        switch position {
-        case "right": x = width - imageWidth
-        case "center": x = (width - imageWidth) / 2
-        default: x = 0
-        }
-        return CGRect(x: x, y: (height - imageHeight) / 2,
+        return CGRect(x: (width - imageWidth) / 2, y: (height - imageHeight) / 2,
                       width: imageWidth, height: imageHeight)
     }
 

@@ -47,7 +47,7 @@ public enum V3ArtworkPresentation: String, CaseIterable, Codable, Identifiable, 
     public var detail: String {
         switch self {
         case .ambient: return "抽取封面的低频色彩，前景保留完整封面"
-        case .stage: return "封面铺满整个舞台，歌词与播放信息叠在封面上"
+        case .stage: return "完整封面居中显示，模糊背景补齐空余区域"
         case .classic: return "保留原来的局部放大封面背景"
         }
     }
@@ -55,7 +55,7 @@ public enum V3ArtworkPresentation: String, CaseIterable, Codable, Identifiable, 
     public var blurControlTitle: String {
         switch self {
         case .ambient: return "环境扩散程度"
-        case .stage: return "封面背景柔化"
+        case .stage: return "补边背景柔化"
         case .classic: return "背景高斯模糊度"
         }
     }

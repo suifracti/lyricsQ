@@ -220,16 +220,27 @@ struct AppleMusicImmersiveV3BackdropView: View {
             let aspect = image.size.width > 0 && image.size.height > 0
                 ? image.size.width / image.size.height : 1.0
             let artworkRect = stageArtworkPlaneSize(canvas: geometry.size, artworkAspectRatio: aspect)
-            Image(nsImage: image)
-                .resizable()
-                .interpolation(.high)
-                .scaledToFill()
-                .frame(width: artworkRect.width, height: artworkRect.height)
-                .blur(radius: normalizedBlur * 4)
-                .position(x: artworkRect.midX, y: artworkRect.midY)
+            ZStack {
+                // Only the diffuse extension fills/crops; the original stays complete.
+                Image(nsImage: ambientImage ?? image)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: geometry.size.width, height: geometry.size.height)
+                    .clipped()
+                    .blur(radius: 24 + normalizedBlur * 42)
+                    .scaleEffect(1.12)
+                    .opacity(0.65)
+                Image(nsImage: image)
+                    .resizable()
+                    .interpolation(.high)
+                    .scaledToFit()
+                    .frame(width: artworkRect.width, height: artworkRect.height)
+                    .position(x: artworkRect.midX, y: artworkRect.midY)
+            }
+            .frame(width: geometry.size.width, height: geometry.size.height)
         }
         .clipped()
-        // A cover-backed stage, with no separate cover card or reading band.
+        // Full original cover over a diffuse extension; lyric layout is unchanged.
         Color.black.opacity(increaseContrast ? 0.40 : 0.24)
         LinearGradient(colors: [.black.opacity(0.08), .clear, .black.opacity(0.30)],
                        startPoint: .top, endPoint: .bottom)

@@ -115,11 +115,13 @@ struct V3ResponsiveGeometryContract {
             for aspect: CGFloat in [0.2, 0.65, 1, 1.8, 5] {
                 let small = V3ResponsiveGeometry.stageArtworkRect(canvasSize: canvas, artworkAspectRatio: aspect, requestedScale: 0.8)
                 let large = V3ResponsiveGeometry.stageArtworkRect(canvasSize: canvas, artworkAspectRatio: aspect, requestedScale: 1.4)
-                precondition(small.width < large.width, "stage zoom must adjust the background crop")
+                precondition(small == large, "saved zoom cannot crop the complete stage cover")
                 for position in ["left", "center", "right"] {
                     let cover = V3ResponsiveGeometry.stageArtworkRect(canvasSize: canvas, artworkAspectRatio: aspect, requestedScale: 0.8, position: position)
+                    precondition(abs(cover.midX - bounds.midX) < 0.001 && abs(cover.midY - bounds.midY) < 0.001, "complete cover stays centered regardless of saved position")
+                    precondition(abs(cover.width - canvas.width) < 0.001 || abs(cover.height - canvas.height) < 0.001, "cover uses the largest uncropped fit")
                     let reading = V3ResponsiveGeometry.stageReadingRect(canvasSize: canvas, artworkAspectRatio: aspect, position: position)
-                    precondition(cover.insetBy(dx: -0.001, dy: -0.001).contains(bounds), "cover must fill the entire stage, including behind lyrics")
+                    precondition(bounds.insetBy(dx: -0.001, dy: -0.001).contains(cover), "entire source image must stay inside the stage")
                     precondition(abs(cover.width / cover.height - aspect) < 0.001, "background preserves source proportions")
                     precondition(bounds.contains(reading) && reading.height > canvas.height * 0.5, "lyrics overlay gets the central stage, not a lower band")
                     precondition(reading == V3ResponsiveGeometry.stageReadingRect(canvasSize: canvas, artworkAspectRatio: 1, position: "center"), "lyrics position must not depend on cover orientation")
