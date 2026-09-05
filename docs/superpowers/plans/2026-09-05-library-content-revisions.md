@@ -1,0 +1,5 @@
+# Library content revisions
+
+User clarified that editing means saving changed lyrics as a NEW version, with the original selectable later. Add per-lyrics-version Edit as New Version sheet, load full original with line timestamps, edit text/timing using value drafts, save a new UUID with parentVersionID via existing saveManualEdit; never overwrite original lines or carry stale word timing/translation. Keep save and adopt separate; save must preserve current selection. Add explicit persisted preferred lyrics selection (schema 9) so existing lock/confidence ranking cannot override user's Set Current. Show revision/source relationship in cards. Names/notes remain optional local metadata.
+
+Verify isolated source preservation, parent linkage, unchanged timestamps, no-op rejection, save current preservation, locked-source fork, selecting low-confidence/original/new versions, reopen/export, wrong-source refusal. Back up and verify existing v8->9 migration with user-copy before runtime. Build Debug/Release and inspect native UI without saving test lyrics to user DB. Deliver separate preview and honest report; preserve formal user's dirty checkout.
