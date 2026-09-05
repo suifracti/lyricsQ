@@ -6,6 +6,7 @@ struct MainLyricsWindowView: View {
     @EnvironmentObject private var settings: AppSettingsStore
     @EnvironmentObject private var directionDAdapter: DirectionDProductStateAdapter
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.openSettings) private var openSettings
     @State private var isSearchPresented = false
 
     private var layoutStyle: MainWindowLayoutStyle {
@@ -97,6 +98,9 @@ struct MainLyricsWindowView: View {
         }
 #endif
         .onAppear {
+            MenuBarLyricsController.shared.setOpenSettingsHandler { [openSettings] in
+                openSettings()
+            }
             MenuBarLyricsController.shared.setOpenMainWindowHandler { [openWindow] in
                 openWindow(id: "main-window")
             }
@@ -194,7 +198,7 @@ struct MainLyricsWindowView: View {
                 _ = state.prepareManualLyricsFromTXT()
             },
             onOpenSettings: {
-                NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+                openSettings()
             },
             onRetryAutomaticAlignment: {
                 AutomaticAlignmentJobController.shared.retry()

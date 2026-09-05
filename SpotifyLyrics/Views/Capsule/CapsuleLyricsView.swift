@@ -1,13 +1,13 @@
 import SwiftUI
 
-/// Motion policy for the Debug v4 island. Geometry and content use separate
+/// Motion policy for the v4 island. Geometry and content use separate
 /// transactions so the fixed top anchor never inherits the content cross-fade
 /// and a spring cannot overshoot the 40/44 pt compact envelope.
 private enum CapsuleV4Motion {
     static let collapsedToHoverDuration = 0.24
     static let hoverToExpandedDuration = 0.36
     static let contentFadeDuration = 0.12
-    static let contentFadeDelay = 0.05
+    static let contentFadeDelay = 0.0
 
     static func geometryAnimation(
         for targetState: CapsulePresentationState,
@@ -19,9 +19,9 @@ private enum CapsuleV4Motion {
 
         switch targetState {
         case .collapsed, .hover:
-            return .easeOut(duration: collapsedToHoverDuration)
+            return .spring(response: 0.28, dampingFraction: 0.9)
         case .expanded:
-            return .easeInOut(duration: hoverToExpandedDuration)
+            return .spring(response: 0.34, dampingFraction: 0.9)
         }
     }
 
@@ -81,13 +81,7 @@ struct CapsuleLyricsView: View {
         activePresentation == .dynamicIslandDarkV4
     }
 
-    private var isDebugTopAttachedV4: Bool {
-#if DEBUG
-        isDynamicIslandDarkV4 && windowController.debugTopAttachedEnvelope
-#else
-        false
-#endif
-    }
+    private var isTopAttachedV4: Bool { isDynamicIslandDarkV4 && windowController.isTopAttachedEnvelope }
 
     private var shellCornerRadius: CGFloat {
         guard isDynamicIslandDarkV4 else { return 18 }
@@ -104,8 +98,8 @@ struct CapsuleLyricsView: View {
     private var shellShape: CapsuleV4ShellShape {
         CapsuleV4ShellShape(
             cornerRadius: shellCornerRadius,
-            topAttached: isDebugTopAttachedV4,
-            topAttachedCornerRadius: isDebugTopAttachedV4
+            topAttached: isTopAttachedV4,
+            topAttachedCornerRadius: isTopAttachedV4
                 ? (windowController.presentationState == .expanded ? 14 : 11)
                 : 0
         )
@@ -122,10 +116,12 @@ struct CapsuleLyricsView: View {
         sizedContainer
         .contentShape(Rectangle())
         .onHover { inside in
-            inside ? windowController.pointerEntered() : windowController.pointerExited()
+            if !isTopAttachedV4 {
+                inside ? windowController.pointerEntered() : windowController.pointerExited()
+            }
         }
         .onTapGesture {
-            if windowController.presentationState == .hover {
+            if windowController.presentationState != .expanded {
                 windowController.expand()
             }
         }
@@ -144,18 +140,16 @@ struct CapsuleLyricsView: View {
 
     @ViewBuilder
     private var sizedContainer: some View {
-        if isDebugTopAttachedV4 {
-            let islandSize = CapsuleDynamicIslandDarkV4.targetSize(
-                for: windowController.presentationState
-            )
+        if isTopAttachedV4 {
+            let islandSize = windowController.islandSize
             ZStack(alignment: .top) {
                 dynamicIslandDarkV4Container
                     .frame(width: islandSize.width, height: islandSize.height)
                     .clipShape(shellShape)
             }
             .frame(
-                width: CapsuleDynamicIslandDarkV4.debugEnvelopeSize.width,
-                height: CapsuleDynamicIslandDarkV4.debugEnvelopeSize.height,
+                width: windowController.envelopeSize.width,
+                height: windowController.envelopeSize.height,
                 alignment: .top
             )
             .animation(
@@ -189,6 +183,8 @@ struct CapsuleLyricsView: View {
             dynamicIslandDarkV4Content
                 .padding(.horizontal, v4ContentHorizontalPadding)
                 .padding(.vertical, windowController.presentationState == .expanded ? 12 : 6)
+                .padding(.top, windowController.presentationState == .expanded
+                    ? windowController.notchGeometry.expandedContentTop : 0)
         }
     }
 
@@ -249,31 +245,32 @@ struct CapsuleLyricsView: View {
 
     @ViewBuilder
     private var dynamicIslandDarkV4Content: some View {
-        let state = windowController.presentationState
-        ZStack(alignment: .topLeading) {
-            v4CollapsedContent
-                .opacity(state == .collapsed ? 1 : 0)
-                .allowsHitTesting(state == .collapsed)
-                .accessibilityHidden(state != .collapsed)
-
-            v4HoverContent
-                .opacity(state == .hover ? 1 : 0)
-                .allowsHitTesting(state == .hover)
-                .accessibilityHidden(state != .hover)
-
-            v4ExpandedContent
-                .opacity(state == .expanded ? 1 : 0)
-                .allowsHitTesting(state == .expanded)
-                .accessibilityHidden(state != .expanded)
+        let presentation = windowController.presentationState
+        Group {
+            if presentation == .expanded {
+                v4ExpandedContent
+            } else if windowController.notchGeometry.reservedWidth > 0 {
+                HStack(spacing: 0) {
+                    v4Artwork(size: 24)
+                        .frame(maxWidth: .infinity)
+                    Color.clear.frame(width: windowController.notchGeometry.reservedWidth)
+                    Button { windowController.expand() } label: {
+                        Image(systemName: state.isPlaying ? "waveform" : "play.fill")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
+                    .buttonStyle(.plain)
+                    .help("展开灵动岛")
+                    .accessibilityLabel("展开灵动岛")
+                }
+            } else {
+                v4CollapsedContent
+            }
         }
         .transition(.opacity)
-        .animation(
-            CapsuleV4Motion.contentAnimation(
-                for: state,
-                reduceMotion: accessibilityReduceMotion
-            ),
-            value: state
-        )
+        .animation(CapsuleV4Motion.contentAnimation(for: presentation,
+            reduceMotion: accessibilityReduceMotion), value: presentation)
     }
 
     /// Compact keeps one strong identity cue and one unambiguous playback
@@ -290,12 +287,15 @@ struct CapsuleLyricsView: View {
                 .truncationMode(.tail)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-            Image(systemName: state.hasLiveTrack
-                  ? (state.isPlaying ? "pause.fill" : "play.fill")
-                  : "ellipsis")
-                .font(.system(size: 11, weight: .bold))
-                .foregroundStyle(Color.white.opacity(0.92))
-                .frame(width: 18, height: 18)
+            Button { windowController.expand() } label: {
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(Color.white.opacity(0.92))
+                    .frame(width: 24, height: 24)
+            }
+            .buttonStyle(.plain)
+            .help("展开灵动岛")
+            .accessibilityLabel("展开灵动岛")
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
     }
@@ -377,26 +377,30 @@ struct CapsuleLyricsView: View {
                     ) { state.togglePlayPause() }
                     v4TransportButton("forward.end.fill", help: "下一首") { state.nextTrack() }
 
-                    Menu {
-                        Button("打开主窗口") { NSApp.activate(ignoringOtherApps: true) }
-                        Button("显示/隐藏桌面歌词") {
-                            WindowManager.shared.toggleFloatingLyrics(state: state)
-                        }
-                        if state.canOpenLyricsEditor {
-                            Button("编辑歌词") {
-                                state.prepareLyricsEditor()
-                                openWindow(id: "lyrics-editor")
-                            }
-                        }
-                    } label: {
+                    Button { windowController.setMenuPresented(true) } label: {
                         Image(systemName: "ellipsis.circle")
                             .font(.system(size: 15, weight: .semibold))
-                            .foregroundStyle(Color.white.opacity(0.74))
+                            .foregroundStyle(Color.white.opacity(0.84))
                             .frame(width: 24, height: 24)
                     }
-                    .menuStyle(.borderlessButton)
-                    .fixedSize()
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("更多操作")
                     .help("更多操作")
+                    .popover(isPresented: Binding(
+                        get: { windowController.menuIsPresented },
+                        set: { windowController.setMenuPresented($0) }
+                    ), arrowEdge: .bottom) {
+                        v4MoreActions
+                            .environment(\.colorScheme, .dark)
+                    }
+                    Spacer(minLength: 0)
+                    Button { windowController.collapse() } label: {
+                        Image(systemName: "chevron.up")
+                            .frame(width: 24, height: 24)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.white.opacity(0.8))
+                    .help("收起灵动岛")
                 }
             }
             .frame(width: 236, alignment: .leading)
@@ -405,6 +409,41 @@ struct CapsuleLyricsView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+    }
+
+    private var v4MoreActions: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            moreAction("打开主窗口", symbol: "macwindow") {
+                MenuBarLyricsController.shared.openMainWindow()
+            }
+            moreAction("显示/隐藏桌面歌词", symbol: "text.bubble") {
+                WindowManager.shared.toggleFloatingLyrics(state: state)
+            }
+            if state.canOpenLyricsEditor {
+                moreAction("编辑歌词", symbol: "square.and.pencil") {
+                    state.prepareLyricsEditor()
+                    openWindow(id: "lyrics-editor")
+                }
+            }
+        }
+        .padding(10)
+        .frame(width: 210)
+    }
+
+    private func moreAction(_ title: String, symbol: String, action: @escaping () -> Void) -> some View {
+        Button {
+            windowController.setMenuPresented(false)
+            action()
+        } label: {
+            Label(title, systemImage: symbol)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 8)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     private var v4ProgressSlider: some View {
@@ -432,6 +471,7 @@ struct CapsuleLyricsView: View {
                 // while drawing the track ourselves so the progress remains
                 // legible against the near-black v4 island.
                 Slider(value: progressBinding, in: 0...duration, onEditingChanged: { editing in
+                    windowController.setSeeking(editing)
                     if !editing, let draftPosition {
                         state.seek(to: draftPosition, source: "capsule-v4-slider")
                         self.draftPosition = nil
@@ -652,6 +692,7 @@ struct CapsuleLyricsView: View {
 
             HStack(spacing: 8) {
                 Slider(value: progressBinding, in: 0...duration, onEditingChanged: { editing in
+                    windowController.setSeeking(editing)
                     if !editing, let draftPosition {
                         state.seek(to: draftPosition, source: "capsule-slider")
                         self.draftPosition = nil
@@ -772,6 +813,7 @@ struct CapsuleLyricsView: View {
 
             HStack(spacing: 8) {
                 Slider(value: progressBinding, in: 0...duration, onEditingChanged: { editing in
+                    windowController.setSeeking(editing)
                     if !editing, let draftPosition {
                         state.seek(to: draftPosition, source: "capsule-slider")
                         self.draftPosition = nil
@@ -814,12 +856,8 @@ struct CapsuleLyricsView: View {
     }
 }
 
-/// A v4 Debug-only shell whose top edge has shallow shoulders. The shape is
-/// placed at the top of a fixed transparent envelope, so state changes reveal
-/// more of the island downward rather than moving the host window. The upper
-/// corner radius keeps the island from reading as a flat rectangle while the
-/// bottom uses a deeper continuous curve. Non-debug presentations use the
-/// same type with `topAttached == false`, preserving their existing shell.
+/// Independently implemented capsule shell. Legacy floating presentations use
+/// rounded rectangles; the attached product keeps its shallow top corners.
 struct CapsuleV4ShellShape: Shape {
     let cornerRadius: CGFloat
     let topAttached: Bool

@@ -17,29 +17,42 @@ public struct ListeningHistoryView: View {
             }
             .padding(.bottom, 10)
 
-            if playback.listeningHistory.isEmpty {
-                VStack(spacing: 8) {
-                    Spacer()
-                    Image(systemName: "clock.arrow.circlepath")
-                        .font(.system(size: 34))
-                        .foregroundStyle(.tertiary)
-                    Text("暂无 Lyric Island 观察记录")
-                        .font(.headline)
+            if let error = playback.listeningHistoryError {
+                HStack {
+                    Label(error, systemImage: "exclamationmark.triangle")
                         .foregroundStyle(.secondary)
-                    Text("播放歌曲后，这里会显示本次运行期间观察到的记录。")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
                     Spacer()
+                    Button("重试") { playback.refreshListeningHistory() }
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(.vertical, 12)
+            }
+            if playback.isListeningHistoryLoading {
+                ProgressView("读取最近播放…")
+                    .padding(.vertical, 12)
+            }
+
+            if playback.listeningHistory.isEmpty {
+                if playback.listeningHistoryError == nil && !playback.isListeningHistoryLoading {
+                    VStack(spacing: 8) {
+                        Spacer()
+                        Image(systemName: "clock.arrow.circlepath")
+                            .font(.system(size: 34))
+                            .foregroundStyle(.tertiary)
+                        Text("暂无 Lyric Island 观察记录")
+                            .font(.headline)
+                            .foregroundStyle(.secondary)
+                        Text("播放歌曲后，这里会显示本次运行期间观察到的记录。")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                        Spacer()
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
             } else {
                 List(playback.listeningHistory) { entry in
                     HStack(spacing: 12) {
-                        Image(systemName: "music.note")
-                            .frame(width: 28, height: 28)
-                            .foregroundStyle(.secondary)
-                            .background(Color.secondary.opacity(0.12))
-                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                        ListeningArtwork(url: entry.artworkURL)
+
 
                         VStack(alignment: .leading, spacing: 3) {
                             Text(entry.title)
@@ -76,6 +89,31 @@ public struct ListeningHistoryView: View {
         }
         .onAppear {
             playback.refreshListeningHistory()
+        }
+    }
+}
+
+/// Shared cached cover for observed playback, with a neutral missing-art fallback.
+struct ListeningArtwork: View {
+    let url: URL?
+    @State private var image: NSImage?
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 7).fill(Color.secondary.opacity(0.1))
+            if let image {
+                Image(nsImage: image).resizable().scaledToFill()
+            } else {
+                Image(systemName: "music.note").foregroundStyle(.secondary)
+            }
+        }
+        .frame(width: 40, height: 40)
+        .clipShape(RoundedRectangle(cornerRadius: 7))
+        .accessibilityLabel("专辑封面")
+        .task(id: url) {
+            image = nil
+            let loaded = await ArtworkImageLoader.shared.image(for: url)
+            guard !Task.isCancelled else { return }
+            image = loaded
         }
     }
 }

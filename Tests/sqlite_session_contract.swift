@@ -60,7 +60,7 @@ struct SQLiteSessionContract {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
 
-        let repository = SQLiteLyricsRepository(databaseURL: root.appendingPathComponent("SpotifyLyrics.sqlite3"))
+        let repository = SQLiteLyricsRepository(databaseURL: root.appendingPathComponent("SpotifyLyrics.sqlite3"), alignmentProvenanceDirectory: root.appendingPathComponent("provenance"))
         let track = Track(
             title: "恋風",
             artist: "Lilas",

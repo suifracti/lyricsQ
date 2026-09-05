@@ -75,22 +75,17 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
                 throw LyricsRepositoryError.sqlite("foreign_keys 未启用")
             }
             let existingVersion = try scalarInt("PRAGMA user_version;")
-            let allowV4Migration = permitsV4Migration(databaseAlreadyExisted: databaseAlreadyExisted)
-            let allowV6Migration = allowV4Migration && permitsReadingSchemaMigration()
-            if databaseAlreadyExisted, existingVersion > 0, existingVersion < 3 {
-                try createMigrationBackup(label: "pre-v3")
+            // Existing user databases follow the same forward migration path as
+            // fresh installs. A consistent snapshot is required before any upgrade.
+            if databaseAlreadyExisted, existingVersion < DatabaseMigrator.currentVersion {
+                try createMigrationBackup(label: "pre-v\(DatabaseMigrator.currentVersion)")
             }
-            if databaseAlreadyExisted,
-               existingVersion >= 3,
-               existingVersion < DatabaseMigrator.currentVersion,
-               allowV4Migration {
-                try createMigrationBackup(label: "pre-v4")
+            try DatabaseMigrator.migrate(handle)
+            guard try scalarInt("PRAGMA user_version;") == DatabaseMigrator.currentVersion else {
+                throw LyricsRepositoryError.migrationFailed(
+                    DatabaseMigrator.currentVersion, "数据库升级未完成，原有数据已保留。"
+                )
             }
-            try DatabaseMigrator.migrate(
-                handle,
-                allowV4Migration: allowV4Migration,
-                allowV6Migration: allowV6Migration
-            )
             try reloadRedirectResolver()
             prepared = true
         } catch let error as LyricsRepositoryError {
@@ -185,6 +180,15 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
 
     public func upsertListeningHistory(_ entry: ListeningHistoryEntry) async throws {
         try prepare()
+        if entry.artworkURL != nil {
+            let key = try resolvedCanonicalStableKey(entry.stableKey)
+            if try fetchTrack(stableKey: key)?.artworkURL == nil {
+                try upsertTrack(DatabaseTrackRecord(stableKey: key, spotifyID: nil, spotifyURI: nil, isrc: nil,
+                    title: entry.title, artistDisplay: entry.artist, album: entry.album,
+                    duration: entry.trackDuration ?? 0, artworkURL: entry.artworkURL?.absoluteString,
+                    createdAt: entry.startedAt, updatedAt: entry.lastObservedAt))
+            }
+        }
         let statement = try prepare("""
             INSERT INTO listening_history_sessions(
                 session_id, track_stable_key, title, artist, album,
@@ -219,6 +223,22 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         try stepDone(statement)
     }
 
+    /// Never turn a locked, interrupted or otherwise failed read into an empty/partial success.
+    private func stepListeningHistoryRow(_ statement: OpaquePointer) throws -> Bool {
+        switch sqlite3_step(statement) {
+        case SQLITE_ROW: return true
+        case SQLITE_DONE: return false
+        default: throw lastError()
+        }
+    }
+
+    private func listeningArtworkURL(stableKey: String) throws -> URL? {
+        for key in try resolvedIdentityFamily(stableKey: stableKey) {
+            if let text = try fetchTrack(stableKey: key)?.artworkURL, let url = URL(string: text) { return url }
+        }
+        return nil
+    }
+
     public func loadListeningHistory(limit: Int) async throws -> [ListeningHistoryEntry] {
         try prepare()
         let statement = try prepare("""
@@ -233,7 +253,7 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         try bindInt(max(1, min(limit, 500)), at: 1, to: statement)
 
         var entries: [ListeningHistoryEntry] = []
-        while sqlite3_step(statement) == SQLITE_ROW {
+        while try stepListeningHistoryRow(statement) {
             guard let sessionIDText = columnText(statement, index: 0),
                   let sessionID = UUID(uuidString: sessionIDText),
                   let stableKey = columnText(statement, index: 1),
@@ -252,7 +272,8 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
                 lastObservedAt: Date(timeIntervalSince1970: sqlite3_column_double(statement, 6)),
                 observedPlaybackDuration: sqlite3_column_double(statement, 7),
                 trackDuration: columnDouble(statement, index: 8),
-                completionRatio: columnDouble(statement, index: 9)
+                completionRatio: columnDouble(statement, index: 9),
+                artworkURL: try listeningArtworkURL(stableKey: stableKey)
             ))
         }
         return entries
@@ -275,6 +296,7 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         let totalListeningTime = sqlite3_column_double(summaryStatement, 0)
         let sessionCount = Int(sqlite3_column_int(summaryStatement, 1))
         let uniqueSongCount = Int(sqlite3_column_int(summaryStatement, 2))
+        guard sqlite3_step(summaryStatement) == SQLITE_DONE else { throw lastError() }
 
         let songsStatement = try prepare("""
             SELECT track_stable_key, MIN(title), MIN(artist),
@@ -288,7 +310,7 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         defer { sqlite3_finalize(songsStatement) }
         try bindDouble(lowerBound, at: 1, to: songsStatement)
         var topSongs: [ListeningStatisticsSong] = []
-        while sqlite3_step(songsStatement) == SQLITE_ROW {
+        while try stepListeningHistoryRow(songsStatement) {
             guard let stableKey = columnText(songsStatement, index: 0),
                   let title = columnText(songsStatement, index: 1),
                   let artist = columnText(songsStatement, index: 2) else {
@@ -299,7 +321,8 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
                 title: title,
                 artist: artist,
                 observedListeningTime: sqlite3_column_double(songsStatement, 3),
-                sessionCount: Int(sqlite3_column_int(songsStatement, 4))
+                sessionCount: Int(sqlite3_column_int(songsStatement, 4)),
+                artworkURL: try listeningArtworkURL(stableKey: stableKey)
             ))
         }
 
@@ -314,7 +337,7 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         defer { sqlite3_finalize(artistsStatement) }
         try bindDouble(lowerBound, at: 1, to: artistsStatement)
         var topArtists: [ListeningStatisticsArtist] = []
-        while sqlite3_step(artistsStatement) == SQLITE_ROW {
+        while try stepListeningHistoryRow(artistsStatement) {
             guard let artist = columnText(artistsStatement, index: 0) else { continue }
             topArtists.append(ListeningStatisticsArtist(
                 artist: artist,
@@ -338,7 +361,7 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         defer { sqlite3_finalize(trendStatement) }
         try bindDouble(trendLowerBound, at: 1, to: trendStatement)
         var countsByDateString: [String: Int] = [:]
-        while sqlite3_step(trendStatement) == SQLITE_ROW {
+        while try stepListeningHistoryRow(trendStatement) {
             if let dateString = columnText(trendStatement, index: 0) {
                 countsByDateString[dateString] = Int(sqlite3_column_int(trendStatement, 1))
             }
@@ -645,7 +668,10 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
             )
         }
 
-        guard disposition.disposition == .inserted else { return disposition }
+        guard disposition.disposition == .inserted else {
+            if let id = disposition.versionID { try setPersonalLibraryActiveLyrics(trackStableKey: canonicalKey, lyricsVersionID: id) }
+            return disposition
+        }
         do {
             _ = try alignmentProvenanceStore.write(
                 versionID: versionID,
@@ -657,6 +683,7 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
             try? alignmentProvenanceStore.remove(versionID: versionID)
             throw LyricsRepositoryError.unavailable("排轴 provenance 保存失败：\(error.localizedDescription)")
         }
+        try setPersonalLibraryActiveLyrics(trackStableKey: canonicalKey, lyricsVersionID: versionID)
         return disposition
     }
 
@@ -1309,9 +1336,12 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
             now: now
         ).map { canonicalAliasRecord($0, stableKey: canonicalKey) }
         let parentVersionID = request.isNewSource ? nil : request.sourceVersionID
+        let preservedSelection = request.preserveCurrentLyricsSelection
+            ? (try fetchBestVersion(stableKey: canonicalKey)?.id ?? request.sourceVersionID) : nil
 
         guard let translation = request.translation else {
             try withTransaction {
+                if let preservedSelection { try setPreferredLyricsVersion(trackStableKey: canonicalKey, lyricsVersionID: preservedSelection) }
                 try upsertTrack(trackRecord)
                 for alias in aliases { try insertAlias(alias) }
                 if let newLyricsID {
@@ -1327,6 +1357,9 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
                     try insertVersion(canonicalVersionRecord(record, stableKey: canonicalKey))
                     for line in targetRecords { try insertLine(line) }
                     try insertReadingLayers(request.readingLayers, versionID: newLyricsID, now: now)
+                    if !request.preserveCurrentLyricsSelection {
+                        try setPreferredLyricsVersion(trackStableKey: canonicalKey, lyricsVersionID: newLyricsID)
+                    }
                 }
                 return ()
             }
@@ -1372,6 +1405,7 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         )
 
         try withTransaction {
+            if let preservedSelection { try setPreferredLyricsVersion(trackStableKey: canonicalKey, lyricsVersionID: preservedSelection) }
             try upsertTrack(trackRecord)
             for alias in aliases { try insertAlias(alias) }
             if let newLyricsID {
@@ -1387,6 +1421,9 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
                 try insertVersion(canonicalVersionRecord(record, stableKey: canonicalKey))
                 for line in targetRecords { try insertLine(line) }
                 try insertReadingLayers(request.readingLayers, versionID: newLyricsID, now: now)
+                    if !request.preserveCurrentLyricsSelection {
+                        try setPreferredLyricsVersion(trackStableKey: canonicalKey, lyricsVersionID: newLyricsID)
+                    }
             }
             try insertTranslationVersion(translationRecord)
             for (index, text) in translation.lines.enumerated() {
@@ -1959,7 +1996,6 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
 
     private func createMigrationBackup(label: String) throws {
         guard let database else { throw LyricsRepositoryError.unavailable("SQLite handle 已关闭") }
-        _ = sqlite3_wal_checkpoint_v2(database, nil, SQLITE_CHECKPOINT_FULL, nil, nil)
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyyMMdd-HHmmss"
@@ -1969,11 +2005,39 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         if FileManager.default.fileExists(atPath: destination.path) {
             destination = directory.appendingPathComponent("\(base).\(label)-\(UUID().uuidString.prefix(8)).sqlite3")
         }
-        do {
-            try FileManager.default.copyItem(at: databaseURL, to: destination)
-        } catch {
-            throw LyricsRepositoryError.unavailable("migration \(label) 备份失败：\(error.localizedDescription)")
+        // SQLite's online backup includes committed WAL pages even while a
+        // reader holds a snapshot. Copying only the main file can lose them.
+        let temporary = destination.appendingPathExtension("\(UUID().uuidString).partial")
+        defer {
+            for suffix in ["", "-wal", "-shm", "-journal"] {
+                try? FileManager.default.removeItem(atPath: temporary.path + suffix)
+            }
         }
+        do {
+            var backupDatabase: OpaquePointer?
+            guard sqlite3_open_v2(temporary.path, &backupDatabase, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, nil) == SQLITE_OK,
+                  let backupDatabase else {
+                if let backupDatabase { sqlite3_close(backupDatabase) }
+                throw LyricsRepositoryError.unavailable("migration \(label) 备份无法创建")
+            }
+            defer { sqlite3_close(backupDatabase) }
+            guard let backup = sqlite3_backup_init(backupDatabase, "main", database, "main") else {
+                throw LyricsRepositoryError.unavailable("migration \(label) 备份初始化失败")
+            }
+            let step = sqlite3_backup_step(backup, -1)
+            let finish = sqlite3_backup_finish(backup)
+            guard step == SQLITE_DONE, finish == SQLITE_OK else {
+                // Preserve the source and abort; never migrate after a failed backup.
+                throw LyricsRepositoryError.unavailable("migration \(label) 备份失败 (\(step)/\(finish))")
+            }
+            // Make the snapshot a standalone read-only recovery file, even
+            // when the source database uses WAL journaling.
+            guard sqlite3_exec(backupDatabase, "PRAGMA journal_mode=DELETE;", nil, nil, nil) == SQLITE_OK else {
+                throw LyricsRepositoryError.unavailable("migration \(label) 备份日志整理失败")
+            }
+        }
+        // Only a completed, closed snapshot receives the recovery filename.
+        try FileManager.default.moveItem(at: temporary, to: destination)
     }
 
     private func ensurePrepared() throws {
@@ -2046,36 +2110,6 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         defer { sqlite3_finalize(statement) }
         try bindText(name, at: 1, to: statement)
         return sqlite3_step(statement) == SQLITE_ROW
-    }
-
-    private func permitsV4Migration(databaseAlreadyExisted: Bool) -> Bool {
-        if ProcessInfo.processInfo.environment["SPOTIFYLYRICS_ALLOW_V4_MIGRATION"] == "1" {
-            return true
-        }
-        // Explicit Debug/test database overrides are intentionally treated as
-        // disposable copies. The formal Application Support database remains
-        // v3 and read-only until migration is explicitly enabled.
-        if let override = ProcessInfo.processInfo.environment["SPOTIFYLYRICS_DATABASE_PATH"],
-           !override.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return true
-        }
-        let productionURL = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Application Support/SpotifyLyrics/SpotifyLyrics.sqlite3")
-            .standardizedFileURL
-        if databaseAlreadyExisted, databaseURL.standardizedFileURL == productionURL {
-            return false
-        }
-        return true
-    }
-
-    private func permitsReadingSchemaMigration() -> Bool {
-        // Reading v6 is deliberately a disposable validation schema. The
-        // formal Application Support database remains on its accepted v4
-        // schema until a separately authorized migration task exists.
-        let productionURL = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Application Support/SpotifyLyrics/SpotifyLyrics.sqlite3")
-            .standardizedFileURL
-        return databaseURL.standardizedFileURL != productionURL
     }
 
     private func resolvedCanonicalStableKey(_ stableKey: String) throws -> String {
@@ -2342,11 +2376,11 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
                    is_machine_generated, is_manually_edited, is_locked, confidence
             FROM lyrics_versions
             WHERE track_stable_key IN (\(placeholders(count: family.count)))
-              AND (is_locked = 1 OR confidence >= ?)
+              AND (is_preferred = 1 OR is_locked = 1 OR confidence >= ?)
             -- A confirmed alignment is a user-selected child version. Keep it
             -- ahead of its plain-text parent after the lock decision, while
             -- preserving the existing confidence filter for untrusted rows.
-            ORDER BY is_locked DESC,
+            ORDER BY is_preferred DESC, is_locked DESC,
                      CASE WHEN source = 'automaticAlignment' THEN 1 ELSE 0 END DESC,
                      updated_at DESC,
                      confidence DESC
@@ -2733,7 +2767,7 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
             SELECT id, is_manually_edited, is_locked, confidence, updated_at, source
             FROM lyrics_versions
             WHERE track_stable_key = ?
-            ORDER BY is_locked DESC, confidence DESC, updated_at DESC;
+            ORDER BY is_preferred DESC, is_locked DESC, confidence DESC, updated_at DESC;
             """)
         defer { sqlite3_finalize(lyricsStmt) }
         try bindText(stableKey, at: 1, to: lyricsStmt)
@@ -2949,7 +2983,7 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
                    (SELECT COUNT(*) FROM lyric_lines WHERE lyrics_version_id = lv.id)
             FROM lyrics_versions AS lv
             WHERE lv.track_stable_key = ?
-            ORDER BY lv.is_locked DESC, lv.confidence DESC, lv.updated_at DESC;
+            ORDER BY lv.is_preferred DESC, lv.is_locked DESC, lv.confidence DESC, lv.updated_at DESC;
             """)
         defer { sqlite3_finalize(lyricsStmt) }
         try bindText(stableKey, at: 1, to: lyricsStmt)
@@ -3195,13 +3229,14 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         let lyricsStmt = try prepare("""
             SELECT id, parent_version_id, source, provider_source_id, language,
                    is_synced, raw_text, content_hash, is_machine_generated,
-                   is_manually_edited, is_locked, confidence, created_at, updated_at
+                   is_manually_edited, is_locked, confidence, created_at, updated_at, is_preferred
             FROM lyrics_versions WHERE track_stable_key = ?
             ORDER BY created_at ASC;
             """)
         defer { sqlite3_finalize(lyricsStmt) }
         try bindText(stableKey, at: 1, to: lyricsStmt)
 
+        var preferredLyricsVersionID: UUID?
         var pkgLyrics: [PersonalLyricsLibraryPackage.PackageLyricsVersion] = []
         var lyricsVersionIDs: [UUID] = []
 
@@ -3212,6 +3247,7 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
                   let rawText = columnText(lyricsStmt, index: 6),
                   let contentHash = columnText(lyricsStmt, index: 7) else { continue }
             lyricsVersionIDs.append(id)
+            if sqlite3_column_int(lyricsStmt, 14) == 1 { preferredLyricsVersionID = id }
             let parentID = columnText(lyricsStmt, index: 1).flatMap { UUID(uuidString: $0) }
             let providerSourceID = columnText(lyricsStmt, index: 3) ?? ""
             let language = columnText(lyricsStmt, index: 4) ?? "und"
@@ -3442,7 +3478,7 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
             lyricsVersions: pkgLyrics,
             translationVersions: pkgTranslations,
             readingVersions: pkgReadings,
-            timingVersions: pkgTimings
+            timingVersions: pkgTimings, preferredLyricsVersionID: preferredLyricsVersionID
         )
     }
 
@@ -3590,6 +3626,17 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
 
     public func importPersonalLibraryPackage(_ package: PersonalLyricsLibraryPackage) throws {
         try prepare()
+        if let preferred = package.preferredLyricsVersionID,
+           !package.lyricsVersions.contains(where: { $0.id == preferred }) {
+            throw LyricsRepositoryError.invalidData("资产包采用版本不存在")
+        }
+        let preferenceFamily = try resolvedIdentityFamily(stableKey: package.track.stableKey)
+        let preferenceQuery = try prepare("SELECT COUNT(*) FROM lyrics_versions WHERE track_stable_key IN (\(placeholders(count: preferenceFamily.count))) AND is_preferred = 1;")
+        defer { sqlite3_finalize(preferenceQuery) }
+        for (index, key) in preferenceFamily.enumerated() { try bindText(key, at: Int32(index + 1), to: preferenceQuery) }
+        guard sqlite3_step(preferenceQuery) == SQLITE_ROW else { throw lastError() }
+        let hasLocalPreference = sqlite3_column_int(preferenceQuery, 0) > 0
+        guard sqlite3_step(preferenceQuery) == SQLITE_DONE else { throw lastError() }
 
         let preview = try previewImportPersonalLibraryPackage(package)
         guard !preview.hasConflicts else {
@@ -3785,6 +3832,9 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
                 sqlite3_finalize(timeInsert)
             }
 
+            if !hasLocalPreference, let preferred = package.preferredLyricsVersionID {
+                try setPreferredLyricsVersion(trackStableKey: package.track.stableKey, lyricsVersionID: preferred)
+            }
             try execute("COMMIT;")
         } catch {
             _ = try? execute("ROLLBACK;")
@@ -3803,13 +3853,24 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
 
     public func setPersonalLibraryActiveLyrics(trackStableKey: String, lyricsVersionID: UUID) throws {
         try prepare()
-        let now = Date().timeIntervalSince1970
-        let stmt = try prepare("UPDATE lyrics_versions SET updated_at = ? WHERE id = ? AND track_stable_key = ?;")
-        defer { sqlite3_finalize(stmt) }
-        try bindDouble(now, at: 1, to: stmt)
-        try bindText(lyricsVersionID.uuidString, at: 2, to: stmt)
-        try bindText(trackStableKey, at: 3, to: stmt)
-        try stepDone(stmt)
+        try withTransaction {
+            try setPreferredLyricsVersion(trackStableKey: trackStableKey, lyricsVersionID: lyricsVersionID)
+        }
+    }
+
+    private func setPreferredLyricsVersion(trackStableKey: String, lyricsVersionID: UUID) throws {
+        let family = try resolvedIdentityFamily(stableKey: trackStableKey)
+        guard let version = try fetchLyricsVersion(versionID: lyricsVersionID), family.contains(version.trackStableKey) else {
+            throw LyricsEditingRepositoryError.identityMismatch
+        }
+        let clear = try prepare("UPDATE lyrics_versions SET is_preferred = 0 WHERE track_stable_key IN (\(placeholders(count: family.count)));")
+        defer { sqlite3_finalize(clear) }
+        for (index, key) in family.enumerated() { try bindText(key, at: Int32(index + 1), to: clear) }
+        try stepDone(clear)
+        let choose = try prepare("UPDATE lyrics_versions SET is_preferred = 1 WHERE id = ?;")
+        defer { sqlite3_finalize(choose) }
+        try bindText(lyricsVersionID.uuidString, at: 1, to: choose)
+        try stepDone(choose)
     }
 
     public func toggleLyricsLocked(versionID: UUID, locked: Bool) throws {

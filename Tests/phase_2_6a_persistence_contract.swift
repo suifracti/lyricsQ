@@ -12,7 +12,7 @@ struct ReadingPersistenceContract {
         let repository = SQLiteLyricsRepository(databaseURL: url)
         try await repository.prepare()
         let schemaVersion = try await repository.schemaVersion()
-        precondition(schemaVersion == 6)
+        precondition(schemaVersion == DatabaseMigrator.currentVersion)
 
         let track = Track(
             title: "生ビールを飲む",

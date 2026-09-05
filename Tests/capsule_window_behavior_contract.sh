@@ -33,15 +33,15 @@ done
 require "$CONTROLLER" 'NSPanel' 'capsule uses a dedicated NSPanel'
 require "$CONTROLLER" 'nonactivatingPanel' 'capsule panel does not steal keyboard focus'
 require "$CONTROLLER" 'effectivePanelLevel' 'capsule centralizes its window level policy'
-require "$CONTROLLER" '\.floating' 'normal capsule stays at floating level'
-require "$CONTROLLER" '\.statusBar' 'Debug top-attached prototype can reach the physical top edge'
+require "$CONTROLLER" '\.floating' 'legacy capsule supports floating level'
+require "$CONTROLLER" '\.statusBar' 'production island can reach the physical top edge'
 require "$CONTROLLER" 'canJoinAllSpaces' 'capsule joins all Spaces'
 require "$CONTROLLER" 'fullScreenAuxiliary' 'capsule is visible above full-screen content'
 require "$CONTROLLER" 'didChangeScreenParametersNotification' 'capsule observes display changes'
 require "$CONTROLLER" 'NSEvent\.addGlobalMonitorForEvents' 'expanded outside click collapse has a global monitor'
 require "$CONTROLLER" 'removeMonitor' 'event monitor is removed'
 require "$CONTROLLER" 'deinit' 'controller has explicit cleanup'
-require "$CONTROLLER" '350_000_000' 'hover collapse uses the confirmed debounce'
+require "$CONTROLLER" '220_000_000' 'hover collapse uses the responsive debounce'
 require "$CONTROLLER" 'presentationState == \.expanded' 'expanded state is the only draggable state'
 ! grep -Eq '\.modalPanel' "$CONTROLLER" || {
   echo 'FAIL: capsule uses a modal window level' >&2
@@ -69,8 +69,11 @@ require "$MANAGER" 'CapsuleLyricsWindowController' 'WindowManager owns the dedic
   echo 'FAIL: WindowManager still has the old direct capsule window path' >&2
   exit 1
 }
-if [ "$(grep -Ec 'Timer\.scheduledTimer' "$PLAYBACK")" -ne 1 ]; then
-  echo 'FAIL: PlaybackState must remain the only polling timer owner' >&2
+
+# The DEBUG acceptance fixture has its own control-file polling timer, already
+# present in the baseline. Count the production playback clock specifically.
+if [ "$(grep -Ec '^[[:space:]]*timer = Timer\.scheduledTimer' "$PLAYBACK")" -ne 1 ]; then
+  echo 'FAIL: PlaybackState must retain one production playback polling timer' >&2
   exit 1
 fi
 

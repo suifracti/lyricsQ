@@ -34,7 +34,7 @@ grep -q 'settings.v3ArtworkPresentation' "$BACKDROP" \
 }
 
 grep -q 'ambientArtworkData' "$BACKDROP" \
-  && grep -q 'maxPixel: 48' "$BACKDROP" || {
+  && grep -q 'maxPixel: 384' "$BACKDROP" || {
   echo 'FAIL: ambient renderer does not use the shared low-frequency artwork snapshot' >&2
   exit 1
 }

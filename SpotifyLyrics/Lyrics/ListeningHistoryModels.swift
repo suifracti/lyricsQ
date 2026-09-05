@@ -15,6 +15,7 @@ public struct ListeningHistoryEntry: Identifiable, Equatable, Hashable, Sendable
     public let observedPlaybackDuration: TimeInterval
     public let trackDuration: TimeInterval?
     public let completionRatio: Double?
+    public var artworkURL: URL?
 
     public var id: UUID { sessionID }
 
@@ -28,7 +29,8 @@ public struct ListeningHistoryEntry: Identifiable, Equatable, Hashable, Sendable
         lastObservedAt: Date,
         observedPlaybackDuration: TimeInterval,
         trackDuration: TimeInterval?,
-        completionRatio: Double?
+        completionRatio: Double?,
+        artworkURL: URL? = nil
     ) {
         self.sessionID = sessionID
         self.stableKey = stableKey
@@ -40,26 +42,29 @@ public struct ListeningHistoryEntry: Identifiable, Equatable, Hashable, Sendable
         self.observedPlaybackDuration = max(0, observedPlaybackDuration)
         self.trackDuration = trackDuration
         self.completionRatio = completionRatio
+        self.artworkURL = artworkURL
     }
 }
 
 /// Main-actor-owned accumulator for one stable track identity.
 ///
 /// Repeated observations update this value; they do not create another
-/// session. Paused time is excluded because the accumulator only adds time
+/// session unless an observed end-to-start repeat occurs. Paused time is excluded because the accumulator only adds time
 /// between observations when the previous snapshot was playing.
 public struct ListeningHistorySession: Sendable {
     private static let maximumObservationGap: TimeInterval = 10
 
-    public let sessionID: UUID
+    public private(set) var sessionID: UUID
     public let stableKey: String
     public let title: String
     public let artist: String
     public let album: String
-    public let startedAt: Date
+    public private(set) var startedAt: Date
     public let trackDuration: TimeInterval?
 
     private var lastObservationAt: Date
+    private var lastPosition: TimeInterval?
+    private var artworkURL: URL?
     private var wasPlaying = false
     private var observedPlaybackDuration: TimeInterval = 0
 
@@ -69,6 +74,7 @@ public struct ListeningHistorySession: Sendable {
         startedAt: Date = Date(),
         sessionID: UUID = UUID()
     ) {
+        self.artworkURL = track.artworkURL
         self.sessionID = sessionID
         self.stableKey = identity.stableKey
         self.title = track.title
@@ -79,13 +85,37 @@ public struct ListeningHistorySession: Sendable {
         self.lastObservationAt = startedAt
     }
 
-    public mutating func observe(at date: Date, position: TimeInterval, isPlaying: Bool) {
+    public mutating func updateArtwork(_ url: URL?) {
+        if let url { artworkURL = url }
+    }
+
+    public mutating func noteExplicitSeek() { lastPosition = nil }
+
+    /// Returns the completed play when a sampled end-to-start boundary is observed.
+    @discardableResult
+    public mutating func observe(at date: Date, position: TimeInterval, isPlaying: Bool) -> ListeningHistoryEntry? {
         let elapsed = date.timeIntervalSince(lastObservationAt)
-        if wasPlaying, elapsed.isFinite, elapsed > 0 {
+        var completed: ListeningHistoryEntry?
+        if wasPlaying, isPlaying, let previous = lastPosition, let duration = trackDuration,
+           elapsed > 0, elapsed <= Self.maximumObservationGap,
+           previous >= max(duration * 0.9, duration - Self.maximumObservationGap),
+           position >= 0, position <= elapsed + 2, previous - position > duration * 0.5,
+           abs((duration - previous + position) - elapsed) <= 2 {
+            let tail = min(elapsed, max(0, duration - previous))
+            observedPlaybackDuration += tail
+            lastObservationAt = date.addingTimeInterval(-(elapsed - tail))
+            completed = entry
+            sessionID = UUID()
+            startedAt = lastObservationAt
+            observedPlaybackDuration = elapsed - tail
+        }
+        if completed == nil, wasPlaying, elapsed.isFinite, elapsed > 0 {
             observedPlaybackDuration += min(elapsed, Self.maximumObservationGap)
         }
         lastObservationAt = date
         wasPlaying = isPlaying
+        lastPosition = position.isFinite ? position : nil
+        return completed
     }
 
     public var entry: ListeningHistoryEntry {
@@ -105,7 +135,8 @@ public struct ListeningHistorySession: Sendable {
             lastObservedAt: lastObservationAt,
             observedPlaybackDuration: observedPlaybackDuration,
             trackDuration: trackDuration,
-            completionRatio: ratio
+            completionRatio: ratio,
+            artworkURL: artworkURL
         )
     }
 

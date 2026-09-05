@@ -464,7 +464,8 @@ public enum TimedTextComposer {
         fontSize: CGFloat = 28,
         weight: CGFloat = 0.56,
         design: String = "rounded",
-        availableWidth: CGFloat
+        availableWidth: CGFloat,
+        balanced: Bool = false
     ) -> TimedMultilineLayout? {
         #if canImport(AppKit) && canImport(CoreText)
         guard !originalText.isEmpty, !spans.isEmpty, availableWidth > 0 else {
@@ -490,8 +491,13 @@ public enum TimedTextComposer {
         var startOffset = 0
         var rawVisualLines: [(line: CTLine, range: CFRange, text: String, width: CGFloat, ascent: CGFloat, descent: CGFloat, leading: CGFloat)] = []
 
+        let balancedRanges = balanced ? V3LyricDisplayLineBreaker.ranges(originalText, font: font, width: availableWidth) : []
+        var visualIndex = 0
         while startOffset < totalUTF16Length {
-            let suggestedCount = CTTypesetterSuggestLineBreak(typesetter, startOffset, Double(availableWidth))
+            let suggestedCount = balanced && visualIndex < balancedRanges.count
+                ? balancedRanges[visualIndex].length
+                : CTTypesetterSuggestLineBreak(typesetter, startOffset, Double(availableWidth))
+            visualIndex += 1
             guard suggestedCount > 0 else { return nil }
             let lineRange = CFRangeMake(startOffset, suggestedCount)
             let ctLine = CTTypesetterCreateLine(typesetter, lineRange)
@@ -1470,3 +1476,104 @@ public struct DisplayPreferences: Equatable {
         self.hideDistantAuxiliary = hideDistantAuxiliary
     }
 }
+
+#if canImport(AppKit) && canImport(CoreText)
+/// Display-only measured wrapping. Source offsets remain intact for timed fragments.
+public enum V3LyricDisplayLineBreaker {
+    public static func breakText(_ text: String, fontSize: CGFloat, weight: CGFloat, availableWidth: CGFloat) -> String {
+        let font = TimedTextComposer.makeSystemFont(size: fontSize, weight: NSFont.Weight(weight), design: .rounded)
+        let parts = ranges(text, font: font, width: availableWidth).map { (text as NSString).substring(with: $0) }
+        return parts.enumerated().map { index, part in
+            index < parts.count - 1 && part.last?.isNewline != true ? part + "\n" : part
+        }.joined()
+    }
+
+    static func ranges(_ text: String, font: CTFont, width: CGFloat) -> [NSRange] {
+        guard width.isFinite, width > 0, !text.isEmpty else { return [] }
+        var result: [NSRange] = []
+        var offset = 0
+        let source = text as NSString
+        while offset < source.length {
+            let newline = source.rangeOfCharacter(from: .newlines, options: [], range: NSRange(location: offset, length: source.length - offset))
+            let end = newline.location == NSNotFound ? source.length : newline.location
+            let paragraph = source.substring(with: NSRange(location: offset, length: end - offset))
+            var delimiter = newline.location == NSNotFound ? 0 : 1
+            if delimiter == 1 && source.character(at: end) == 13 && end + 1 < source.length && source.character(at: end + 1) == 10 { delimiter = 2 }
+            var rows = paragraphRanges(paragraph, font: font, width: max(1, width - 1))
+            if rows.isEmpty && delimiter > 0 { rows = [NSRange(location: 0, length: 0)] }
+            if !rows.isEmpty { rows[rows.count - 1].length += delimiter }
+            result += rows.map { NSRange(location: offset + $0.location, length: $0.length) }
+            offset = end + delimiter
+        }
+        return result
+    }
+
+    private static func paragraphRanges(_ text: String, font: CTFont, width: CGFloat) -> [NSRange] {
+        let source = text as NSString
+        guard source.length > 0 else { return [] }
+        let setter = CTTypesetterCreateWithAttributedString(NSAttributedString(string: text, attributes: [.font: font]))
+        var greedy: [NSRange] = []
+        var start = 0
+        while start < source.length {
+            let count = CTTypesetterSuggestLineBreak(setter, start, Double(width))
+            guard count > 0 else { return [NSRange(location: 0, length: source.length)] }
+            greedy.append(NSRange(location: start, length: count)); start += count
+        }
+        guard greedy.count > 1, text.count <= 256 else { return greedy }
+        var boundaries = [0]
+        for character in text { boundaries.append(boundaries.last! + String(character).utf16.count) }
+        let characters = Array(text)
+        var words = Set<Int>()
+        text.enumerateSubstrings(in: text.startIndex..<text.endIndex, options: .byWords) { _, range, _, _ in
+            words.insert(range.upperBound.utf16Offset(in: text))
+            words.insert(range.lowerBound.utf16Offset(in: text))
+        }
+        let forbidden = Set("、。，！？!?」』）)]】ぁぃぅぇぉっゃゅょァィゥェォッャュョー")
+        let particles = Set("のをはがにとでも")
+        // Reject over-wide ranges before allocating CTLine during live resizing.
+        let fitEnds = boundaries.map { start in
+            start + CTTypesetterSuggestClusterBreak(setter, start, Double(width))
+        }
+        let count = boundaries.count
+        let rows = greedy.count
+        var costs = Array(repeating: Array(repeating: Double.infinity, count: count), count: rows + 1)
+        var previous = Array(repeating: Array(repeating: -1, count: count), count: rows + 1)
+        var widths: [Int: Double] = [:]
+        costs[0][0] = 0
+        for row in 1...rows {
+            for end in 1..<count {
+                for begin in 0..<end where costs[row - 1][begin].isFinite {
+                    guard boundaries[end] <= fitEnds[begin] else { continue }
+                    if begin > 0 {
+                        let before = characters[begin - 1], after = characters[begin]
+                        if before.isASCII && after.isASCII && (before.isLetter || before.isNumber) && (after.isLetter || after.isNumber) { continue }
+                    }
+                    let key = begin * count + end
+                    let measured = widths[key] ?? CTLineGetTypographicBounds(CTTypesetterCreateLine(setter, CFRange(location: boundaries[begin], length: boundaries[end] - boundaries[begin])), nil, nil, nil)
+                    widths[key] = measured
+                    guard measured <= Double(width) + 0.01 else { continue }
+                    var penalty = pow((Double(width) - measured) / Double(width), 2)
+                    if end < count - 1 {
+                        if !words.contains(boundaries[end]) && !characters[end - 1].isWhitespace { penalty += 0.12 }
+                        if characters[end].isWhitespace { penalty += 0.15 }
+                        if forbidden.contains(characters[end]) { penalty += 2 }
+                        if particles.contains(characters[end]) { penalty += 0.20 }
+                    }
+                    let candidate = costs[row - 1][begin] + penalty
+                    if candidate < costs[row][end] { costs[row][end] = candidate; previous[row][end] = begin }
+                }
+            }
+        }
+        guard costs[rows][count - 1].isFinite else { return greedy }
+        var end = count - 1
+        var result: [NSRange] = []
+        for row in stride(from: rows, through: 1, by: -1) {
+            let begin = previous[row][end]
+            guard begin >= 0 else { return greedy }
+            result.append(NSRange(location: boundaries[begin], length: boundaries[end] - boundaries[begin]))
+            end = begin
+        }
+        return result.reversed()
+    }
+}
+#endif

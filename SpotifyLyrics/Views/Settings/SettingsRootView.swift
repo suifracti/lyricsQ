@@ -220,6 +220,17 @@ private struct GeneralSettingsView: View {
                         Text(style.title).tag(style.rawValue)
                     }
                 }
+                Picker("桌面歌词行数", selection: $settings.floatingDesktopLineMode) {
+                    ForEach(FloatingDesktopLineMode.allCases, id: \.rawValue) { Text($0.title).tag($0.rawValue) }
+                }
+                HStack {
+                    Text("桌面歌词字号")
+                    Slider(value: $settings.floatingDesktopFontSize, in: 22...64, step: 1)
+                    Text("\(Int(settings.floatingDesktopFontSize))").monospacedDigit().frame(width: 30)
+                }
+                Picker("桌面歌词配色", selection: $settings.floatingDesktopTheme) {
+                    ForEach(FloatingDesktopTheme.allCases, id: \.rawValue) { Text($0.title).tag($0.rawValue) }
+                }
                 Toggle("悬浮歌词保持置顶", isOn: $settings.floatingWindowAlwaysOnTop)
                 Picker("默认交互状态", selection: floatingModeBinding) {
                     ForEach(FloatingLyricsInteractionMode.allCases, id: \.self) { mode in

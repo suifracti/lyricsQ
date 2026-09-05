@@ -2,6 +2,14 @@
 
 Status snapshot: 2026-09-05.
 
+Library preview: per-version local names and notes can be edited for lyrics, translations, readings and timing. Original labels remain visible; Restore Default clears only local presentation metadata. Metadata does not travel in asset exports.
+
+Production database upgrade repaired: existing v5 databases now advance to v8 after a consistent backup; library/history/statistics verified against the real database and after restart. See [upgrade audit](work/experience-restoration/production-database-upgrade-report.md).
+
+Main V3 utility shortcuts: 我的歌词库、最近播放、听歌统计 now have direct toolbar buttons, using the existing shared library window and selecting its matching tab. Existing Settings entries remain available.
+
+Main V3 preview update: long original lyrics now use measured balanced wrapping, replacing the earlier approximate character-count breaker. Screenshot phrases pass five width checks; plain/timed ranges agree. Inline ruby remains separate. See [balanced lyric breaks report](work/experience-restoration/balanced-lyric-breaks-report.md).
+
 This file describes what is present in the repository and how mature it is. It is not a release promise. The authoritative hierarchy is: (1) 用户明确指令, (2) Obsidian Current 的 Spotify Lyrics `README.md`、`Decisions.md`、活动 `Handoff.md`, (3) Git `HEAD` 与真实运行证据. Craft 已弃用，不得用于当前方向、优先级、阶段或项目状态判断. Git identifies the exact source.
 
 ## Canonical engineering SOT baseline
@@ -35,12 +43,15 @@ This file describes what is present in the repository and how mature it is. It i
 
 ## Current phase & next steps
 
-- 当前阶段为: `Concentrated user experience / reliability triage`（明确不是 C6）。
-- **下一步原则**: 只有真实确认的 **Blocker** 或必须解决的 **Relevant** 缺陷，才允许触发代码工作。
-- **Reliability 候选项（仅列为 Deferred，非已发生运行时 bug）**:
-  - statistics read failure 可能被表现为空状态
-  - listening history read failure 缺独立 failed state
-  - statistics contract 有午夜日期边界稳定性问题
+- 用户于 2026-09-05 明确授权修复可靠性问题，恢复灵动岛、完善桌面歌词和三种封面风格，并自主迭代。该范围重新开放；历史 C1–C5 合并记录与冻结 release 不改写。
+- 工作分支 `codex/experience-restoration`，从 `fb95a9e` 建立；未合入 main。
+- 预览候选采用路由、菜单栏设置入口、历史/统计读取错误表达已修复；五项定向合同与独立审查通过。实际 SQLite 锁读取失败会报错，界面保留上次结果并支持重试。
+- 灵动岛已恢复为默认，桌面歌词采用独立的大字描边/单双行/配色方案，三种风格完成原生迭代；用户进一步确认封面必须完整：舞台保留原图居中等比适配、不裁切，采用镜像边缘延展并向外柔化；窗口自由缩放，禁止锁比例或自动改尺寸，歌词布局暂不调整。定向测试、独立复核及生产 Debug/Release 构建通过；作为独立预览交付，未合入 main 或发布新版本。
+- 原生生成夹具验证包括封面比例、桌面明暗背景与最小布局、逐字时间高亮和灵动岛更多菜单。物理刘海屏、多屏切换、系统 Reduce Motion 与长期真实 Spotify 播放未作最终实机验收。
+- 标题/手动歌词恢复已修复：保留无艺人搜索、LRCLIB 全文查询和候选展示；真实 Marigold 查询可返回 Aimyon 候选，自动跨艺人保护保留。专项检查及 Debug/Release 通过，新预览已打开；Marigold 原生选词待再次播放确认。旧 real_track 综合脚本存在依赖缺失，未通过。详见 `docs/work/experience-restoration/title-only-recovery-report.md`。
+- V3 右上角工具栏收敛为窗口、搜索、更多三个入口；更多中保留歌词操作、外观、设置和来源恢复；窗口仍自由缩放。新增悬停保持显示，弹出面板保持可见。
+- 主窗口长歌词保持字号并按阅读宽度换行；翻译、假名和罗马音移除两行截断。复用现有 CoreText/SwiftUI 排版与逐字时间映射，不拆分歌词记录。
+- statistics contract 午夜日期夹具稳定性仍为既有 Deferred。
 
 ## Implemented in the repository
 
@@ -66,3 +77,14 @@ git rev-parse '@{upstream}'
 ```
 
 If the worktree is dirty, describe the version as `base HEAD + uncommitted changes`. Do not infer freshness from `.app` files, DerivedData, `.local/`, screenshots, backups, or modification times.
+
+## 2026-09-06 Library content revisions preview
+
+- 歌词库可编辑原文/开始时间并保存独立修订版，原版保留；保存后可用“设为当前”切换新旧版。schema9 显式采用选择、资产包往返及原始数据保留已通过隔离验证。
+- Debug/Release与相关持久化、编辑器、迁移检查通过；新版已启动，原生编辑弹窗完整验收因 CUA 失效仍待验证。详见 `docs/work/experience-restoration/library-content-revisions-report.md`。
+
+## 2026-09-06 User feedback preview
+
+- 右上角合并曲库/历史/统计入口，新增歌词显示开关；观察到的单曲循环独立落库，历史/统计显示可用专辑封面并接受延迟封面补齐。
+- 环境光和远处歌词降低模糊，透明桌面歌词移除整窗阴影与叠加光晕，胶囊缩短悬停等待并使用弹簧几何动画。窗口自由缩放保留。
+- 相关回归、Debug/Release通过，原生历史/统计封面可见；动态残影/胶囊手感及自动隐藏工具栏的直接交互仍待实机验收。详见 `docs/work/experience-restoration/experience-feedback-report.md`。

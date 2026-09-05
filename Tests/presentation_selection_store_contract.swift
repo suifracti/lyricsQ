@@ -27,13 +27,18 @@ struct PresentationSelectionStoreContract {
         defer { freshDefaults.removePersistentDomain(forName: freshSuiteName) }
         let freshStore = PresentationSelectionStore(defaults: freshDefaults)
         precondition(
-            freshStore.currentStableID(for: .capsule) == "capsule.controlFocused.v2",
-            "recommended capsule v4 must not replace the current v2 runtime by default"
+            freshStore.currentStableID(for: .capsule) == "capsule.dynamicIslandDark.v4",
+            "restored island must be the product default"
         )
         precondition(
             freshStore.recommendedStableID(for: .capsule) == "capsule.dynamicIslandDark.v4",
             "capsule v4 must remain the recommended presentation"
         )
+
+        precondition(freshStore.apply(category: .capsule, stableID: "capsule.controlFocused.v2"))
+        precondition(freshStore.currentStableID(for: .capsule) == "capsule.controlFocused.v2",
+                     "An explicit classic capsule choice remains compatible")
+        precondition(freshStore.restoreRecommended(for: .capsule) == "capsule.dynamicIslandDark.v4")
 
         let persistedBeforePreview = defaults.data(forKey: PresentationSelectionStore.storageKey)
         precondition(

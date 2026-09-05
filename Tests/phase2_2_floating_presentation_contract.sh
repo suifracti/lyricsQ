@@ -38,10 +38,9 @@ require '\$floatingLyricsPresentationRawValue' "$CONTROLLER"
 require '\$floatingLyricsSurfaceStyleRawValue' "$CONTROLLER"
 require 'restoreInteractiveMode' "$CONTROLLER"
 
-grep -Eq 'if[[:space:]]+windowController\.interactionMode == \.interactive,[[:space:]]*isHovering' "$VIEW" || {
-  echo 'FAIL: floating controls must be gated by interactive mode and hover state' >&2
-  exit 1
-}
+require 'windowController.toggleInteractionMode' "$VIEW"
+require '解锁悬浮歌词' "$VIEW"
+require 'FloatingLyricsLayout' "$VIEW"
 
 apply_presentation="$(sed -n '/private func applyPresentation()/,/^    }$/p' "$CONTROLLER")"
 if printf '%s\n' "$apply_presentation" | grep -Eq 'setFrame|\.frame|screen|interactionMode|applyInteractionMode'; then

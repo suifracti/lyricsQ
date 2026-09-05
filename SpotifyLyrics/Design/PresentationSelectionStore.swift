@@ -57,10 +57,8 @@ public final class PresentationSelectionStore: ObservableObject {
             return raw
         }
         // An unset category keeps the catalog's current runtime choice. This
-        // is intentionally different from an explicitly unknown future ID,
-        // which falls back to the category recommendation below. It lets a
-        // recommended opt-in (currently capsule v4) coexist with the v2
-        // runtime default without silently switching existing users.
+        // preserves explicitly selected compatible versions while new users
+        // receive the current product presentation.
         if persistedSelectedStableID(for: category) == nil,
            let current = catalog.entries(for: category).first(where: {
                $0.status == .current && isRunnable($0)

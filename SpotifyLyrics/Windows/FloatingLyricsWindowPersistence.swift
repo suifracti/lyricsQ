@@ -16,10 +16,10 @@ final class FloatingLyricsWindowPersistence {
     func defaultFrame() -> NSRect {
         let screen = NSScreen.main ?? NSScreen.screens.first
         let visible = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
-        let size = NSSize(width: 620, height: 220)
+        let size = NSSize(width: min(820, visible.width), height: 180)
         return NSRect(
             x: visible.midX - size.width / 2,
-            y: visible.midY - size.height / 2,
+            y: visible.minY + 64,
             width: size.width,
             height: size.height
         )

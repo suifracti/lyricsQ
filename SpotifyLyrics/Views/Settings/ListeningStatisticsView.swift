@@ -12,7 +12,7 @@ public struct ListeningStatisticsView: View {
                 VStack(alignment: .leading, spacing: 5) {
                     Text("听歌统计")
                         .font(.system(size: 25, weight: .semibold, design: .rounded))
-                    Text("仅统计 Lyric Island 运行期间实际观察到的播放，不代表 Spotify 完整历史。")
+                    Text("仅统计应用运行期间观察到的播放；新版会分别记录单曲循环，旧记录中合并的循环次数无法还原。")
                         .font(.system(size: 12, design: .rounded))
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -25,8 +25,23 @@ public struct ListeningStatisticsView: View {
                 }
                 .pickerStyle(.segmented)
 
-                if let statistics = playback.listeningStatistics,
-                   statistics.timeRange == selectedTimeRange {
+                if let error = playback.listeningStatisticsError {
+                    HStack {
+                        Label(error, systemImage: "exclamationmark.triangle")
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Button("重试") { playback.refreshListeningStatistics(for: selectedTimeRange) }
+                    }
+                }
+                if playback.isListeningStatisticsLoading {
+                    ProgressView("读取统计…")
+                }
+                if let statistics = playback.listeningStatistics {
+                    if statistics.timeRange != selectedTimeRange {
+                        Text("上次成功读取：\(statistics.timeRange.title)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                     if statistics.isEmpty {
                         emptyState
                     } else {
@@ -37,9 +52,6 @@ public struct ListeningStatisticsView: View {
                         topSongs(statistics.topSongs)
                         topArtists(statistics.topArtists)
                     }
-                } else {
-                    ProgressView("读取统计…")
-                        .frame(maxWidth: .infinity, minHeight: 180)
                 }
             }
             .frame(maxWidth: 760, alignment: .leading)
@@ -166,6 +178,7 @@ public struct ListeningStatisticsView: View {
                             .font(.system(.caption, design: .monospaced))
                             .foregroundStyle(.tertiary)
                             .frame(width: 22, alignment: .leading)
+                        ListeningArtwork(url: song.artworkURL)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(song.title)
                                 .font(.system(size: 13, weight: .semibold))

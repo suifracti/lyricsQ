@@ -47,7 +47,7 @@ public enum V3ArtworkPresentation: String, CaseIterable, Codable, Identifiable, 
     public var detail: String {
         switch self {
         case .ambient: return "抽取封面的低频色彩，前景保留完整封面"
-        case .stage: return "以单张完整专辑封面为舞台主体，底部融入歌词与播放信息"
+        case .stage: return "完整封面居中显示，模糊背景补齐空余区域"
         case .classic: return "保留原来的局部放大封面背景"
         }
     }
@@ -55,7 +55,7 @@ public enum V3ArtworkPresentation: String, CaseIterable, Codable, Identifiable, 
     public var blurControlTitle: String {
         switch self {
         case .ambient: return "环境扩散程度"
-        case .stage: return "封面柔化程度"
+        case .stage: return "补边背景柔化"
         case .classic: return "背景高斯模糊度"
         }
     }
@@ -63,7 +63,7 @@ public enum V3ArtworkPresentation: String, CaseIterable, Codable, Identifiable, 
     public var artworkSizeControlTitle: String {
         switch self {
         case .ambient: return "前景封面尺寸"
-        case .stage: return "舞台封面尺寸"
+        case .stage: return "封面背景缩放"
         case .classic: return "封面与背景倍率"
         }
     }
@@ -71,7 +71,7 @@ public enum V3ArtworkPresentation: String, CaseIterable, Codable, Identifiable, 
     public var artworkPositionControlTitle: String {
         switch self {
         case .ambient: return "封面与光源位置"
-        case .stage: return "舞台封面位置"
+        case .stage: return "封面背景取景"
         case .classic: return "封面与裁切位置"
         }
     }
@@ -99,6 +99,10 @@ public final class AppSettingsStore: ObservableObject {
         public static let floatingWindowAlwaysOnTop = "general.floatingWindowAlwaysOnTop"
         public static let floatingWindowInteractionMode = "general.floatingWindowInteractionMode"
         public static let floatingWindowWasVisible = "general.floatingWindowWasVisible"
+        public static let floatingDesktopFontSize = "desktopLyrics.fontSize"
+        public static let floatingDesktopLineMode = "desktopLyrics.lineMode"
+        public static let floatingDesktopTheme = "desktopLyrics.theme"
+        public static let floatingDesktopCompanion = "desktopLyrics.companion"
         public static let floatingWindowOpacity = "general.floatingWindowOpacity"
         public static let floatingLyricsPresentation = "general.floatingLyricsPresentation"
         public static let floatingLyricsSurfaceStyle = "general.floatingLyricsSurfaceStyle"
@@ -217,6 +221,19 @@ public final class AppSettingsStore: ObservableObject {
 
     @Published public var floatingWindowWasVisible: Bool {
         didSet { defaults.set(floatingWindowWasVisible, forKey: Key.floatingWindowWasVisible) }
+    }
+
+    @Published public var floatingDesktopFontSize: Double {
+        didSet { defaults.set(floatingDesktopFontSize, forKey: Key.floatingDesktopFontSize) }
+    }
+    @Published public var floatingDesktopLineMode: String {
+        didSet { defaults.set(floatingDesktopLineMode, forKey: Key.floatingDesktopLineMode) }
+    }
+    @Published public var floatingDesktopTheme: String {
+        didSet { defaults.set(floatingDesktopTheme, forKey: Key.floatingDesktopTheme) }
+    }
+    @Published public var floatingDesktopCompanion: String {
+        didSet { defaults.set(floatingDesktopCompanion, forKey: Key.floatingDesktopCompanion) }
     }
 
     @Published public var floatingWindowOpacity: Double {
@@ -413,6 +430,10 @@ public final class AppSettingsStore: ObservableObject {
         floatingWindowInteractionModeRawValue = defaults.string(forKey: Key.floatingWindowInteractionMode)
             ?? "interactive"
         floatingWindowWasVisible = defaults.object(forKey: Key.floatingWindowWasVisible) as? Bool ?? false
+        floatingDesktopFontSize = FloatingDesktopTypography.fontSize(defaults.object(forKey: Key.floatingDesktopFontSize) as? Double ?? 34)
+        floatingDesktopLineMode = defaults.string(forKey: Key.floatingDesktopLineMode) ?? "double"
+        floatingDesktopTheme = defaults.string(forKey: Key.floatingDesktopTheme) ?? "mint"
+        floatingDesktopCompanion = defaults.string(forKey: Key.floatingDesktopCompanion) ?? "translation"
         floatingWindowOpacity = defaults.object(forKey: Key.floatingWindowOpacity) as? Double ?? 0.96
         floatingLyricsPresentationRawValue = defaults.string(forKey: Key.floatingLyricsPresentation)
             ?? FloatingLyricsPresentationVersion.current.rawValue

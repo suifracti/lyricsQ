@@ -9,6 +9,9 @@ cp Tests/timing_persistence_immutable_contract.swift "$TMP_DIR/main.swift"
 
 swiftc -parse-as-library \
   SpotifyLyrics/Models/Models.swift \
+  SpotifyLyrics/Lyrics/PersonalLyricsLibraryModels.swift \
+  SpotifyLyrics/Lyrics/ListeningStatisticsModels.swift \
+  SpotifyLyrics/Lyrics/ListeningHistoryModels.swift \
   SpotifyLyrics/Lyrics/TrackIdentity.swift \
   SpotifyLyrics/Lyrics/LyricsModels.swift \
   SpotifyLyrics/Lyrics/AlignmentModels.swift \

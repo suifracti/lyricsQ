@@ -110,15 +110,24 @@ struct V3ResponsiveGeometryContract {
             )
         }
 
-        let portrait = V3ResponsiveGeometry.stageArtworkRect(
-            canvasSize: CGSize(width: 800, height: 500),
-            artworkAspectRatio: 0.65,
-            requestedScale: 1.4,
-            position: "left"
-        )
-        precondition(portrait.minX >= 18 - 0.001 && portrait.maxX <= 782 + 0.001, "stage artwork must stay inside the horizontal canvas")
-        precondition(portrait.minY >= 16 - 0.001 && portrait.maxY <= 484 + 0.001, "stage artwork must stay inside the vertical safe area")
-        precondition(abs(portrait.width / portrait.height - 0.65) < 0.001, "stage artwork must preserve its source aspect ratio")
+        for canvas in [CGSize(width: 760, height: 520), CGSize(width: 1040, height: 680), CGSize(width: 1440, height: 900), CGSize(width: 760, height: 1000)] {
+            let bounds = CGRect(origin: .zero, size: canvas)
+            for aspect: CGFloat in [0.2, 0.65, 1, 1.8, 5] {
+                let small = V3ResponsiveGeometry.stageArtworkRect(canvasSize: canvas, artworkAspectRatio: aspect, requestedScale: 0.8)
+                let large = V3ResponsiveGeometry.stageArtworkRect(canvasSize: canvas, artworkAspectRatio: aspect, requestedScale: 1.4)
+                precondition(small == large, "saved zoom cannot crop the complete stage cover")
+                for position in ["left", "center", "right"] {
+                    let cover = V3ResponsiveGeometry.stageArtworkRect(canvasSize: canvas, artworkAspectRatio: aspect, requestedScale: 0.8, position: position)
+                    precondition(abs(cover.midX - bounds.midX) < 0.001 && abs(cover.midY - bounds.midY) < 0.001, "complete cover stays centered regardless of saved position")
+                    precondition(abs(cover.width - canvas.width) < 0.001 || abs(cover.height - canvas.height) < 0.001, "cover uses the largest uncropped fit")
+                    let reading = V3ResponsiveGeometry.stageReadingRect(canvasSize: canvas, artworkAspectRatio: aspect, position: position)
+                    precondition(bounds.insetBy(dx: -0.001, dy: -0.001).contains(cover), "entire source image must stay inside the stage")
+                    precondition(abs(cover.width / cover.height - aspect) < 0.001, "background preserves source proportions")
+                    precondition(bounds.contains(reading) && reading.height > canvas.height * 0.5, "lyrics overlay gets the central stage, not a lower band")
+                    precondition(reading == V3ResponsiveGeometry.stageReadingRect(canvasSize: canvas, artworkAspectRatio: 1, position: "center"), "lyrics position must not depend on cover orientation")
+                }
+            }
+        }
 
         print("V3 responsive geometry contract: PASS")
     }

@@ -9,6 +9,7 @@ struct ArtworkView: View {
     /// V2 keeps its established icon-like radius; V3 opts into a small
     /// album-cover radius without changing the shared component's default.
     var cornerRadiusRatio: CGFloat = 0.18
+    var preservesCompleteArtwork: Bool = false
     @State private var remoteArtwork: NSImage?
 
     var body: some View {
@@ -18,7 +19,7 @@ struct ArtworkView: View {
             if let remoteArtwork {
                 Image(nsImage: remoteArtwork)
                     .resizable()
-                    .scaledToFill()
+                    .aspectRatio(contentMode: preservesCompleteArtwork ? .fit : .fill)
                     .transition(.opacity)
             }
 

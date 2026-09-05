@@ -62,7 +62,7 @@ if grep -q 'return min(0\.08' "$BACKDROP"; then
   exit 1
 fi
 
-stage_layers="$({ sed -n '/private func stageArtworkLayers/,/private var stageReadingVeil/p' "$BACKDROP"; } || true)"
+stage_layers="$({ sed -n '/private func stageArtworkLayers/,/private func stageArtworkPlaneSize/p' "$BACKDROP"; } || true)"
 if grep -q '\.blendMode(\.screen)' <<<"$stage_layers"; then
   echo 'FAIL: V3 stage whole-cover plane still uses screen blending and can disappear on white art' >&2
   exit 1

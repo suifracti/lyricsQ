@@ -208,7 +208,9 @@ public final class LyricsSearchManager: @unchecked Sendable {
             let probeTrack = Track(
                 id: track.id,
                 title: variant.titleQuery,
-                artist: variant.artistQuery ?? track.artist,
+                // A nil artist is deliberate for broad/manual recovery.
+                // Keep original identity separately for SafeMatcher below.
+                artist: variant.artistQuery ?? "",
                 album: track.album,
                 duration: track.duration,
                 artworkName: track.artworkName,

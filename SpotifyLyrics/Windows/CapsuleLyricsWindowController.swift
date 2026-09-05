@@ -7,14 +7,14 @@ private final class CapsuleLyricsPanel: NSPanel {
     override var canBecomeMain: Bool { false }
 }
 
-/// Fixed-envelope host used only by the Debug top-attached prototype. The
+/// Fixed-envelope host for the top-attached island. The
 /// AppKit window remains transparent outside the internal island; returning
 /// nil here keeps the host from producing an interactive hit target in that
 /// region. A second global mouse monitor below toggles `ignoresMouseEvents`
 /// so the event is delivered to the application underneath as well.
 private final class CapsuleEnvelopeHostingView: NSView {
     private let hostedView: NSView
-    var interactiveFrameProvider: (() -> NSRect)?
+    var interactivePointProvider: ((NSPoint) -> Bool)?
 
     init(hostedView: NSView) {
         self.hostedView = hostedView
@@ -33,7 +33,7 @@ private final class CapsuleEnvelopeHostingView: NSView {
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
-        guard interactiveFrameProvider?().contains(point) == true else {
+        guard interactivePointProvider?(point) == true else {
             return nil
         }
         return super.hitTest(point)
@@ -52,13 +52,22 @@ final class CapsuleLyricsWindowController: NSObject, ObservableObject, NSWindowD
     private var panel: CapsuleLyricsPanel?
     private weak var playbackState: PlaybackState?
     private var settings: AppSettingsStore?
+    private var selectionObserver: AnyCancellable?
     private var outsideClickMonitor: Any?
     private var localClickMonitor: Any?
-    private var debugGlobalMouseMonitor: Any?
-    private var debugLocalMouseMonitor: Any?
+    private var globalMouseMonitor: Any?
+    private var localMouseMonitor: Any?
     private var envelopeHostingView: CapsuleEnvelopeHostingView?
     private var screenChangeObserver: NSObjectProtocol?
     private var hoverCollapseTask: Task<Void, Never>?
+    private var hoverExpandTask: Task<Void, Never>?
+    private var hitRegionTask: Task<Void, Never>?
+    private var settledHitState: CapsulePresentationState = .collapsed
+    private var pointerIsInside = false
+    private var expansionInteraction = CapsuleExpansionInteraction()
+    private var isSeeking = false
+    @Published private(set) var menuIsPresented = false
+    @Published private(set) var notchGeometry = CapsuleNotchGeometry(screenFrame: .zero, safeTopInset: 0)
     private var didRestore = false
     private var isApplyingFrame = false
 #if DEBUG
@@ -87,18 +96,20 @@ final class CapsuleLyricsWindowController: NSObject, ObservableObject, NSWindowD
     }
 
     deinit {
+        hitRegionTask?.cancel()
         hoverCollapseTask?.cancel()
+        hoverExpandTask?.cancel()
         if let outsideClickMonitor {
             NSEvent.removeMonitor(outsideClickMonitor)
         }
         if let localClickMonitor {
             NSEvent.removeMonitor(localClickMonitor)
         }
-        if let debugGlobalMouseMonitor {
-            NSEvent.removeMonitor(debugGlobalMouseMonitor)
+        if let globalMouseMonitor {
+            NSEvent.removeMonitor(globalMouseMonitor)
         }
-        if let debugLocalMouseMonitor {
-            NSEvent.removeMonitor(debugLocalMouseMonitor)
+        if let localMouseMonitor {
+            NSEvent.removeMonitor(localMouseMonitor)
         }
         if let screenChangeObserver {
             NotificationCenter.default.removeObserver(screenChangeObserver)
@@ -124,11 +135,13 @@ final class CapsuleLyricsWindowController: NSObject, ObservableObject, NSWindowD
     }
 
     func hide() {
+        expansionInteraction.reset()
+        menuIsPresented = false
+        hitRegionTask?.cancel()
         hoverCollapseTask?.cancel()
+        hoverExpandTask?.cancel()
         removeOutsideClickMonitors()
-#if DEBUG
-        removeDebugMouseMonitors()
-#endif
+        removeMouseMonitors()
         savePosition()
         panel?.ignoresMouseEvents = false
         panel?.orderOut(nil)
@@ -143,11 +156,11 @@ final class CapsuleLyricsWindowController: NSObject, ObservableObject, NSWindowD
     /// `hide()`, which is the user's explicit hide action.
     func temporarilyHideForFullScreen() {
         guard isVisible else { return }
+        menuIsPresented = false
+        hitRegionTask?.cancel()
         cancelHoverCollapse()
         removeOutsideClickMonitors()
-#if DEBUG
-        removeDebugMouseMonitors()
-#endif
+        removeMouseMonitors()
         panel?.ignoresMouseEvents = false
         panel?.orderOut(nil)
         isVisible = false
@@ -156,63 +169,53 @@ final class CapsuleLyricsWindowController: NSObject, ObservableObject, NSWindowD
 
     func restoreAfterFullScreen() {
         guard let panel, !isVisible else { return }
-        if let settings {
-            applyFrame(for: presentationState, settings: settings)
-        }
-        panel.isMovable = presentationState == .expanded
-        panel.isMovableByWindowBackground = presentationState == .expanded
-#if DEBUG
-        if debugTopAttachedEnvelope {
-            panel.isMovable = false
-            panel.isMovableByWindowBackground = false
-            installDebugMouseMonitors()
-        }
-#endif
-        if presentationState == .expanded {
-            installOutsideClickMonitors()
-        }
+        settledHitState = presentationState
+        if let settings { applyFrame(for: presentationState, settings: settings) }
+        panel.isMovable = !isTopAttachedEnvelope && presentationState == .expanded
+        panel.isMovableByWindowBackground = panel.isMovable
         panel.level = effectivePanelLevel
         panel.orderFrontRegardless()
         isVisible = true
+        pointerIsInside = false
+        if isTopAttachedEnvelope { installMouseMonitors(); updateMousePassThrough() }
+        if presentationState == .expanded { installOutsideClickMonitors() }
         playbackState?.showCapsulePlayer = true
     }
 
-    func expand() {
+    func expand() { expand(explicit: true) }
+
+    private func expand(explicit: Bool) {
         guard isVisible else { return }
         cancelHoverCollapse()
+        let physicallyInside: Bool
+        if let panel, isTopAttachedEnvelope {
+            physicallyInside = notchGeometry.contains(panel.convertPoint(fromScreen: NSEvent.mouseLocation),
+                state: presentationState, envelopeSize: envelopeSize)
+        } else { physicallyInside = pointerIsInside }
+        expansionInteraction.expanded(explicit: explicit, pointerInside: physicallyInside)
         setPresentationState(.expanded)
         installOutsideClickMonitors()
     }
 
     func collapse() {
         guard isVisible else { return }
+        menuIsPresented = false
+        expansionInteraction.reset()
         cancelHoverCollapse()
         removeOutsideClickMonitors()
         setPresentationState(.collapsed)
     }
 
-    func toggleExpanded() {
-        presentationState == .expanded ? collapse() : expand()
-    }
+    func toggleExpanded() { presentationState == .expanded ? collapse() : expand() }
 
 #if DEBUG
-    /// Moves the existing panel for design comparison only. The transient
-    /// anchor never writes the user's normal saved offset or screen ID.
     func setDebugAnchor(_ anchor: CapsuleDebugAnchor) {
-        guard debugAnchor != anchor else { return }
         debugAnchor = anchor
-        guard isVisible, let settings else { return }
-        applyFrame(for: presentationState, settings: settings)
+        if isVisible, let settings { applyFrame(for: presentationState, settings: settings) }
     }
-
-    /// Selects a renderer only for a Debug verification session. This is an
-    /// injection into the existing controller, not a persisted presentation
-    /// preference or a second window path.
     func setDebugPresentation(_ presentation: CapsuleLyricsPresentationVersion?) {
-        guard debugPresentation != presentation else { return }
         debugPresentation = presentation
-        guard isVisible, let settings else { return }
-        applyFrame(for: presentationState, settings: settings)
+        if isVisible, let settings { applyFrame(for: presentationState, settings: settings) }
     }
 #endif
 
@@ -220,93 +223,105 @@ final class CapsuleLyricsWindowController: NSObject, ObservableObject, NSWindowD
 #if DEBUG
         if let debugPresentation { return debugPresentation }
 #endif
-        let raw = UserDefaults.standard.string(
-            forKey: PresentationSelectionStore.runtimeKey(for: .capsule)
-        )
-        return raw.flatMap(CapsuleLyricsPresentationVersion.init(rawValue:))
-            ?? CapsuleLyricsPresentationVersion.current
+        let raw = settings?.presentationSelections.currentStableID(for: .capsule)
+        return raw.flatMap(CapsuleLyricsPresentationVersion.init(rawValue:)) ?? .current
     }
 
-    private var isDebugTopAttachedEnvelope: Bool {
-#if DEBUG
-        debugTopAttachedEnvelope
-#else
-        false
-#endif
-    }
+    var isTopAttachedEnvelope: Bool { activePresentation == .dynamicIslandDarkV4 }
+    private var effectivePanelLevel: NSWindow.Level { isTopAttachedEnvelope ? .statusBar : .floating }
+    var envelopeSize: CGSize { panel?.contentView?.bounds.size ?? CapsuleDynamicIslandDarkV4.debugEnvelopeSize }
+    var islandSize: CGSize { notchGeometry.islandFrame(for: presentationState, envelopeSize: envelopeSize).size }
 
-    private var effectivePanelLevel: NSWindow.Level {
-        // `.floating` cannot draw through the menu bar on this machine: the
-        // window is clamped to visibleFrame even when its requested frame
-        // uses screen.frame. The Debug prototype therefore opts into the
-        // lowest public level that can actually touch the physical top edge;
-        // production v2/v3 remain `.floating`.
-#if DEBUG
-        if isDebugTopAttachedEnvelope {
-            return .statusBar
+    func setMenuPresented(_ presented: Bool) {
+        guard menuIsPresented != presented else { return }
+        menuIsPresented = presented
+        if presented {
+            cancelHoverCollapse()
+        } else if !pointerIsInside {
+            pointerExited()
         }
-#endif
-        return .floating
     }
 
-    func pointerEntered() {
+    func setSeeking(_ seeking: Bool) {
+        isSeeking = seeking
+        if seeking { cancelHoverCollapse() }
+        else if !pointerIsInside { pointerExited() }
+    }
+
+    func pointerEntered() { handlePointerEntry(releasesExplicitExpansion: true) }
+
+    private func handlePointerEntry(releasesExplicitExpansion: Bool) {
+        guard isVisible else { return }
+        if releasesExplicitExpansion { expansionInteraction.pointerEntered() }
+        pointerIsInside = true
         cancelHoverCollapse()
-        guard isVisible, presentationState != .expanded else { return }
+        guard presentationState != .expanded else { return }
         setPresentationState(.hover)
+        hoverExpandTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 140_000_000)
+            guard !Task.isCancelled, let self, self.pointerIsInside else { return }
+            self.expand(explicit: false)
+        }
     }
 
     func pointerExited() {
-        guard presentationState == .hover else { return }
-        cancelHoverCollapse()
+        pointerIsInside = false
+        hoverExpandTask?.cancel()
+        guard presentationState != .collapsed, expansionInteraction.permitsHoverCollapse(menuPresented: menuIsPresented),
+              !isSeeking, hoverCollapseTask == nil else { return }
         hoverCollapseTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: 350_000_000)
-            guard !Task.isCancelled else { return }
-            self?.collapse()
+            try? await Task.sleep(nanoseconds: 220_000_000)
+            guard !Task.isCancelled, let self, !self.pointerIsInside,
+                  self.expansionInteraction.permitsHoverCollapse(menuPresented: self.menuIsPresented) else { return }
+            self.collapse()
         }
     }
 
     private func configure(state: PlaybackState, settings: AppSettingsStore) {
         playbackState = state
         self.settings = settings
-        if panel == nil {
-            let panel = makePanel(state: state)
-            self.panel = panel
-#if DEBUG
-            if debugTopAttachedEnvelope {
-                installDebugMouseMonitors()
-            }
-#endif
+        if selectionObserver == nil {
+            selectionObserver = settings.presentationSelections.$persistedSelections
+                .dropFirst().sink { [weak self] _ in
+                    Task { @MainActor [weak self] in
+                        guard let self, let settings = self.settings else { return }
+                        self.cancelHoverCollapse()
+                        self.presentationState = .collapsed
+                        self.expansionInteraction.reset()
+                        self.menuIsPresented = false
+                        self.hitRegionTask?.cancel()
+                        self.settledHitState = .collapsed
+                        self.objectWillChange.send()
+                        self.applyFrame(for: .collapsed, settings: settings)
+                        self.panel?.level = self.effectivePanelLevel
+                        self.panel?.hasShadow = !self.isTopAttachedEnvelope
+                        self.panel?.isMovable = false
+                        self.panel?.isMovableByWindowBackground = false
+                        self.removeOutsideClickMonitors()
+                        self.pointerIsInside = false
+                        if self.isTopAttachedEnvelope, self.isVisible {
+                            self.installMouseMonitors()
+                            self.updateMousePassThrough()
+                        } else {
+                            self.removeMouseMonitors()
+                            self.panel?.ignoresMouseEvents = false
+                        }
+                    }
+                }
         }
+        if panel == nil { panel = makePanel(state: state) }
     }
 
     private func makePanel(state: PlaybackState) -> CapsuleLyricsPanel {
-        let frame: NSRect
-#if DEBUG
-        if debugTopAttachedEnvelope {
-            frame = topAttachedEnvelopeFrame()
-        } else {
-            frame = restoredFrame(
-                for: .collapsed,
-                settings: settings ?? AppSettingsStore.shared
-            )
-        }
-#else
-        frame = restoredFrame(
-            for: .collapsed,
-            settings: settings ?? AppSettingsStore.shared
-        )
-#endif
-        let panel = CapsuleLyricsPanel(
-            contentRect: frame,
-            styleMask: [.borderless, .nonactivatingPanel],
-            backing: .buffered,
-            defer: false
-        )
+        let frame = isTopAttachedEnvelope ? topAttachedEnvelopeFrame() : restoredFrame(
+            for: .collapsed, settings: settings ?? AppSettingsStore.shared)
+        let panel = CapsuleLyricsPanel(contentRect: frame,
+            styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         panel.delegate = self
         panel.isReleasedWhenClosed = false
         panel.isOpaque = false
         panel.backgroundColor = .clear
-        panel.hasShadow = !isDebugTopAttachedEnvelope
+        panel.hasShadow = !isTopAttachedEnvelope
         panel.hidesOnDeactivate = false
         panel.isFloatingPanel = true
         panel.becomesKeyOnlyIfNeeded = true
@@ -314,23 +329,14 @@ final class CapsuleLyricsWindowController: NSObject, ObservableObject, NSWindowD
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.isMovable = false
         panel.isMovableByWindowBackground = false
-        let hostedView = NSHostingView(
-            rootView: CapsuleLyricsView(state: state, windowController: self)
-        )
-#if DEBUG
-        if debugTopAttachedEnvelope {
-            let envelopeView = CapsuleEnvelopeHostingView(hostedView: hostedView)
-            envelopeView.interactiveFrameProvider = { [weak self] in
-                self?.debugIslandFrameInEnvelope() ?? .zero
-            }
-            envelopeHostingView = envelopeView
-            panel.contentView = envelopeView
-        } else {
-            panel.contentView = hostedView
+        let hostedView = NSHostingView(rootView: CapsuleLyricsView(state: state, windowController: self))
+        let envelopeView = CapsuleEnvelopeHostingView(hostedView: hostedView)
+        envelopeView.interactivePointProvider = { [weak self] point in
+            guard let self else { return false }
+            return !self.isTopAttachedEnvelope || self.acceptsClick(at: point)
         }
-#else
-        panel.contentView = hostedView
-#endif
+        envelopeHostingView = envelopeView
+        panel.contentView = envelopeView
         return panel
     }
 
@@ -338,6 +344,10 @@ final class CapsuleLyricsWindowController: NSObject, ObservableObject, NSWindowD
         guard let panel, let settings else { return }
         cancelHoverCollapse()
         removeOutsideClickMonitors()
+        pointerIsInside = false
+        expansionInteraction.reset()
+        settledHitState = .collapsed
+        hitRegionTask?.cancel()
         presentationState = .collapsed
         applyFrame(for: .collapsed, settings: settings)
         panel.level = effectivePanelLevel
@@ -346,35 +356,43 @@ final class CapsuleLyricsWindowController: NSObject, ObservableObject, NSWindowD
         // does not make it key or activate another application.
         panel.orderFrontRegardless()
         isVisible = true
-#if DEBUG
-        if debugTopAttachedEnvelope {
-            installDebugMouseMonitors()
-            updateDebugMousePassThrough()
+        if isTopAttachedEnvelope {
+            installMouseMonitors()
+            updateMousePassThrough()
         }
-#endif
         settings.capsuleWindowWasVisible = true
         playbackState?.showCapsulePlayer = true
     }
 
     private func setPresentationState(_ newState: CapsulePresentationState) {
         guard newState != presentationState else { return }
+        hitRegionTask?.cancel()
+        if notchGeometry.size(for: newState).height <= notchGeometry.size(for: settledHitState).height {
+            settledHitState = newState
+        }
         presentationState = newState
+        if isTopAttachedEnvelope {
+            hitRegionTask = Task { @MainActor [weak self] in
+                let delay: UInt64 = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 140_000_000 : 400_000_000
+                try? await Task.sleep(nanoseconds: delay)
+                guard !Task.isCancelled, let self else { return }
+                self.settledHitState = newState
+                self.updateMousePassThrough()
+            }
+        } else { settledHitState = newState }
         if let settings {
             applyFrame(for: newState, settings: settings)
         }
-        panel?.isMovable = isDebugTopAttachedEnvelope ? false : newState == .expanded
-        panel?.isMovableByWindowBackground = isDebugTopAttachedEnvelope ? false : newState == .expanded
-#if DEBUG
-        if debugTopAttachedEnvelope {
-            updateDebugMousePassThrough()
+        panel?.isMovable = isTopAttachedEnvelope ? false : newState == .expanded
+        panel?.isMovableByWindowBackground = isTopAttachedEnvelope ? false : newState == .expanded
+        if isTopAttachedEnvelope {
+            updateMousePassThrough()
         }
-#endif
     }
 
     private func applyFrame(for state: CapsulePresentationState, settings: AppSettingsStore) {
         guard let panel else { return }
-#if DEBUG
-        if debugTopAttachedEnvelope {
+        if isTopAttachedEnvelope {
             let frame = topAttachedEnvelopeFrame()
             guard !panel.frame.equalTo(frame) else { return }
             isApplyingFrame = true
@@ -382,14 +400,12 @@ final class CapsuleLyricsWindowController: NSObject, ObservableObject, NSWindowD
             isApplyingFrame = false
             return
         }
-#endif
         let frame = restoredFrame(for: state, settings: settings)
         isApplyingFrame = true
         panel.setFrame(frame, display: true, animate: isVisible)
         isApplyingFrame = false
     }
 
-#if DEBUG
     private func topAttachedEnvelopeFrame() -> NSRect {
         let screen = persistence.targetScreen(
             mainWindow: WindowStatePersistence.shared.attachedMainWindow
@@ -397,8 +413,9 @@ final class CapsuleLyricsWindowController: NSObject, ObservableObject, NSWindowD
         guard let screen else {
             return NSRect(origin: .zero, size: CapsuleDynamicIslandDarkV4.debugEnvelopeSize)
         }
-        // Deliberately use screen.frame rather than visibleFrame. The
-        // prototype's host window touches the physical top edge exactly.
+        notchGeometry = CapsuleNotchGeometry(screenFrame: screen.frame,
+            safeTopInset: screen.safeAreaInsets.top,
+            auxiliaryLeft: screen.auxiliaryTopLeftArea, auxiliaryRight: screen.auxiliaryTopRightArea)
         return CapsuleDynamicIslandDarkV4.topAttachedEnvelopeFrame(
             screenFrame: screen.frame
         )
@@ -409,7 +426,7 @@ final class CapsuleLyricsWindowController: NSObject, ObservableObject, NSWindowD
         let envelopeSize = contentSize.width > 0 && contentSize.height > 0
             ? contentSize
             : CapsuleDynamicIslandDarkV4.debugEnvelopeSize
-        return CapsuleDynamicIslandDarkV4.topAttachedIslandFrame(
+        return notchGeometry.islandFrame(
             for: presentationState,
             envelopeSize: envelopeSize
         )
@@ -421,61 +438,52 @@ final class CapsuleLyricsWindowController: NSObject, ObservableObject, NSWindowD
         return panel.convertToScreen(localFrame)
     }
 
-    private func installDebugMouseMonitors() {
-        guard debugTopAttachedEnvelope else { return }
-        if debugGlobalMouseMonitor == nil {
-            debugGlobalMouseMonitor = NSEvent.addGlobalMonitorForEvents(
-                matching: .mouseMoved
+    private func installMouseMonitors() {
+        guard isTopAttachedEnvelope else { return }
+        if globalMouseMonitor == nil {
+            globalMouseMonitor = NSEvent.addGlobalMonitorForEvents(
+                matching: [.mouseMoved, .leftMouseDragged]
             ) { [weak self] _ in
-                self?.updateDebugMousePassThrough()
+                self?.updateMousePassThrough(pointerMoved: true)
             }
         }
-        if debugLocalMouseMonitor == nil {
-            debugLocalMouseMonitor = NSEvent.addLocalMonitorForEvents(
-                matching: .mouseMoved
+        if localMouseMonitor == nil {
+            localMouseMonitor = NSEvent.addLocalMonitorForEvents(
+                matching: [.mouseMoved, .leftMouseDragged]
             ) { [weak self] event in
-                self?.updateDebugMousePassThrough()
+                self?.updateMousePassThrough(pointerMoved: true)
                 return event
             }
         }
     }
 
-    private func removeDebugMouseMonitors() {
-        if let debugGlobalMouseMonitor {
-            NSEvent.removeMonitor(debugGlobalMouseMonitor)
-            self.debugGlobalMouseMonitor = nil
+    private func removeMouseMonitors() {
+        if let globalMouseMonitor {
+            NSEvent.removeMonitor(globalMouseMonitor)
+            self.globalMouseMonitor = nil
         }
-        if let debugLocalMouseMonitor {
-            NSEvent.removeMonitor(debugLocalMouseMonitor)
-            self.debugLocalMouseMonitor = nil
+        if let localMouseMonitor {
+            NSEvent.removeMonitor(localMouseMonitor)
+            self.localMouseMonitor = nil
         }
     }
 
-    private func updateDebugMousePassThrough() {
-        guard debugTopAttachedEnvelope, let panel, isVisible else { return }
-        let insideIsland = debugIslandFrameInScreen().contains(NSEvent.mouseLocation)
-        if insideIsland {
-            cancelHoverCollapse()
-            if presentationState == .collapsed {
-                pointerEntered()
-            }
-            panel.ignoresMouseEvents = false
-        } else {
-            if presentationState == .expanded {
-                // The prototype demonstrates the continuous island morph on
-                // pointer exit without changing the production controller's
-                // outside-click semantics. The next mouse move over the
-                // island can cancel the normal hover debounce.
-                removeOutsideClickMonitors()
-                setPresentationState(.hover)
-            }
-            if presentationState == .hover {
-                pointerExited()
-            }
-            panel.ignoresMouseEvents = true
-        }
+    private func acceptsClick(at point: CGPoint) -> Bool {
+        notchGeometry.contains(point, state: presentationState,
+            restrictingTo: settledHitState, envelopeSize: envelopeSize)
     }
-#endif
+
+    private func updateMousePassThrough(pointerMoved: Bool = false) {
+        guard isTopAttachedEnvelope, let panel, isVisible else { return }
+        let local = panel.convertPoint(fromScreen: NSEvent.mouseLocation)
+        let inside = notchGeometry.contains(local, state: presentationState, envelopeSize: envelopeSize)
+        if inside, pointerMoved { expansionInteraction.pointerEntered() }
+        if inside != pointerIsInside {
+            if inside { handlePointerEntry(releasesExplicitExpansion: pointerMoved) }
+            else { pointerExited() }
+        }
+        panel.ignoresMouseEvents = !acceptsClick(at: local) && !isSeeking
+    }
 
     private func restoredFrame(
         for state: CapsulePresentationState,
@@ -500,9 +508,10 @@ final class CapsuleLyricsWindowController: NSObject, ObservableObject, NSWindowD
     }
 
     private func savePosition() {
+        guard !isTopAttachedEnvelope else { return }
         guard let panel, let settings else { return }
 #if DEBUG
-        guard !debugTopAttachedEnvelope else { return }
+        guard !isTopAttachedEnvelope else { return }
         // Do not turn a comparison anchor's derived frame into the user's
         // normal centered horizontal offset.
         guard debugAnchor == .topCenter else { return }
@@ -525,19 +534,17 @@ final class CapsuleLyricsWindowController: NSObject, ObservableObject, NSWindowD
     private func repositionForCurrentScreen() {
         guard isVisible, let settings else { return }
         applyFrame(for: presentationState, settings: settings)
-#if DEBUG
-        if debugTopAttachedEnvelope {
-            updateDebugMousePassThrough()
+        if isTopAttachedEnvelope {
+            updateMousePassThrough()
             return
         }
-#endif
         savePosition()
     }
 
     private func installOutsideClickMonitors() {
         guard outsideClickMonitor == nil, localClickMonitor == nil else { return }
         let handler: (NSEvent) -> NSEvent? = { [weak self] event in
-            guard let self, self.presentationState == .expanded else { return event }
+            guard let self, self.presentationState == .expanded, !self.menuIsPresented else { return event }
             if event.window !== self.panel {
                 self.collapse()
             }
@@ -546,7 +553,7 @@ final class CapsuleLyricsWindowController: NSObject, ObservableObject, NSWindowD
         outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(
             matching: [.leftMouseDown, .rightMouseDown],
             handler: { [weak self] event in
-                guard let self, self.presentationState == .expanded else { return }
+                guard let self, self.presentationState == .expanded, !self.menuIsPresented else { return }
                 if event.window !== self.panel { self.collapse() }
             }
         )
@@ -569,6 +576,7 @@ final class CapsuleLyricsWindowController: NSObject, ObservableObject, NSWindowD
 
     private func cancelHoverCollapse() {
         hoverCollapseTask?.cancel()
+        hoverExpandTask?.cancel()
         hoverCollapseTask = nil
     }
 

@@ -616,6 +616,7 @@ public struct PersonalLyricsLibraryPackage: Equatable, Sendable, Codable {
         }
     }
 
+    public let preferredLyricsVersionID: UUID?
     public let manifest: Manifest
     public let track: PackageTrack
     public let lyricsVersions: [PackageLyricsVersion]
@@ -629,8 +630,10 @@ public struct PersonalLyricsLibraryPackage: Equatable, Sendable, Codable {
         lyricsVersions: [PackageLyricsVersion],
         translationVersions: [PackageTranslationVersion],
         readingVersions: [PackageReadingVersion],
-        timingVersions: [PackageTimingVersion]
+        timingVersions: [PackageTimingVersion],
+        preferredLyricsVersionID: UUID? = nil
     ) {
+        self.preferredLyricsVersionID = preferredLyricsVersionID
         self.manifest = manifest
         self.track = track
         self.lyricsVersions = lyricsVersions

@@ -97,6 +97,10 @@ public enum LyricsSafeMatcher {
 
         let metadataTitle = TrackTextNormalizer.normalize(metadata.track.title)
         let candidateTitle = TrackTextNormalizer.normalize(candidate.title)
+        let manualQueryTitle = queryVariant?.queryKind == .manualOverride
+            ? TrackTextNormalizer.normalize(queryVariant?.titleQuery ?? "") : ""
+        let manualTitleMatches = !manualQueryTitle.isEmpty && !candidateTitle.isEmpty
+            && (candidateTitle.contains(manualQueryTitle) || manualQueryTitle.contains(candidateTitle))
         let titleAliases = metadata.aliases
             .filter { $0.field == .title }
             .map { (value: TrackTextNormalizer.normalize($0.value), alias: $0) }
@@ -117,12 +121,7 @@ public enum LyricsSafeMatcher {
             // have a persisted TrackAlias record. They still expand recall,
             // but receive less title evidence than a confirmed alias.
             add("titleAliasQuery", queryVariant.queryKind == .romajiAlias ? 0.10 : 0.12)
-        } else if let queryVariant,
-                  queryVariant.queryKind == .manualOverride,
-                  !candidateTitle.isEmpty,
-                  (TrackTextNormalizer.normalize(queryVariant.titleQuery) == candidateTitle ||
-                   candidateTitle.contains(TrackTextNormalizer.normalize(queryVariant.titleQuery)) ||
-                   TrackTextNormalizer.normalize(queryVariant.titleQuery).contains(candidateTitle)) {
+        } else if manualTitleMatches {
             add("manualTitleMatch", 0.20)
         } else if !candidateTitle.isEmpty,
                   !metadataTitle.isEmpty,
@@ -330,7 +329,10 @@ public enum LyricsSafeMatcher {
                 || reasons.contains("titleAliasQuery")
             tier = titleEvidence && score >= 0.10 ? .candidates : .reject
         } else if queryVariant?.queryKind == .manualOverride {
-            tier = (score >= 0.10 || reasons.contains("manualTitleMatch")) ? .candidates : .reject
+            // Manual recovery may present a title-matching alternative even
+            // when localized artist names differ. It never becomes automatic;
+            // independent ID conflicts already take the hardReject branch.
+            tier = (score >= 0.10 || manualTitleMatches) ? .candidates : .reject
         } else if incompleteArtistSet && !hasStrongIndependentIdentity {
             // A missing/extra featured artist is not proof of a different
             // song, but it is insufficient for unattended adoption.

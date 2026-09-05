@@ -9,6 +9,8 @@ cp Tests/sqlite_persistence_contract.swift "$TMP_DIR/main.swift"
 
 swiftc -parse-as-library \
   SpotifyLyrics/Models/Models.swift \
+  SpotifyLyrics/Lyrics/ListeningHistoryModels.swift \
+  SpotifyLyrics/Lyrics/ListeningStatisticsModels.swift \
   SpotifyLyrics/Lyrics/TrackIdentity.swift \
   SpotifyLyrics/Lyrics/LyricsModels.swift \
   SpotifyLyrics/Lyrics/AlignmentModels.swift \
@@ -24,6 +26,7 @@ swiftc -parse-as-library \
   SpotifyLyrics/AI/AITranslationModels.swift \
   SpotifyLyrics/Persistence/DatabaseModels.swift \
   SpotifyLyrics/Lyrics/ReadingModels.swift \
+  SpotifyLyrics/Lyrics/PersonalLyricsLibraryModels.swift \
   SpotifyLyrics/Persistence/DatabaseMigrator.swift \
   SpotifyLyrics/Persistence/LyricsRepository.swift \
   SpotifyLyrics/Persistence/AlignmentProvenanceStore.swift \

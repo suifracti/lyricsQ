@@ -45,6 +45,7 @@ public struct ListeningStatisticsDailyCount: Identifiable, Equatable, Sendable {
 
 public struct ListeningStatisticsSong: Identifiable, Equatable, Sendable {
     public let stableKey: String
+    public let artworkURL: URL?
     public let title: String
     public let artist: String
     public let observedListeningTime: TimeInterval
@@ -52,7 +53,8 @@ public struct ListeningStatisticsSong: Identifiable, Equatable, Sendable {
 
     public var id: String { stableKey }
 
-    public init(stableKey: String, title: String, artist: String, observedListeningTime: TimeInterval, sessionCount: Int) {
+    public init(stableKey: String, title: String, artist: String, observedListeningTime: TimeInterval, sessionCount: Int, artworkURL: URL? = nil) {
+        self.artworkURL = artworkURL
         self.stableKey = stableKey
         self.title = title
         self.artist = artist

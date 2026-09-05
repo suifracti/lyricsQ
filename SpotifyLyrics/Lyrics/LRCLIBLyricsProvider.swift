@@ -71,6 +71,11 @@ public final class LRCLIBLyricsProvider: LyricsProvider, @unchecked Sendable {
     }
 
     private func fetchRecords(for track: Track) async throws -> [LRCLIBRecord] {
+        // Exact lookup needs an artist. A planned artist-free query is a
+        // free-text search, not an exact request with an empty artist filter.
+        if track.artist.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return try await searchRecords(for: track)
+        }
         var components = URLComponents(url: baseURL.appendingPathComponent("get"), resolvingAgainstBaseURL: false)!
         var items = [
             URLQueryItem(name: "track_name", value: track.title),
@@ -133,11 +138,15 @@ public final class LRCLIBLyricsProvider: LyricsProvider, @unchecked Sendable {
         if Task.isCancelled { throw CancellationError() }
 
         var components = URLComponents(url: baseURL.appendingPathComponent("search"), resolvingAgainstBaseURL: false)!
-        components.queryItems = [
-            URLQueryItem(name: "track_name", value: track.title),
-            URLQueryItem(name: "artist_name", value: track.artist),
-            URLQueryItem(name: "q", value: "\(track.title) \(track.artist)")
-        ]
+        if track.artist.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            components.queryItems = [URLQueryItem(name: "q", value: track.title)]
+        } else {
+            components.queryItems = [
+                URLQueryItem(name: "track_name", value: track.title),
+                URLQueryItem(name: "artist_name", value: track.artist),
+                URLQueryItem(name: "q", value: "\(track.title) \(track.artist)")
+            ]
+        }
 
         var request = URLRequest(url: components.url!)
         request.httpMethod = "GET"

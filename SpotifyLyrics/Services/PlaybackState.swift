@@ -36,6 +36,10 @@ public final class PlaybackState: ObservableObject {
     @Published public private(set) var searchPreviewTrack: Track?
     @Published public private(set) var listeningHistory: [ListeningHistoryEntry] = []
     @Published public private(set) var listeningStatistics: ListeningStatistics?
+    @Published public private(set) var isListeningHistoryLoading = false
+    @Published public private(set) var isListeningStatisticsLoading = false
+    @Published public private(set) var listeningHistoryError: String?
+    @Published public private(set) var listeningStatisticsError: String?
     @Published public var selectedLibraryToolTab: LibraryToolTab = .library
 
     // Auxiliary display states remain available to the existing window manager.
@@ -790,22 +794,41 @@ public final class PlaybackState: ObservableObject {
 
     public func refreshListeningHistory() {
         listeningHistoryLoadTask?.cancel()
+        isListeningHistoryLoading = true
+        listeningHistoryError = nil
         let repository = lyricsRepository
         listeningHistoryLoadTask = Task { @MainActor [weak self, repository] in
-            let entries = (try? await repository.loadListeningHistory(limit: 100)) ?? []
-            guard !Task.isCancelled, let self else { return }
-            self.listeningHistory = Self.mergeHistoryEntries(entries, with: self.listeningHistory)
+            do {
+                let entries = try await repository.loadListeningHistory(limit: 100)
+                guard !Task.isCancelled, let self else { return }
+                self.listeningHistory = Self.mergeHistoryEntries(entries, with: self.listeningHistory)
+                self.isListeningHistoryLoading = false
+            } catch {
+                guard !Task.isCancelled, let self else { return }
+                self.listeningHistoryError = "无法读取最近播放记录，请重试。"
+                self.isListeningHistoryLoading = false
+            }
         }
     }
 
     public func refreshListeningStatistics(for timeRange: ListeningStatisticsTimeRange) {
         listeningStatisticsLoadTask?.cancel()
-        listeningStatistics = nil
+        isListeningStatisticsLoading = true
+        listeningStatisticsError = nil
         let repository = lyricsRepository
+        let pendingWrite = listeningHistoryWriteTask
         listeningStatisticsLoadTask = Task { @MainActor [weak self, repository] in
-            let statistics = try? await repository.loadListeningStatistics(for: timeRange)
-            guard !Task.isCancelled, let self else { return }
-            self.listeningStatistics = statistics ?? .empty(for: timeRange)
+            do {
+                await pendingWrite?.value
+                let statistics = try await repository.loadListeningStatistics(for: timeRange)
+                guard !Task.isCancelled, let self else { return }
+                self.listeningStatistics = statistics
+                self.isListeningStatisticsLoading = false
+            } catch {
+                guard !Task.isCancelled, let self else { return }
+                self.listeningStatisticsError = "无法读取听歌统计，请重试。"
+                self.isListeningStatisticsLoading = false
+            }
         }
     }
 
@@ -829,7 +852,9 @@ public final class PlaybackState: ObservableObject {
             entriesByID[entry.sessionID] = entry
         }
         for entry in current {
-            entriesByID[entry.sessionID] = entry
+            var enriched = entry
+            enriched.artworkURL = entry.artworkURL ?? entriesByID[entry.sessionID]?.artworkURL
+            entriesByID[entry.sessionID] = enriched
         }
         return entriesByID.values.sorted { lhs, rhs in
             if lhs.lastObservedAt != rhs.lastObservedAt {
@@ -1186,6 +1211,7 @@ public final class PlaybackState: ObservableObject {
             return
         }
 
+        listeningHistorySession?.noteExplicitSeek()
         let seekTime = time
         let previousPosition = currentTime
         #if DEBUG
@@ -1916,7 +1942,8 @@ public final class PlaybackState: ObservableObject {
     }
 
     public func adoptLyricsCandidate(_ candidate: LyricsCandidate) {
-        lyricsSession.adopt(candidate: candidate)
+        let session = searchPreviewTrack == nil ? lyricsSession : searchPreviewSession
+        session.adopt(candidate: candidate)
     }
 
     /// Adopts the lyrics currently loaded in search preview to the live playback session.
@@ -2167,7 +2194,9 @@ public final class PlaybackState: ObservableObject {
         isPlaying: Bool
     ) {
         var session = ListeningHistorySession(track: track, identity: identity, startedAt: date)
-        session.observe(at: date, position: position, isPlaying: isPlaying)
+        if let completed = session.observe(at: date, position: position, isPlaying: isPlaying) {
+            publishListeningHistory(completed)
+        }
         listeningHistorySession = session
         publishListeningHistory(session.entry)
     }
@@ -2178,7 +2207,10 @@ public final class PlaybackState: ObservableObject {
         isPlaying: Bool
     ) {
         guard var session = listeningHistorySession else { return }
-        session.observe(at: date, position: position, isPlaying: isPlaying)
+        session.updateArtwork(currentTrack.artworkURL)
+        if let completed = session.observe(at: date, position: position, isPlaying: isPlaying) {
+            publishListeningHistory(completed)
+        }
         listeningHistorySession = session
         publishListeningHistory(session.entry)
     }

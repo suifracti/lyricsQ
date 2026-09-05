@@ -1,4 +1,5 @@
 import Foundation
+import SQLite3
 
 @main
 @MainActor
@@ -9,7 +10,8 @@ struct ListeningHistoryContract {
             artist: "Artist A",
             album: "Album A",
             duration: 180,
-            spotifyId: "history-a"
+            spotifyId: "history-a",
+            artworkURL: URL(string: "https://example.invalid/cover.jpg")
         )
         let identityA = TrackIdentity(track: trackA)
         var sessionA = ListeningHistorySession(
@@ -40,25 +42,94 @@ struct ListeningHistoryContract {
         )
         sessionB.observe(at: Date(timeIntervalSince1970: 130), position: 0, isPlaying: true)
 
+        var loop = ListeningHistorySession(track: trackA, identity: identityA, startedAt: Date(timeIntervalSince1970: 1000))
+        loop.observe(at: Date(timeIntervalSince1970: 1000), position: 0, isPlaying: true)
+        for second in 1...179 { loop.observe(at: Date(timeIntervalSince1970: 1000 + Double(second)), position: Double(second), isPlaying: true) }
+        let firstPlayID = loop.entry.sessionID
+        loop.observe(at: Date(timeIntervalSince1970: 1181), position: 1, isPlaying: true)
+        precondition(loop.entry.sessionID != firstPlayID, "End-to-start repeat must create a new playback record")
+        precondition(loop.entry.observedPlaybackDuration == 1)
+        let secondPlayID = loop.entry.sessionID
+        loop.observe(at: Date(timeIntervalSince1970: 1182), position: 80, isPlaying: true)
+        loop.observe(at: Date(timeIntervalSince1970: 1183), position: 0, isPlaying: true)
+        precondition(loop.entry.sessionID == secondPlayID, "Ordinary backward seek must not count as a repeat")
+
+        var manual = ListeningHistorySession(track: trackA, identity: identityA, startedAt: Date(timeIntervalSince1970: 1))
+        manual.observe(at: Date(timeIntervalSince1970: 1), position: 179, isPlaying: true)
+        let manualID = manual.sessionID
+        manual.noteExplicitSeek()
+        manual.observe(at: Date(timeIntervalSince1970: 3), position: 1, isPlaying: true)
+        precondition(manual.sessionID == manualID, "Explicit seek at track end must not count as repeat")
+
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("SpotifyLyricsListeningHistoryContract-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
 
         let databaseURL = root.appendingPathComponent("SpotifyLyrics.sqlite3")
-        let repository = SQLiteLyricsRepository(databaseURL: databaseURL)
+        let repository = SQLiteLyricsRepository(databaseURL: databaseURL, alignmentProvenanceDirectory: root.appendingPathComponent("provenance"))
         try await repository.prepare()
         try await repository.upsertListeningHistory(sessionA.entry)
         try await repository.upsertListeningHistory(sessionA.entry)
         try await repository.upsertListeningHistory(sessionB.entry)
 
-        let restartedRepository = SQLiteLyricsRepository(databaseURL: databaseURL)
+        let restartedRepository = SQLiteLyricsRepository(databaseURL: databaseURL, alignmentProvenanceDirectory: root.appendingPathComponent("provenance"))
         let entries = try await restartedRepository.loadListeningHistory(limit: 10)
         precondition(entries.count == 2)
         precondition(entries[0].stableKey == identityB.stableKey)
         precondition(entries[1].stableKey == identityA.stableKey)
         precondition(entries[1].observedPlaybackDuration == 15)
+        precondition(entries[1].artworkURL == trackA.artworkURL, "History cover must survive reload")
+        let artStats = try await restartedRepository.loadListeningStatistics(for: .allTime)
+        precondition(artStats.topSongs.first(where: { $0.stableKey == identityA.stableKey })?.artworkURL == trackA.artworkURL)
 
-        print("listening history contract passed")
+        let lateTrack = Track(title: "Late artwork", artist: "Artist", album: "Album", duration: 180)
+        var lateSession = ListeningHistorySession(track: lateTrack, identity: TrackIdentity(track: lateTrack))
+        precondition(lateSession.entry.artworkURL == nil)
+        lateSession.updateArtwork(trackA.artworkURL)
+        lateSession.updateArtwork(nil)
+        precondition(lateSession.entry.artworkURL == trackA.artworkURL, "Late cover must enrich session and survive nil observations")
+        try await repository.upsertListeningHistory(lateSession.entry)
+        let lateReload = try await repository.loadListeningHistory(limit: 10)
+        precondition(lateReload.first(where: { $0.sessionID == lateSession.sessionID })?.artworkURL == trackA.artworkURL)
+
+        let loopRepository = SQLiteLyricsRepository(databaseURL: root.appendingPathComponent("loops.sqlite3"), alignmentProvenanceDirectory: root.appendingPathComponent("loop-provenance"))
+        var repeated = ListeningHistorySession(track: trackA, identity: identityA, startedAt: Date(timeIntervalSince1970: 2000))
+        for second in 0...1081 {
+            if let finished = repeated.observe(at: Date(timeIntervalSince1970: 2000 + Double(second)), position: Double(second % 180), isPlaying: true) {
+                try await loopRepository.upsertListeningHistory(finished)
+            }
+        }
+        try await loopRepository.upsertListeningHistory(repeated.entry)
+        let loopStats = try await loopRepository.loadListeningStatistics(for: .allTime)
+        precondition(loopStats.sessionCount == 7, "Six full repeats plus current play must remain seven records")
+        precondition(loopStats.totalListeningTime == 1081, "Repeat split must neither lose nor duplicate elapsed time")
+        var paused = ListeningHistorySession(track: trackA, identity: identityA, startedAt: Date(timeIntervalSince1970: 1))
+        paused.observe(at: Date(timeIntervalSince1970: 1), position: 179, isPlaying: false)
+        let pausedID = paused.sessionID
+        paused.observe(at: Date(timeIntervalSince1970: 3), position: 1, isPlaying: true)
+        precondition(paused.sessionID == pausedID, "Paused seek is not an observed repeat")
+        paused.observe(at: Date(timeIntervalSince1970: 4), position: 179, isPlaying: true)
+        paused.observe(at: Date(timeIntervalSince1970: 100), position: 1, isPlaying: true)
+        precondition(paused.sessionID == pausedID, "Unobserved long gap must not invent repeat count")
+
+        var lock: OpaquePointer?
+        precondition(sqlite3_open(databaseURL.path, &lock) == SQLITE_OK)
+        defer { sqlite3_exec(lock, "ROLLBACK", nil, nil, nil); sqlite3_close(lock) }
+        precondition(sqlite3_exec(lock, "BEGIN EXCLUSIVE", nil, nil, nil) == SQLITE_OK)
+        var rejectedLockedRead = false
+        do { _ = try await restartedRepository.loadListeningHistory(limit: 10) }
+        catch { rejectedLockedRead = true }
+        precondition(rejectedLockedRead, "Locked history must throw instead of returning an empty success")
+        var rejectedStatistics = false
+        do { _ = try await restartedRepository.loadListeningStatistics(for: .allTime) }
+        catch { rejectedStatistics = true }
+        precondition(rejectedStatistics, "Locked statistics must throw")
+        precondition(sqlite3_exec(lock, "ROLLBACK", nil, nil, nil) == SQLITE_OK)
+        let recovered = try await restartedRepository.loadListeningHistory(limit: 10)
+        precondition(recovered.count == 3, "History retry must recover after unlock")
+        let recoveredStatistics = try await restartedRepository.loadListeningStatistics(for: .allTime)
+        precondition(recoveredStatistics.sessionCount == 3)
+        print("listening history contract passed (lock errors and retry verified)")
     }
 }
