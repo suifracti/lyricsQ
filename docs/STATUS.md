@@ -41,6 +41,7 @@ This file describes what is present in the repository and how mature it is. It i
 - 灵动岛已恢复为默认，桌面歌词采用独立的大字描边/单双行/配色方案，三种风格完成原生迭代；用户进一步确认封面必须完整：舞台保留原图居中等比适配、不裁切，采用镜像边缘延展并向外柔化；窗口自由缩放，禁止锁比例或自动改尺寸，歌词布局暂不调整。定向测试、独立复核及生产 Debug/Release 构建通过；作为独立预览交付，未合入 main 或发布新版本。
 - 原生生成夹具验证包括封面比例、桌面明暗背景与最小布局、逐字时间高亮和灵动岛更多菜单。物理刘海屏、多屏切换、系统 Reduce Motion 与长期真实 Spotify 播放未作最终实机验收。
 - 标题/手动歌词恢复已修复：保留无艺人搜索、LRCLIB 全文查询和候选展示；真实 Marigold 查询可返回 Aimyon 候选，自动跨艺人保护保留。专项检查及 Debug/Release 通过，新预览已打开；Marigold 原生选词待再次播放确认。旧 real_track 综合脚本存在依赖缺失，未通过。详见 `docs/work/experience-restoration/title-only-recovery-report.md`。
+- V3 右上角工具栏收敛为窗口、搜索、更多三个入口；更多中保留歌词操作、外观、设置和来源恢复；窗口仍自由缩放。新增悬停保持显示，弹出面板保持可见。
 - statistics contract 午夜日期夹具稳定性仍为既有 Deferred。
 
 ## Implemented in the repository

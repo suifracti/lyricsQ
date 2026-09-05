@@ -23,14 +23,16 @@ struct AppleMusicImmersiveV3WindowView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var isSearchPresented = false
-    @State private var isVisualTuningPresented = false
+    @State private var isWindowMenuPresented = false
+    @State private var isMorePresented = false
+    @State private var morePage = "root"
     // The canvas starts clean. Controls reveal only when the pointer reaches
     // the top edge, so playback remains content-first without sacrificing
     // access to search, layout, and settings.
     @State private var toolsVisible = true
+    @State private var isPointerInToolbarRegion = false
     @State private var interactionToken = 0
     @State private var isAlignmentDetailsPresented = false
-    @State private var isCurrentSongOperationsPresented = false
 
     private var showsForegroundArtwork: Bool {
         settings.v3ArtworkPresentation != .stage
@@ -62,11 +64,11 @@ struct AppleMusicImmersiveV3WindowView: View {
                 toolBar(for: geometry.size)
                     .padding(.top, 18)
                     .padding(.trailing, 26)
-                    .opacity(toolsVisible || isVisualTuningPresented || isSearchPresented || isCurrentSongOperationsPresented ? 1 : 0)
-                    .allowsHitTesting(toolsVisible || isVisualTuningPresented || isSearchPresented || isCurrentSongOperationsPresented)
+                    .opacity(toolsVisible || toolbarPanelIsPresented ? 1 : 0)
+                    .allowsHitTesting(toolsVisible || toolbarPanelIsPresented)
                     .animation(
                         LyricsDesignTokens.Motion.animation(reduceMotion: reduceMotion),
-                        value: toolsVisible || isVisualTuningPresented || isSearchPresented || isCurrentSongOperationsPresented
+                        value: toolsVisible || toolbarPanelIsPresented
                     )
             }
             .clipped()
@@ -74,13 +76,15 @@ struct AppleMusicImmersiveV3WindowView: View {
             .onContinuousHover(coordinateSpace: .local) { phase in
                 switch phase {
                 case .active(let location):
-                    if location.y <= MainWindowResponsiveThresholds.toolbarRevealHeight || isVisualTuningPresented || isSearchPresented || isCurrentSongOperationsPresented {
+                    isPointerInToolbarRegion = location.y <= MainWindowResponsiveThresholds.toolbarRevealHeight
+                    if isPointerInToolbarRegion || toolbarPanelIsPresented {
                         revealTools()
-                    } else if !isVisualTuningPresented && !isSearchPresented && !isCurrentSongOperationsPresented {
+                    } else if !toolbarPanelIsPresented {
                         toolsVisible = false
                     }
                 case .ended:
-                    if !isVisualTuningPresented && !isSearchPresented && !isCurrentSongOperationsPresented {
+                    isPointerInToolbarRegion = false
+                    if !toolbarPanelIsPresented {
                         toolsVisible = false
                     }
                 }
@@ -88,7 +92,7 @@ struct AppleMusicImmersiveV3WindowView: View {
             .task(id: interactionToken) {
                 guard interactionToken > 0 else { return }
                 try? await Task.sleep(nanoseconds: 3_000_000_000)
-                guard !Task.isCancelled else { return }
+                guard !Task.isCancelled, !isPointerInToolbarRegion, !toolbarPanelIsPresented else { return }
                 withAnimation(LyricsDesignTokens.Motion.animation(reduceMotion: reduceMotion)) {
                     toolsVisible = false
                 }
@@ -569,195 +573,157 @@ struct AppleMusicImmersiveV3WindowView: View {
             || size.height <= MainWindowResponsiveThresholds.comfortableMinimumSize.height
     }
 
+    private var toolbarPanelIsPresented: Bool {
+        isWindowMenuPresented || isMorePresented || isSearchPresented
+    }
+
     private func toolBar(for size: CGSize) -> some View {
-        HStack(spacing: LyricsDesignTokens.Spacing.xs + 2) {
-            windowModeMenu
-            providerStatusMenu
-            currentSongOperationsButton
-            if isCompact(for: size) {
-                compactMoreMenu
-            } else {
-                searchButton
-                layoutMenu
-                preferencesButton
+        HStack(spacing: 4) {
+            Button { isWindowMenuPresented.toggle() } label: {
+                iconLabel("macwindow", description: "窗口模式")
+            }
+            .popover(isPresented: $isWindowMenuPresented, arrowEdge: .top) {
+                windowModePanel
+            }
+            searchButton
+            Button { isMorePresented.toggle() } label: {
+                iconLabel("ellipsis", description: "更多操作")
+            }
+            .popover(isPresented: $isMorePresented, arrowEdge: .top) {
+                morePanel
             }
         }
-        .font(.system(size: 13, weight: .medium))
-        .padding(.horizontal, 14)
-        .padding(.vertical, 7)
-        // Use the regular native material for the toolbar surface. It keeps
-        // controls legible over both bright and dark artwork while retaining
-        // the translucent macOS surface instead of forcing a black panel.
-        .background(.regularMaterial)
-        .clipShape(Capsule())
-        .overlay(
-            Capsule()
-                .stroke(Color.white.opacity(0.22), lineWidth: 0.8)
-        )
-        .shadow(color: Color.black.opacity(0.25), radius: 10, x: 0, y: 4)
-        .foregroundStyle(.white.opacity(LyricsDesignTokens.Material.primaryTextOpacity))
+        .buttonStyle(QuietToolbarButtonStyle())
+        .padding(5)
+        .background(.regularMaterial.opacity(0.78), in: Capsule())
+        .overlay(Capsule().strokeBorder(.white.opacity(0.16), lineWidth: 0.7))
+        .shadow(color: .black.opacity(0.12), radius: 12, x: 0, y: 4)
+        .foregroundStyle(.white.opacity(0.92))
+        .onChange(of: isMorePresented) { _, presented in
+            if !presented { morePage = "root" }
+        }
     }
 
-    private var compactMoreMenu: some View {
-        Menu {
-            Button {
-                isSearchPresented = true
-            } label: {
-                Label("搜索歌曲", systemImage: "magnifyingglass")
-            }
-            Button {
-                isVisualTuningPresented = true
-            } label: {
-                Label("视觉与布局调节", systemImage: "rectangle.3.group")
-            }
-            Divider()
-            SettingsLink {
-                Label("显示设置", systemImage: "gearshape")
-            }
-        } label: {
-            iconLabel("ellipsis", description: "更多操作")
-        }
-        .menuStyle(.borderlessButton)
-        .buttonStyle(.plain)
-        .popover(isPresented: $isSearchPresented, arrowEdge: .top) {
-            SongSearchPopover(
-                manager: state.songSearchManager,
-                playbackState: state
-            )
-        }
-        .popover(isPresented: $isVisualTuningPresented, arrowEdge: .top) {
-            V3VisualTuningPopoverView(
-                settings: settings,
-                layoutStyleRawValue: $layoutStyleRawValue
-            )
-        }
-        .accessibilityLabel("更多操作")
-    }
-
-    private var windowModeMenu: some View {
-        Menu {
-            Button("主窗口", systemImage: "macwindow") {
+    private var windowModePanel: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("窗口模式")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+            toolbarAction("主窗口", symbol: "macwindow") {
                 state.currentMode = .mainWindow
+                isWindowMenuPresented = false
             }
-            Divider()
-            Button("悬浮歌词", systemImage: "rectangle.on.rectangle") {
+            toolbarAction("桌面歌词", symbol: "rectangle.on.rectangle") {
                 WindowManager.shared.toggleFloatingLyrics(state: state)
+                isWindowMenuPresented = false
             }
-            Menu("悬浮歌词交互") {
-                Button("可编辑 / 可拖动") {
-                    WindowManager.shared.setFloatingInteractionMode(.interactive, state: state)
-                }
-                Button("锁定展示") {
-                    WindowManager.shared.setFloatingInteractionMode(.locked, state: state)
-                }
-                Button("启用鼠标穿透") {
-                    WindowManager.shared.setFloatingInteractionMode(.passThrough, state: state)
-                }
-                Divider()
-                Button("解除鼠标穿透") {
-                    WindowManager.shared.restoreFloatingInteractiveMode(state: state)
-                }
-            }
-            Button("顶部胶囊", systemImage: "capsule") {
+            toolbarAction("顶部胶囊", symbol: "capsule") {
                 WindowManager.shared.toggleCapsule(state: state)
+                isWindowMenuPresented = false
             }
-            Button("全屏歌词", systemImage: "arrow.up.left.and.arrow.down.right") {
+            toolbarAction("全屏歌词", symbol: "arrow.up.left.and.arrow.down.right") {
                 WindowManager.shared.toggleFullScreen(state: state)
+                isWindowMenuPresented = false
             }
-        } label: {
-            iconLabel("rectangle.on.rectangle", description: "窗口模式")
+            Divider().padding(.vertical, 4)
+            Menu("桌面歌词交互") {
+                Button("可编辑 / 可拖动") { WindowManager.shared.setFloatingInteractionMode(.interactive, state: state) }
+                Button("锁定展示") { WindowManager.shared.setFloatingInteractionMode(.locked, state: state) }
+                Button("启用鼠标穿透") { WindowManager.shared.setFloatingInteractionMode(.passThrough, state: state) }
+                Button("解除鼠标穿透") { WindowManager.shared.restoreFloatingInteractiveMode(state: state) }
+            }
+            .padding(8)
         }
-        .menuStyle(.borderlessButton)
-        .buttonStyle(.plain)
-        .accessibilityLabel("窗口模式")
+        .padding(8)
+        .frame(width: 224)
     }
 
-    private var providerStatusMenu: some View {
-        Menu {
-            Text(state.providerStatusMessage)
-
-            if state.isUsingMockPreview {
-                Button("退出 Mock Preview") { state.exitMockPreview() }
-            } else if !state.canControlSpotify {
-                Button("进入 Mock Preview") { state.enterMockPreview() }
-                Button("重试 Spotify") { state.reconnectSpotify() }
-            } else {
-                Button("自动补全歌词") { state.autoCompleteLyrics() }
+    private var morePanel: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if morePage != "root" {
+                Button { morePage = "root" } label: {
+                    Label("返回更多", systemImage: "chevron.left")
+                        .font(.system(size: 12, weight: .medium))
+                        .padding(12)
+                }
+                .buttonStyle(.plain)
+                Divider()
             }
-        } label: {
-            Circle()
-                .fill(state.canControlSpotify ? Color.green : Color.orange)
-                .frame(width: 8, height: 8)
-                .frame(width: 32, height: 32)
+            if morePage == "lyrics" {
+                CurrentSongOperationsView(state: state).environmentObject(settings)
+            } else if morePage == "appearance" {
+                V3VisualTuningPopoverView(settings: settings, layoutStyleRawValue: $layoutStyleRawValue)
+            } else {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("更多")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                    toolbarAction("当前歌曲与歌词", symbol: "music.note.list") { morePage = "lyrics" }
+                    toolbarAction("外观与背景", symbol: "slider.horizontal.3") { morePage = "appearance" }
+                    SettingsLink {
+                        Label("设置", systemImage: "gearshape")
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(10)
+                    }
+                    .buttonStyle(QuietToolbarButtonStyle())
+                    Divider().padding(.vertical, 6)
+                    HStack(spacing: 7) {
+                        Circle().fill(state.canControlSpotify ? Color.green : Color.orange).frame(width: 6, height: 6)
+                        Text(state.providerStatusMessage).font(.system(size: 11)).foregroundStyle(.secondary)
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    if state.isUsingMockPreview {
+                        toolbarAction("退出 Mock Preview", symbol: "arrow.uturn.backward") { state.exitMockPreview() }
+                    } else if !state.canControlSpotify {
+                        toolbarAction("重试 Spotify", symbol: "arrow.clockwise") { state.reconnectSpotify() }
+                        toolbarAction("进入 Mock Preview", symbol: "play.rectangle") { state.enterMockPreview() }
+                    } else {
+                        toolbarAction("自动补全歌词", symbol: "text.badge.plus") { state.autoCompleteLyrics() }
+                    }
+                }
+                .padding(8)
+                .frame(width: 244)
+            }
         }
-        .menuStyle(.borderlessButton)
-        .buttonStyle(.plain)
-        .help("播放来源与歌词工具")
-        .accessibilityLabel("播放来源：\(state.providerStatusMessage)")
+    }
+
+    private func toolbarAction(_ title: String, symbol: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: symbol)
+                .font(.system(size: 13, weight: .medium))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(10)
+        }
+        .buttonStyle(QuietToolbarButtonStyle())
     }
 
     private var searchButton: some View {
-        Button {
-            isSearchPresented.toggle()
-        } label: {
+        Button { isSearchPresented.toggle() } label: {
             iconLabel("magnifyingglass", description: "搜索歌曲")
         }
-        .buttonStyle(.plain)
         .popover(isPresented: $isSearchPresented, arrowEdge: .top) {
-            SongSearchPopover(
-                manager: state.songSearchManager,
-                playbackState: state
-            )
+            SongSearchPopover(manager: state.songSearchManager, playbackState: state)
         }
-        .accessibilityLabel("搜索歌曲")
-    }
-
-    private var currentSongOperationsButton: some View {
-        Button {
-            isCurrentSongOperationsPresented.toggle()
-        } label: {
-            iconLabel("music.note.list", description: "当前歌曲")
-        }
-        .buttonStyle(.plain)
-        .popover(isPresented: $isCurrentSongOperationsPresented, arrowEdge: .top) {
-            CurrentSongOperationsView(state: state)
-                .environmentObject(settings)
-        }
-        .accessibilityLabel("当前歌曲操作")
-        .help("歌词版本、翻译和导入操作")
-    }
-
-    private var layoutMenu: some View {
-        Button {
-            isVisualTuningPresented.toggle()
-        } label: {
-            iconLabel("rectangle.3.group", description: "V3 视觉与布局调节")
-        }
-        .buttonStyle(.plain)
-        .popover(isPresented: $isVisualTuningPresented, arrowEdge: .top) {
-            V3VisualTuningPopoverView(
-                settings: settings,
-                layoutStyleRawValue: $layoutStyleRawValue
-            )
-        }
-        .accessibilityLabel("V3 视觉与布局调节")
     }
 
     private var preferencesButton: some View {
-        SettingsLink {
-            iconLabel("gearshape", description: "显示设置")
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("显示设置")
+        SettingsLink { iconLabel("gearshape", description: "显示设置") }
+            .buttonStyle(.plain)
+            .accessibilityLabel("显示设置")
     }
 
     private func iconLabel(_ systemImage: String, description: String) -> some View {
         Image(systemName: systemImage)
             .font(.system(size: 15, weight: .medium))
-            .foregroundStyle(.white.opacity(0.82))
-            .frame(width: 32, height: 32)
+            .frame(width: 36, height: 36)
             .contentShape(Rectangle())
             .help(description)
+            .accessibilityLabel(description)
     }
 
     private func revealTools() {
@@ -767,6 +733,19 @@ struct AppleMusicImmersiveV3WindowView: View {
             }
         }
         interactionToken &+= 1
+    }
+}
+
+private struct QuietToolbarButtonStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var hovering = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .background(.white.opacity(configuration.isPressed ? 0.20 : hovering ? 0.10 : 0), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .onHover { hovering = $0 }
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: hovering)
     }
 }
 
