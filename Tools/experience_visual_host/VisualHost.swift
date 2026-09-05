@@ -157,6 +157,14 @@ struct ExperienceVisualHostApp: App {
         }
         settings.v3ArtworkPresentation = V3ArtworkPresentation.allCases.first { $0.title == ExperienceArguments.value("--style-title",fallback:"") } ?? (ExperienceArguments.value("--style",fallback:"ambient") == "stage" ? .stage : ExperienceArguments.value("--style",fallback:"ambient") == "classic" ? .classic : .ambient)
         settings.v3ArtworkPosition=ExperienceArguments.value("--position",fallback:"left")
+        let lyricPosition = ExperienceArguments.value("--lyric-position", fallback: "automatic")
+        settings.v3LyricsPosition = lyricPosition
+        precondition(AppSettingsStore(defaults: defaults).v3LyricsPosition == lyricPosition)
+        let selectedStyle = settings.v3ArtworkPresentation
+        settings.v3ArtworkPresentation = selectedStyle == .stage ? .ambient : .stage
+        precondition(settings.v3LyricsPosition == "automatic")
+        settings.v3ArtworkPresentation = selectedStyle
+        precondition(settings.v3LyricsPosition == lyricPosition)
         if let scale=Double(ExperienceArguments.value("--scale",fallback:"")) { settings.v3ArtworkSizeScale=scale }
         if let blur=Double(ExperienceArguments.value("--blur",fallback:"")) { settings.v3BackdropBlurRadius=blur }
         let provider=ExperiencePlaybackProvider(artwork:ExperienceArtwork.make())
@@ -174,6 +182,9 @@ struct ExperienceVisualHostApp: App {
         }
         .defaultSize(width:ExperienceArguments.size.width,height:ExperienceArguments.size.height)
         .windowStyle(.hiddenTitleBar)
+        Window("歌词编辑", id: "lyrics-editor") {
+            LyricsEditorWindowView().environmentObject(playback).environmentObject(settings)
+        }
         Settings { SettingsRootView().environmentObject(settings).environmentObject(playback).environmentObject(SettingsDataController()) }
     }
 }
@@ -182,12 +193,15 @@ private struct ExperienceFixtureRoot: View {
     @ObservedObject var settings:AppSettingsStore
     @StateObject private var floatingController = FloatingLyricsWindowController()
     @StateObject private var capsuleController = CapsuleLyricsWindowController()
+    @Environment(\.openSettings) private var openSettings
+    @Environment(\.openWindow) private var openWindow
     @State private var layout=MainWindowLayoutStyle.appleMusicImmersiveV3.rawValue
     private var targetWindow: NSWindow? {
         NSApp.windows.first {
             switch ExperienceArguments.surface {
             case "floating": return String(describing: type(of: $0)).contains("FloatingLyricsPanel")
             case "capsule": return String(describing: type(of: $0)).contains("CapsuleLyricsPanel")
+            case "fullscreen": return $0.title == "全屏歌词"
             default: return $0.title == "Experience visual fixture"
             }
         }
@@ -204,8 +218,33 @@ private struct ExperienceFixtureRoot: View {
                 fflush(stdout)
             }
             .task {
+                MenuBarLyricsController.shared.setOpenEditorHandler { openWindow(id: "lyrics-editor") }
+                MenuBarLyricsController.shared.setOpenSettingsHandler { openSettings() }
+                MenuBarLyricsController.shared.setOpenMainWindowHandler { openWindow(id: "fixture-main") }
                 playback.startProvider()
                 try? await Task.sleep(for:.seconds(1))
+                if ProcessInfo.processInfo.arguments.contains("--fullscreen-preview-isolation") {
+                    let previewTrack = Track(id: "spotify:track:unplayedpreview",
+                        title: "UNPLAYED PREVIEW — MUST NOT APPEAR FULLSCREEN", artist: "Preview artist",
+                        album: "Preview album", duration: 240)
+                    let previewLine = LyricLine(timestamp: 0, originalText: "PREVIEW LYRICS — MUST NOT APPEAR FULLSCREEN")
+                    let previewDocument = LyricsDocument(identity: TrackIdentity(track: previewTrack), title: previewTrack.title,
+                        artist: previewTrack.artist, album: previewTrack.album, duration: previewTrack.duration,
+                        lines: [previewLine], isSynchronized: false, source: .local, confidence: 1)
+                    playback.loadSearchResult(SongSearchResult(id: "fixture-preview", source: .local, track: previewTrack,
+                        confidence: 1, lyrics: previewDocument))
+                    try? await Task.sleep(for: .milliseconds(500))
+                    precondition(playback.isShowingSearchPreview && playback.liveLyrics != playback.lyrics)
+                }
+                if ExperienceArguments.surface == "fullscreen" {
+                    WindowManager.shared.showFullScreen(state: playback, settings: settings)
+                    for _ in 0..<60 {
+                        if WindowManager.shared.fullScreenWindow?.styleMask.contains(.fullScreen) == true { break }
+                        try? await Task.sleep(for: .milliseconds(100))
+                    }
+                    precondition(WindowManager.shared.fullScreenWindow?.styleMask.contains(.fullScreen) == true)
+                    print("FULLSCREEN_NATIVE_ENTERED", settings.v3ArtworkPresentation.rawValue)
+                }
                 if ExperienceArguments.surface == "floating" { floatingController.show(state: playback, settings: settings) }
                 if ExperienceArguments.surface == "capsule" {
                     capsuleController.show(state: playback, settings: settings)
@@ -314,6 +353,24 @@ private struct ExperienceFixtureRoot: View {
                     floatingController.setInteractionMode(FloatingLyricsInteractionMode(rawValue: ExperienceArguments.value("--floating-mode", fallback: "interactive")) ?? .interactive)
                 }
                 try? await Task.sleep(for:.seconds(1))
+                if ProcessInfo.processInfo.arguments.contains("--fullscreen-behavior-checks") {
+                    let originalWindow = WindowManager.shared.fullScreenWindow!
+                    precondition(originalWindow.level == .normal && originalWindow.collectionBehavior.contains(.fullScreenPrimary))
+                    WindowManager.shared.hideFullScreen()
+                    for _ in 0..<80 {
+                        if !WindowManager.shared.fullScreenWindowIsVisible { break }
+                        try? await Task.sleep(for: .milliseconds(100))
+                    }
+                    precondition(!WindowManager.shared.fullScreenWindowIsVisible && !playback.showFullScreen)
+                    WindowManager.shared.showFullScreen(state: playback, settings: settings)
+                    for _ in 0..<80 {
+                        if originalWindow.styleMask.contains(.fullScreen) { break }
+                        try? await Task.sleep(for: .milliseconds(100))
+                    }
+                    precondition(WindowManager.shared.fullScreenWindow === originalWindow && originalWindow.styleMask.contains(.fullScreen))
+                    print("FULLSCREEN_BEHAVIOR_CHECKS_PASSED")
+                    fflush(stdout)
+                }
                 let output=ExperienceArguments.value("--output",fallback:"")
                 if !output.isEmpty, let window=targetWindow, let view=window.contentView, let bitmap=view.bitmapImageRepForCachingDisplay(in:view.bounds) {
                     view.cacheDisplay(in:view.bounds,to:bitmap)

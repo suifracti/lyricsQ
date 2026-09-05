@@ -61,7 +61,7 @@ require "$BACKDROP" 'noise' 'noise layer'
 # Fullscreen and V3 continue to consume the same V3 backdrop view; no second
 # artwork/snapshot implementation is allowed.
 require "$V3" 'AppleMusicImmersiveV3BackdropView' 'V3 shared backdrop'
-require "$FULLSCREEN" 'AppleMusicImmersiveV3BackdropView' 'fullscreen shared backdrop'
+require "$FULLSCREEN" 'AppleMusicImmersiveV3WindowView' 'fullscreen shares V3 renderer and backdrop'
 require "$ARTWORK" 'SPOTIFYLYRICS_BACKDROP_NO_ARTWORK' 'foreground neutral fallback harness'
 if grep -Eq 'BackdropPaletteCache\.shared|URLSession|CGImageSourceCreateWithData' "$FULLSCREEN"; then
   echo 'FAIL: fullscreen contains a second background/cache pipeline' >&2

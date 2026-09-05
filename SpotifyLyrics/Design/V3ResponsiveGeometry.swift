@@ -216,11 +216,14 @@ enum V3ResponsiveGeometry {
     }
 
     /// Lyrics occupy an overlay viewport; cover orientation never divides the stage.
-    static func stageReadingRect(canvasSize: CGSize, artworkAspectRatio: CGFloat, position: String) -> CGRect {
+    static func stageReadingRect(canvasSize: CGSize, artworkAspectRatio: CGFloat, position: String, lyricPosition: String = "automatic", readingScale: CGFloat = 1) -> CGRect {
         let width = finitePositive(canvasSize.width)
         let height = finitePositive(canvasSize.height)
-        let readingWidth = min(860, max(1, width - 80))
-        return CGRect(x: (width - readingWidth) / 2, y: 76,
+        let readingWidth = min(860 * min(1.5, max(1, readingScale)), max(1, width - 80))
+        let margin = min(40, max(0, (width - readingWidth) / 2))
+        let x = lyricPosition == "left" ? margin
+            : lyricPosition == "right" ? width - readingWidth - margin : (width - readingWidth) / 2
+        return CGRect(x: x, y: 76,
                       width: readingWidth, height: max(1, height - 192))
     }
 

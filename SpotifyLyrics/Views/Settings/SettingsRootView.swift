@@ -248,6 +248,13 @@ private struct GeneralSettingsView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
+            Section("菜单栏") {
+                Toggle("在菜单栏显示歌词", isOn: $settings.menuBarLyricsEnabled)
+                Text("关闭后仅显示播放状态图标，点击图标仍可打开歌词与播放控制。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             Section("启动与切歌") {
                 Toggle("启动时自动连接 Spotify Desktop", isOn: $settings.connectSpotifyOnLaunch)
                 Toggle("切歌后自动搜索歌词", isOn: $settings.autoSearchLyricsOnTrackChange)

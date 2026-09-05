@@ -87,6 +87,7 @@ public final class AppSettingsStore: ObservableObject {
         public static let settingsVersion = "settings.version"
         public static let mainWindowLayoutStyle = "mainWindowLayoutStyle"
         public static let automaticCompactLyricsFocus = "general.automaticCompactLyricsFocus"
+        public static let menuBarLyricsEnabled = "menuBar.lyricsEnabled"
         public static let connectSpotifyOnLaunch = "general.connectSpotifyOnLaunch"
         public static let autoSearchLyricsOnTrackChange = "general.autoSearchLyricsOnTrackChange"
         /// Product zero-operation automatic alignment (default off).
@@ -151,6 +152,7 @@ public final class AppSettingsStore: ObservableObject {
         public static let settingsCenterPresentation = "settings.centerPresentation"
         public static let readingPreferences = "reading.preferences.v1"
         public static let v3PlaybackDetailsOnHover = "v3.playbackDetailsOnHover"
+        public static let v3LyricsPositions = "v3.lyricsPositions.v1"
         public static let v3StageReadabilityEnabled = "v3.stageReadabilityEnabled"
         public static let v3BackdropBlurRadius = "v3.backdropBlurRadius"
         public static let v3BackdropBlurAmbient = "v3.backdropBlur.ambient.v1"
@@ -197,6 +199,10 @@ public final class AppSettingsStore: ObservableObject {
 
     @Published public var automaticCompactLyricsFocus: Bool {
         didSet { defaults.set(automaticCompactLyricsFocus, forKey: Key.automaticCompactLyricsFocus) }
+    }
+
+    @Published public var menuBarLyricsEnabled: Bool {
+        didSet { defaults.set(menuBarLyricsEnabled, forKey: Key.menuBarLyricsEnabled) }
     }
 
     @Published public var connectSpotifyOnLaunch: Bool {
@@ -371,6 +377,18 @@ public final class AppSettingsStore: ObservableObject {
         set { v3ArtworkPresentationRawValue = newValue.rawValue }
     }
 
+    @Published private var v3LyricsPositions: [String: String] = [:]
+
+    /// Reading placement is remembered per composition, independently of artwork.
+    public var v3LyricsPosition: String {
+        get { v3LyricsPositions[v3ArtworkPresentation.rawValue] ?? "automatic" }
+        set {
+            let value = ["automatic", "left", "center", "right"].contains(newValue) ? newValue : "automatic"
+            v3LyricsPositions[v3ArtworkPresentation.rawValue] = value
+            defaults.set(v3LyricsPositions, forKey: Key.v3LyricsPositions)
+        }
+    }
+
     private static func v3BlurDefaultsKey(for presentation: V3ArtworkPresentation) -> String {
         switch presentation {
         case .ambient: return Key.v3BackdropBlurAmbient
@@ -398,6 +416,8 @@ public final class AppSettingsStore: ObservableObject {
 
     public init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+        self.v3LyricsPositions = (defaults.dictionary(forKey: Key.v3LyricsPositions) as? [String: String] ?? [:])
+            .filter { ["automatic", "left", "center", "right"].contains($0.value) }
         let legacyBlur = defaults.object(forKey: Key.v3BackdropBlurRadius) as? Double ?? 36.0
         let selectedPresentation: V3ArtworkPresentation
         if let storedPresentation = defaults.string(forKey: Key.v3ArtworkPresentation),
@@ -458,6 +478,7 @@ public final class AppSettingsStore: ObservableObject {
         mainWindowLayoutStyleRawValue = layout
         classicCompanionPresentationRawValue = classicPresentation
         automaticCompactLyricsFocus = defaults.object(forKey: Key.automaticCompactLyricsFocus) as? Bool ?? false
+        menuBarLyricsEnabled = defaults.object(forKey: Key.menuBarLyricsEnabled) as? Bool ?? true
         connectSpotifyOnLaunch = defaults.object(forKey: Key.connectSpotifyOnLaunch) as? Bool ?? true
         autoSearchLyricsOnTrackChange = defaults.object(forKey: Key.autoSearchLyricsOnTrackChange) as? Bool ?? true
         automaticAlignmentEnabled = defaults.object(forKey: Key.automaticAlignmentEnabled) as? Bool ?? false

@@ -71,45 +71,10 @@ with tempfile.TemporaryDirectory(prefix='lyrics-v3-seek-draft-') as temp:
     subprocess.run([str(binary)], check=True)
 
 fullscreen = (root / 'SpotifyLyrics/Views/Fullscreen/FullScreenLyricsView.swift').read_text()
-full_method = block('private func seekEditingChanged', fullscreen)
-full_binding = block('private var seekBinding', fullscreen)
-full_setter = re.search(r'set: \{ ([^\n]+) \}', full_binding).group(1).replace('$0', 'value')
-full_probe = """import Foundation
-struct FakeTrack { var duration: Double = 240 }
-final class FakeState {
-    var currentTime: Double = 18
-    var currentTrack = FakeTrack()
-    var seeks: [Double] = []
-    func seek(to value: Double, source: String) { seeks.append(value) }
-}
-final class FullscreenProbe {
-    let state = FakeState()
-    var draftSeekTime: Double?
-    func write(_ value: Double) { SETTER }
-METHOD
-}
-let click = FullscreenProbe()
-click.write(120)
-click.seekEditingChanged(true)
-click.seekEditingChanged(false)
-precondition(click.state.seeks == [120], "Fullscreen begin-edit must preserve an already-written click target")
-click.seekEditingChanged(false)
-precondition(click.state.seeks == [120])
-let drag = FullscreenProbe()
-drag.seekEditingChanged(true)
-drag.write(120)
-drag.state.currentTime = 19
-drag.seekEditingChanged(false)
-precondition(drag.state.seeks == [120])
-let unchanged = FullscreenProbe()
-unchanged.seekEditingChanged(true)
-unchanged.seekEditingChanged(false)
-precondition(unchanged.state.seeks.isEmpty)
-print("Fullscreen seek draft contract: PASS")
-""".replace('SETTER', full_setter).replace('METHOD', full_method)
-with tempfile.TemporaryDirectory(prefix='lyrics-fullscreen-seek-draft-') as temp:
-    script = Path(temp) / 'main.swift'
-    script.write_text(full_probe)
-    binary = Path(temp) / 'contract'
-    subprocess.run(['swiftc', str(script), '-o', str(binary)], check=True)
-    subprocess.run([str(binary)], check=True)
+# Fullscreen now embeds this exact player instead of maintaining independent
+# callbacks. The real shared callbacks were exercised above in both event orders.
+assert 'AppleMusicImmersiveV3WindowView(' in fullscreen
+assert 'liveOnly: true' in fullscreen
+assert not re.search(r'\b(?:Slider|seekBinding|seekEditingChanged|draftSeekTime)\b', fullscreen), \
+    "Fullscreen must not reintroduce a separate seek implementation"
+print("Fullscreen shared V3 seek contract: PASS")

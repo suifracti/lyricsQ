@@ -1,6 +1,37 @@
 import SwiftUI
 import AppKit
 
+private struct LyricTextAlignmentKey: EnvironmentKey {
+    static let defaultValue: TextAlignment = .leading
+}
+
+private struct LyricPresentationScaleKey: EnvironmentKey {
+    static let defaultValue: CGFloat = 1
+}
+
+extension EnvironmentValues {
+    var lyricPresentationScale: CGFloat {
+        get { self[LyricPresentationScaleKey.self] }
+        set { self[LyricPresentationScaleKey.self] = newValue }
+    }
+    var lyricTextAlignment: TextAlignment {
+        get { self[LyricTextAlignmentKey.self] }
+        set { self[LyricTextAlignmentKey.self] = newValue }
+    }
+}
+
+extension TextAlignment {
+    var lyricHorizontalAlignment: HorizontalAlignment {
+        switch self { case .leading: return .leading; case .center: return .center; case .trailing: return .trailing }
+    }
+    var lyricFrameAlignment: Alignment {
+        switch self { case .leading: return .leading; case .center: return .center; case .trailing: return .trailing }
+    }
+    var lyricAlignmentFraction: CGFloat {
+        switch self { case .leading: return 0; case .center: return 0.5; case .trailing: return 1 }
+    }
+}
+
 private struct LyricAgentPresentationMapKey: EnvironmentKey {
     static let defaultValue = LyricAgentPresentationMap(lines: [])
 }
@@ -296,6 +327,7 @@ struct LyricLineView: View {
 /// independent presentation mode: it does not enable or disable either of
 /// the other two modes, and it never mutates the stored lyric layers.
 struct KanaReplacementLineView: View {
+    @Environment(\.lyricTextAlignment) private var textAlignment
     let originalText: String
     let kanaText: String
     let tokens: [LyricRubyToken]?
@@ -331,7 +363,7 @@ struct KanaReplacementLineView: View {
     }
 
     var body: some View {
-        RubyTokenFlowLayout(horizontalSpacing: 0, verticalSpacing: 5, maxWidth: maxWidth) {
+        RubyTokenFlowLayout(horizontalSpacing: 0, verticalSpacing: 5, maxWidth: maxWidth, alignmentFraction: textAlignment.lyricAlignmentFraction) {
             ForEach(Array(displayTokenGroups.enumerated()), id: \.offset) { _, group in
                 HStack(alignment: .lastTextBaseline, spacing: 0) {
                     ForEach(group) { token in
@@ -466,6 +498,7 @@ private struct KanaReplacementTokenBlockLayout: Layout {
 /// A line-level ruby fallback that keeps the confirmed kana together with
 /// the whole original line when no per-token mapping is available.
 struct RubyLineView: View {
+    @Environment(\.lyricTextAlignment) private var textAlignment
     @Environment(\.rubyCorrectionAction) private var correctRuby
     let originalText: String
     let kanaText: String
@@ -514,7 +547,7 @@ struct RubyLineView: View {
     }
 
     var body: some View {
-        RubyTokenFlowLayout(horizontalSpacing: 0, verticalSpacing: tokenVerticalSpacing, maxWidth: maxWidth) {
+        RubyTokenFlowLayout(horizontalSpacing: 0, verticalSpacing: tokenVerticalSpacing, maxWidth: maxWidth, alignmentFraction: textAlignment.lyricAlignmentFraction) {
             if timedLayout != nil, currentTime != nil {
                 ForEach(Array(displayTimedTokenGroups.enumerated()), id: \.offset) { _, group in
                     let groupEdgeReserve: CGFloat = group.count > 1
@@ -903,6 +936,7 @@ private struct RubyTokenFlowLayout: Layout {
     let horizontalSpacing: CGFloat
     let verticalSpacing: CGFloat
     let maxWidth: CGFloat?
+    var alignmentFraction: CGFloat = 0
 
     private struct Item {
         let index: Int
@@ -947,7 +981,7 @@ private struct RubyTokenFlowLayout: Layout {
         var y = bounds.minY
 
         for row in rows {
-            var x = bounds.minX
+            var x = bounds.minX + max(0, bounds.width - row.width) * alignmentFraction
             for item in row.items {
                 let subview = subviews[item.index]
                 subview.place(

@@ -8,6 +8,7 @@ struct CurrentSongOperationsView: View {
     @ObservedObject var state: PlaybackState
     var versionShortcutOnly = false
     var onVersionPickerPresentationChange: (Bool) -> Void = { _ in }
+    var onOpenEditor: (() -> Void)? = nil
     @ObservedObject private var autoAlign = AutomaticAlignmentJobController.shared
     @EnvironmentObject private var settings: AppSettingsStore
     @Environment(\.openWindow) private var openWindow
@@ -332,16 +333,16 @@ struct CurrentSongOperationsView: View {
     @ViewBuilder
     private var importCreateMenu: some View {
         Button("粘贴歌词", systemImage: "doc.on.clipboard") {
-            if state.prepareManualLyricsFromClipboard() { openWindow(id: "lyrics-editor") }
+            if state.prepareManualLyricsFromClipboard() { showEditorWindow() }
         }
         Button("导入 TXT", systemImage: "doc.text") {
-            if state.prepareManualLyricsFromTXT() { openWindow(id: "lyrics-editor") }
+            if state.prepareManualLyricsFromTXT() { showEditorWindow() }
         }
         Button("导入 LRC", systemImage: "clock") {
-            if state.prepareManualLyricsFromLRC() { openWindow(id: "lyrics-editor") }
+            if state.prepareManualLyricsFromLRC() { showEditorWindow() }
         }
         Button("创建空白歌词", systemImage: "plus.square") {
-            if state.prepareBlankLyricsEditor() { openWindow(id: "lyrics-editor") }
+            if state.prepareBlankLyricsEditor() { showEditorWindow() }
         }
     }
 
@@ -796,9 +797,14 @@ struct CurrentSongOperationsView: View {
     }
 #endif
 
+    private func showEditorWindow() {
+        if let onOpenEditor { onOpenEditor() }
+        else { openWindow(id: "lyrics-editor") }
+    }
+
     private func openEditor() {
         state.prepareLyricsEditor()
-        openWindow(id: "lyrics-editor")
+        showEditorWindow()
     }
 
     private func openLyricsVersionPicker() {

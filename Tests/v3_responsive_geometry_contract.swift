@@ -3,6 +3,16 @@ import Foundation
 @main
 struct V3ResponsiveGeometryContract {
     static func main() {
+        for size in [CGSize(width: 760, height: 1000), CGSize(width: 1152, height: 720), CGSize(width: 1920, height: 1080)] {
+            let left = V3ResponsiveGeometry.stageReadingRect(canvasSize: size, artworkAspectRatio: 1, position: "right", lyricPosition: "left")
+            let center = V3ResponsiveGeometry.stageReadingRect(canvasSize: size, artworkAspectRatio: 1, position: "left", lyricPosition: "center")
+            let right = V3ResponsiveGeometry.stageReadingRect(canvasSize: size, artworkAspectRatio: 1, position: "left", lyricPosition: "right")
+            precondition(left.minX >= 0 && right.maxX <= size.width)
+            precondition(left.minX <= center.minX && center.minX <= right.minX)
+            precondition(abs(center.midX - size.width / 2) < 0.001)
+            precondition(left.size == center.size && center.size == right.size, "Placement must not change lyric wrapping or height")
+            precondition(abs(left.minX - (size.width - right.maxX)) < 0.001)
+        }
         precondition(
             V3ResponsiveGeometry.layoutRegime(canvasSize: CGSize(width: 760, height: 520)) == .compact,
             "technical minimum must use the compact regime"

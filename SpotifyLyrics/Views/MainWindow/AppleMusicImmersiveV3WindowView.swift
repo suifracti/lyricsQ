@@ -41,6 +41,8 @@ struct AppleMusicImmersiveV3WindowView: View {
     @ObservedObject var state: PlaybackState
     @ObservedObject var settings: AppSettingsStore
     @Binding var layoutStyleRawValue: String
+    var liveOnly: Bool = false
+    @Environment(\.lyricPresentationScale) private var presentationScale
     @Environment(\.openWindow) private var openWindow
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -150,7 +152,7 @@ struct AppleMusicImmersiveV3WindowView: View {
         )
         .ignoresSafeArea()
         .preferredColorScheme(.dark)
-        .environment(\.lyricAgentPresentationMap, LyricAgentPresentationMap(lines: state.lyrics))
+        .environment(\.lyricAgentPresentationMap, LyricAgentPresentationMap(lines: liveOnly ? state.liveLyrics : state.lyrics))
         .environment(\.v3PlaybackInteractionChanged, { isPlaybackInteracting = $0 })
         .sheet(isPresented: $isAlignmentDetailsPresented) {
             if let report = state.liveLyricsState.alignmentReport {
@@ -464,7 +466,9 @@ struct AppleMusicImmersiveV3WindowView: View {
         let reading = V3ResponsiveGeometry.stageReadingRect(
             canvasSize: geometry.size,
             artworkAspectRatio: 1,
-            position: settings.v3ArtworkPosition
+            position: settings.v3ArtworkPosition,
+            lyricPosition: settings.v3LyricsPosition,
+            readingScale: presentationScale
         )
         let hudWidth = max(1, min(960, canvasWidth - (compact ? 40 : 80)))
 
@@ -650,9 +654,11 @@ struct AppleMusicImmersiveV3WindowView: View {
             availableWidth: max(1, width - (compact ? 22 : 34)),
             compact: compact,
             lyricsFocus: lyricsFocus,
-            onSearch: onSearch
+            onSearch: liveOnly ? nil : onSearch,
+            liveOnly: liveOnly
         )
         .environmentObject(settings)
+        .environment(\.lyricTextAlignment, settings.v3LyricsPosition == "center" ? .center : settings.v3LyricsPosition == "right" ? .trailing : .leading)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
@@ -679,10 +685,15 @@ struct AppleMusicImmersiveV3WindowView: View {
                 .frame(width: 1, height: 18)
                 .padding(.horizontal, 3)
                 .accessibilityHidden(true)
-            Button { openWindow(id: "personal-library-activity") } label: {
+            Button {
+                if liveOnly { MenuBarLyricsController.shared.openLibrary() }
+                else { openWindow(id: "personal-library-activity") }
+            } label: {
                 iconLabel("books.vertical", description: "歌词库与收听记录")
             }
-            CurrentSongOperationsView(state: state, versionShortcutOnly: true, onVersionPickerPresentationChange: { isVersionPickerPresented = $0 })
+            CurrentSongOperationsView(state: state, versionShortcutOnly: true,
+                onVersionPickerPresentationChange: { isVersionPickerPresented = $0 },
+                onOpenEditor: liveOnly ? { MenuBarLyricsController.shared.openEditor() } : nil)
                 .environmentObject(settings)
             Button { isAppearancePresented.toggle() } label: {
                 Label("外观背景", systemImage: "slider.horizontal.3")
@@ -713,8 +724,12 @@ struct AppleMusicImmersiveV3WindowView: View {
                     }
                 }.padding(18).frame(width: 260)
             }
-            SettingsLink {
-                iconLabel("ellipsis", description: "打开设置")
+            if liveOnly {
+                Button { MenuBarLyricsController.shared.openSettings() } label: {
+                    iconLabel("ellipsis", description: "打开设置")
+                }
+            } else {
+                SettingsLink { iconLabel("ellipsis", description: "打开设置") }
             }
 
         }
@@ -744,8 +759,10 @@ struct AppleMusicImmersiveV3WindowView: View {
                 .padding(.vertical, 6)
             toolbarAction("主窗口", symbol: "macwindow") {
                 state.currentMode = .mainWindow
+                if liveOnly { WindowManager.shared.exitFullScreenToMainWindow() }
                 isWindowMenuPresented = false
             }
+            if !liveOnly {
             toolbarAction("桌面歌词", symbol: "rectangle.on.rectangle") {
                 WindowManager.shared.toggleFloatingLyrics(state: state)
                 isWindowMenuPresented = false
@@ -754,10 +771,12 @@ struct AppleMusicImmersiveV3WindowView: View {
                 WindowManager.shared.toggleCapsule(state: state)
                 isWindowMenuPresented = false
             }
-            toolbarAction("全屏歌词", symbol: "arrow.up.left.and.arrow.down.right") {
-                WindowManager.shared.toggleFullScreen(state: state)
+            }
+            toolbarAction(liveOnly ? "退出全屏" : "全屏歌词", symbol: "arrow.up.left.and.arrow.down.right") {
+                WindowManager.shared.toggleFullScreen(state: state, settings: settings)
                 isWindowMenuPresented = false
             }
+            if !liveOnly {
             Divider().padding(.vertical, 4)
             Menu("桌面歌词交互") {
                 Button("可编辑 / 可拖动") { WindowManager.shared.setFloatingInteractionMode(.interactive, state: state) }
@@ -766,6 +785,7 @@ struct AppleMusicImmersiveV3WindowView: View {
                 Button("解除鼠标穿透") { WindowManager.shared.restoreFloatingInteractiveMode(state: state) }
             }
             .padding(8)
+            }
         }
         .padding(8)
         .frame(width: 224)
@@ -781,12 +801,14 @@ struct AppleMusicImmersiveV3WindowView: View {
         .buttonStyle(QuietToolbarButtonStyle())
     }
 
-    private var searchButton: some View {
+    @ViewBuilder private var searchButton: some View {
+        if !liveOnly {
         Button { isSearchPresented.toggle() } label: {
             iconLabel("magnifyingglass", description: "搜索歌曲")
         }
         .popover(isPresented: $isSearchPresented, arrowEdge: .top) {
             SongSearchPopover(manager: state.songSearchManager, playbackState: state)
+        }
         }
     }
 
@@ -1344,6 +1366,7 @@ private struct V3LyricsCopyRequest: Identifiable {
 }
 
 private struct AppleMusicImmersiveV3LyricsViewport: View {
+    @Environment(\.lyricTextAlignment) private var textAlignment
     @ObservedObject var state: PlaybackState
     @State private var rubyCorrection: RubyCorrectionRequest?
     @State private var copyRequest: V3LyricsCopyRequest?
@@ -1351,6 +1374,13 @@ private struct AppleMusicImmersiveV3LyricsViewport: View {
     let compact: Bool
     let lyricsFocus: Bool
     let onSearch: (() -> Void)?
+    var liveOnly: Bool = false
+
+    private var isPreview: Bool { !liveOnly && state.isShowingSearchPreview }
+    private var documentLines: [LyricLine] { liveOnly ? state.liveLyrics : state.lyrics }
+    private var documentState: LyricsLoadState { liveOnly ? state.liveLyricsState : state.lyricsState }
+    private var documentRevision: UInt64 { liveOnly ? state.liveLyricsSessionRevision : state.lyricsSessionRevision }
+    private var documentTrack: Track { liveOnly ? state.currentTrack : state.displayedTrack }
     @EnvironmentObject private var settings: AppSettingsStore
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -1359,20 +1389,26 @@ private struct AppleMusicImmersiveV3LyricsViewport: View {
         // main-window document once for this render pass. Catalog selections
         // use the preview session; live-only projections belong to secondary
         // windows and must not keep the previous track's lyrics on screen.
-        let lines = state.lyrics
-        let synchronized = state.lyricsAreSynchronized
+        let lines = documentLines
+        let synchronized = liveOnly ? state.liveLyricsAreSynchronized : state.lyricsAreSynchronized
         // Line identity is published only at lyric boundaries. Do not derive
         // it from the 5 Hz currentTime tick or the 60 fps presentation clock.
-        let currentIndex = state.currentLineIndex
-        let language = state.isShowingSearchPreview ? nil : state.liveLyricsLanguage
-        let trackStableKey = state.isShowingSearchPreview
-            ? TrackIdentity(track: state.displayedTrack).stableKey
+        let currentIndex = liveOnly ? state.liveCurrentLineIndex : state.currentLineIndex
+        let language = isPreview ? nil : state.liveLyricsLanguage
+        let trackStableKey = isPreview
+            ? TrackIdentity(track: documentTrack).stableKey
             : state.currentTrackIdentity?.stableKey
-        let artistDisplay = state.displayedTrack.artist
+        let artistDisplay = documentTrack.artist
 
         return VStack(alignment: .leading, spacing: LyricsDesignTokens.Spacing.xs) {
             if lines.isEmpty {
-                if lyricsFocus {
+                if liveOnly {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text(emptyTitle).font(.title2)
+                        if !emptyDetail.isEmpty { Text(emptyDetail).foregroundStyle(.secondary) }
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if lyricsFocus {
                     focusEmptyState
                 } else {
                     emptyState
@@ -1400,7 +1436,7 @@ private struct AppleMusicImmersiveV3LyricsViewport: View {
         }
         .onChange(of: state.currentTrackIdentity) { _, _ in rubyCorrection = nil; copyRequest = nil }
         .onChange(of: state.liveLyricsVersionID) { _, _ in rubyCorrection = nil; copyRequest = nil }
-        .onChange(of: state.displayedTrack.id) { _, _ in copyRequest = nil }
+        .onChange(of: documentTrack.id) { _, _ in copyRequest = nil }
 
     }
 
@@ -1424,7 +1460,7 @@ private struct AppleMusicImmersiveV3LyricsViewport: View {
     }
 
     private var emptyTitle: String {
-        switch state.lyricsState {
+        switch documentState {
         case .loading: return "正在获取歌词…"
         case .failed: return "歌词暂不可用"
         case .noLyrics, .noSelection, .noMatch: return "暂无歌词"
@@ -1435,10 +1471,10 @@ private struct AppleMusicImmersiveV3LyricsViewport: View {
     }
 
     private var emptyDetail: String {
-        switch state.lyricsState {
+        switch documentState {
         case .failed(_, let failure): return failure.userFacingMessage
         case .noLyrics, .noMatch: return "可从右上角工具菜单重试自动补全"
-        case .noSelection: return "当前会话未选择歌词版本；可从右上角重新搜索"
+        case .noSelection: return liveOnly ? "可从右上角选择歌词版本" : "当前会话未选择歌词版本；可从右上角重新搜索"
         default: return ""
         }
     }
@@ -1463,7 +1499,7 @@ private struct AppleMusicImmersiveV3LyricsViewport: View {
                     // reflow (observed as a permanent 100% CPU hang). A song
                     // is a small, bounded document, so eager placement is the
                     // safer tradeoff for this primary reading surface.
-                    VStack(alignment: .leading, spacing: rowSpacing(synchronized: synchronized)) {
+                    VStack(alignment: textAlignment.lyricHorizontalAlignment, spacing: rowSpacing(synchronized: synchronized)) {
                         ForEach(Array(lines.enumerated()), id: \.element.id) { index, line in
                             row(
                                 for: line,
@@ -1477,10 +1513,11 @@ private struct AppleMusicImmersiveV3LyricsViewport: View {
                                 .id(line.id)
                         }
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(maxWidth: .infinity, alignment: textAlignment.lyricFrameAlignment)
                     .padding(.top, verticalPadding)
                     .padding(.bottom, verticalPadding)
-                    .padding(.trailing, compact ? 10 : 18)
+                    .padding(.leading, textAlignment == .leading ? 0 : (compact ? 10 : 18) * (textAlignment == .center ? 0.5 : 1))
+                    .padding(.trailing, textAlignment == .trailing ? 0 : (compact ? 10 : 18) * (textAlignment == .center ? 0.5 : 1))
                     .animation(
                         LyricsTransitionPolicy.animation(reduceMotion: reduceMotion),
                         value: rowSpacing(synchronized: synchronized)
@@ -1493,7 +1530,7 @@ private struct AppleMusicImmersiveV3LyricsViewport: View {
                 .scrollIndicators(.hidden)
                 // A new active session is a direct document replacement. Its
                 // old rows must not animate into a different track.
-                .id("lyrics-document-\(state.lyricsSessionRevision)")
+                .id("lyrics-document-\(documentRevision)")
 
                 Group {
                     if synchronized {
@@ -1533,7 +1570,7 @@ private struct AppleMusicImmersiveV3LyricsViewport: View {
                         animated: true
                     )
                 }
-                .onChange(of: state.lyricsSessionRevision) { _, _ in
+                .onChange(of: documentRevision) { _, _ in
                     scrollToCurrentLine(
                         using: proxy,
                         lines: lines,
@@ -1592,7 +1629,7 @@ private struct AppleMusicImmersiveV3LyricsViewport: View {
             presentationClock: state.presentationClock
         )
         .environmentObject(settings)
-        .environment(\.rubyCorrectionAction, state.isShowingSearchPreview ? nil : { surface, reading in
+        .environment(\.rubyCorrectionAction, isPreview ? nil : { surface, reading in
             guard let trackKey = state.currentTrackIdentity?.stableKey,
                   let versionID = state.liveLyricsVersionID else { return }
             rubyCorrection = RubyCorrectionRequest(surface: surface, reading: reading,
@@ -1604,23 +1641,23 @@ private struct AppleMusicImmersiveV3LyricsViewport: View {
                 LyricsCopyText.copy(line.originalText)
             }
             Button("复制整首歌词", systemImage: "doc.on.doc.fill") {
-                LyricsCopyText.copy(LyricsCopyText.format(state.lyrics))
+                LyricsCopyText.copy(LyricsCopyText.format(documentLines))
             }
             Divider()
             Button("选择段落复制…", systemImage: "checklist") {
-                copyRequest = V3LyricsCopyRequest(lines: state.lyrics, title: state.displayedTrack.title,
+                copyRequest = V3LyricsCopyRequest(lines: documentLines, title: documentTrack.title,
                     index: index, trackStableKey: trackStableKey, artistDisplay: artistDisplay, language: language)
             }
         }
         if let timestamp = LyricsTimeline.validSeekTimestamp(
             for: line,
             isSynchronized: synchronized,
-            duration: state.displayedTrack.duration
+            duration: documentTrack.duration
         ) {
             content
                 .contentShape(Rectangle())
                 .onTapGesture { state.seek(to: timestamp, source: "v3-lyric-line") }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: textAlignment.lyricFrameAlignment)
                 .accessibilityElement(children: .contain)
                 .accessibilityLabel(line.originalText)
                 .accessibilityAction(named: "跳转到歌词时间") {
@@ -1628,7 +1665,7 @@ private struct AppleMusicImmersiveV3LyricsViewport: View {
                 }
         } else {
             content
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: textAlignment.lyricFrameAlignment)
         }
     }
 
@@ -1813,6 +1850,8 @@ private enum V3TimedLayoutCache {
 /// lyrics, translations, timing, search matching, and ruby tokens are never
 /// changed. Ruby rows already wrap at morphology-token boundaries.
 private struct AppleMusicImmersiveV3LyricRow: View {
+    @Environment(\.lyricPresentationScale) private var presentationScale
+    @Environment(\.lyricTextAlignment) private var textAlignment
     let line: LyricLine
     let isActive: Bool
     let distance: Int
@@ -1840,12 +1879,12 @@ private struct AppleMusicImmersiveV3LyricRow: View {
         let lowerBound: CGFloat = compact ? 22 : 28
         // Long lyrics keep their reading size and gain visual lines instead.
         let layerPenalty = CGFloat(max(0, layerCount - 2)) * 1.7
-        return max(lowerBound, CGFloat(upperBound) - layerPenalty)
+        return max(lowerBound, CGFloat(upperBound) - layerPenalty) * presentationScale
     }
 
     private var baseSize: CGFloat {
         guard isSynchronized else {
-            return min(compact ? 30 : 36, activeBaseSize)
+            return min((compact ? 30 : 36) * presentationScale, activeBaseSize)
         }
         return isActive ? activeBaseSize : max(compact ? 20 : 24, activeBaseSize * (distance == 1 ? 0.93 : 0.88))
     }
@@ -1891,7 +1930,7 @@ private struct AppleMusicImmersiveV3LyricRow: View {
     }
 
     private var readableLineWidth: CGFloat {
-        min(max(240, availableWidth), LyricsDesignTokens.readableLyricLineMaxWidth)
+        min(max(240, availableWidth), LyricsDesignTokens.readableLyricLineMaxWidth * presentationScale)
     }
 
     private var semanticDisplayText: String {
@@ -2013,7 +2052,7 @@ private struct AppleMusicImmersiveV3LyricRow: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: textAlignment.lyricHorizontalAlignment, spacing: 8) {
             if isInstrumentalLine {
                 HStack(spacing: 8) {
                     Image(systemName: "music.note")
@@ -2172,8 +2211,8 @@ private struct AppleMusicImmersiveV3LyricRow: View {
             }
         }
         .lineLimit(nil)
-        .multilineTextAlignment(.leading)
-        .frame(width: readableLineWidth, alignment: .leading)
+        .multilineTextAlignment(textAlignment)
+        .frame(width: readableLineWidth, alignment: textAlignment.lyricFrameAlignment)
         .fixedSize(horizontal: false, vertical: true)
         .offset(x: CGFloat(agentPresentationMap.horizontalOffset(for: line.performerID)))
         .opacity(rowOpacity)
@@ -2260,6 +2299,7 @@ private struct AppleMusicImmersiveV3LyricRow: View {
 }
 
 private struct AppleMusicImmersiveV3TimedRowView: View {
+    @Environment(\.lyricTextAlignment) private var textAlignment
     let layout: TimedMultilineLayout
     let currentTime: TimeInterval
     let font: Font
@@ -2291,7 +2331,7 @@ private struct AppleMusicImmersiveV3TimedRowView: View {
                     }
                 )
         } else {
-            VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: textAlignment.lyricHorizontalAlignment, spacing: 0) {
                 ForEach(layout.lines, id: \.lineIndex) { visualLine in
                     let fraction = visualLine.fillFraction(at: currentTime)
                     Text(visualLine.text)
@@ -2392,6 +2432,22 @@ private struct V3VisualTuningPopoverView: View {
                     .font(.system(size: 10))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("歌词位置与对齐").font(.system(size: 12, weight: .medium))
+                Picker("歌词位置与对齐", selection: Binding(
+                    get: { settings.v3LyricsPosition },
+                    set: { settings.v3LyricsPosition = $0 }
+                )) {
+                    Text("自动").tag("automatic")
+                    Text("左侧").tag("left")
+                    Text("居中").tag("center")
+                    Text("右侧").tag("right")
+                }
+                .pickerStyle(.segmented)
+                Text("每种模式单独记住选择，假名和译文一起对齐。")
+                    .font(.caption).foregroundStyle(.secondary)
             }
 
             VStack(alignment: .leading, spacing: 6) {
