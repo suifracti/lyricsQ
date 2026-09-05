@@ -4,7 +4,7 @@ import SQLite3
 /// Forward-only SQLite schema migrations. The repository calls this from its
 /// actor, so no migration work runs on MainActor.
 public enum DatabaseMigrator {
-    public static let currentVersion = 8
+    public static let currentVersion = 9
     public static let v4MigrationID = "track-identity-v4-initial"
     private static let waterSourceStableKey = "spotify-id:spotify:track:5mqkkcsrujqyakvolven0w|metadata:水曜日の約束|kawasakirio|水曜日の約束|171"
     private static let waterCanonicalStableKey = "spotify-id:5mqkkcsrujqyakvolven0w|metadata:水曜日の約束|kawasakirio|水曜日の約束|171"
@@ -78,6 +78,18 @@ public enum DatabaseMigrator {
                try hasTable(database, name: "tracks") {
                 try migrateV8(database)
                 version = 8
+            }
+            if version >= 8, version < 9 {
+                try execute(database, sql: "BEGIN IMMEDIATE TRANSACTION;")
+                do {
+                    try execute(database, sql: "ALTER TABLE lyrics_versions ADD COLUMN is_preferred INTEGER NOT NULL DEFAULT 0;")
+                    try execute(database, sql: "CREATE UNIQUE INDEX lyrics_versions_one_preferred ON lyrics_versions(track_stable_key) WHERE is_preferred = 1;")
+                    try execute(database, sql: "INSERT INTO schema_migrations(version, applied_at) VALUES (9, strftime('%s','now')); PRAGMA user_version = 9;")
+                    try execute(database, sql: "COMMIT;")
+                } catch {
+                    _ = try? execute(database, sql: "ROLLBACK;")
+                    throw error
+                }
             }
         } catch let error as LyricsRepositoryError {
             // A corrupt/partially readable SQLite file must be reported as a

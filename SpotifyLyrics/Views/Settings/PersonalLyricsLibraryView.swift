@@ -1,6 +1,7 @@
 import SwiftUI
 
 public struct PersonalLyricsLibraryView: View {
+    @EnvironmentObject private var playback: PlaybackState
     @StateObject private var service = PersonalLyricsLibraryService()
     @State private var selectedStableKey: String?
 
@@ -58,6 +59,9 @@ public struct PersonalLyricsLibraryView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
+        }
+        .sheet(item: $service.revisionDraft) { draft in
+            LibraryLyricsRevisionSheet(service: service, initialDraft: draft)
         }
         .sheet(isPresented: $service.showImportPreviewSheet) {
             if let preview = service.importPreview {
@@ -301,6 +305,7 @@ private struct AssetBadge: View {
 // MARK: - Track Detail View
 
 public struct PersonalLibraryTrackDetailView: View {
+    @EnvironmentObject private var playback: PlaybackState
     @ObservedObject var service: PersonalLyricsLibraryService
     let stableKey: String
 
@@ -471,6 +476,7 @@ public struct PersonalLibraryTrackDetailView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
                         LibraryVersionLabel(kind: "lyrics", id: lv.id, originalTitle: lv.source.uppercased())
+                        if lv.parentVersionID != nil { statusTag("修订版", color: .orange) }
                         if lv.isCurrent {
                             statusTag("当前采用", color: .blue)
                         }
@@ -492,9 +498,13 @@ public struct PersonalLibraryTrackDetailView: View {
                 Spacer()
 
                 HStack(spacing: 8) {
+                    Button("编辑为新版本") { service.beginRevision(versionID: lv.id, entry: entry) }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .disabled(service.revisionBusy)
                     if !lv.isCurrent {
                         Button("设为当前") {
-                            service.adoptLyricsVersion(versionID: lv.id, trackStableKey: entry.trackStableKey)
+                            service.adoptLyricsVersion(versionID: lv.id, trackStableKey: entry.trackStableKey, applyToPlayback: { try await playback.adoptCurrentLyricsVersion(versionID: $0) })
                         }
                         .buttonStyle(.bordered)
                         .controlSize(.small)
@@ -996,5 +1006,75 @@ private struct LibraryVersionLabel: View {
             .padding(24)
             .frame(width: 420)
         }
+    }
+}
+
+
+private struct LibraryLyricsRevisionSheet: View {
+    @ObservedObject var service: PersonalLyricsLibraryService
+    @Environment(\.dismiss) private var dismiss
+    @State private var draft: LibraryLyricsRevisionDraft
+    private static let secondsFormatter: NumberFormatter = {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.maximumFractionDigits = 3
+        return formatter
+    }()
+
+    init(service: PersonalLyricsLibraryService, initialDraft: LibraryLyricsRevisionDraft) {
+        self.service = service
+        _draft = State(initialValue: initialDraft)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("编辑为新版本").font(.title2.bold())
+            Text("\(draft.track.title) · \(draft.track.artist)").font(.headline)
+            Text("保存后生成独立修订版，原版保留，当前采用不变。回到歌词库可选择任一版本“设为当前”。")
+                .font(.callout).foregroundStyle(.secondary)
+            HStack {
+                Text("开始时间（秒）").frame(width: 110, alignment: .leading)
+                Text("歌词原文")
+            }.font(.caption).foregroundStyle(.secondary)
+            ScrollView {
+                LazyVStack(spacing: 10) {
+                    ForEach($draft.lines) { $line in
+                        HStack(alignment: .top, spacing: 12) {
+                            TextField("未排时间", value: $line.startTime, formatter: Self.secondsFormatter)
+                                .frame(width: 110)
+                                .accessibilityLabel("歌词开始时间")
+                            TextField("歌词", text: $line.originalText, axis: .vertical)
+                                .lineLimit(1...6)
+                                .accessibilityLabel("歌词原文")
+                            Button {
+                                draft.lines.removeAll { $0.id == line.id }
+                            } label: { Image(systemName: "minus.circle") }
+                                .buttonStyle(.plain)
+                                .help("移除此草稿行")
+                                .disabled(draft.lines.count <= 1)
+                        }
+                        .textFieldStyle(.roundedBorder)
+                    }
+                }
+            }
+            .frame(maxHeight: .infinity)
+            .disabled(service.revisionBusy)
+            if let error = service.revisionError {
+                Text(error).font(.callout).foregroundStyle(.red).textSelection(.enabled)
+            }
+            HStack {
+                Button("添加歌词行") { draft.lines.append(LyricsEditorLineDraft(originalText: "")) }
+                Spacer()
+                if service.revisionBusy { ProgressView().controlSize(.small) }
+                Button("取消") { dismiss() }.keyboardShortcut(.cancelAction)
+                Button("保存为新版本") { service.saveRevision(draft) }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(!draft.hasChanges)
+            }
+            .disabled(service.revisionBusy)
+        }
+        .padding(24)
+        .frame(width: 760, height: 580)
+        .interactiveDismissDisabled(service.revisionBusy)
     }
 }

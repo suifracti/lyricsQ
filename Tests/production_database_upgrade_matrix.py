@@ -44,9 +44,9 @@ home5, db5 = create('v5')
 before = snapshot(db5)
 run(home5)
 preserved(db5, before)
-for version in (6, 7, 8):
+for version in (6, 7, 8, 9):
     home, db = create(f'v{version}', db5)
-    drops = ''
+    drops = 'DROP INDEX lyrics_versions_one_preferred; ALTER TABLE lyrics_versions DROP COLUMN is_preferred;' if version < 9 else ''
     if version < 8: drops += 'DROP TABLE listening_history_sessions;'
     if version < 7: drops += 'DROP TABLE lyrics_timing_versions;'
     execute(db, drops + f'DELETE FROM schema_migrations WHERE version>{version}; PRAGMA user_version={version};')
@@ -94,4 +94,4 @@ run(home, failure=True)
 preserved(db, before)
 with sqlite3.connect(db) as c: assert c.execute('PRAGMA user_version').fetchone()[0] == 999
 assert not list(db.parent.glob('*.pre-v*'))
-print('Upgrade matrix PASS: versions 3–8; row preservation; rollback/retry; backup failure/retry; future rejection')
+print('Upgrade matrix PASS: versions 3–9; row preservation; rollback/retry; backup failure/retry; future rejection')

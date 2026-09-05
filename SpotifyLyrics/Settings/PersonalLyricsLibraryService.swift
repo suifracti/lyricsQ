@@ -21,6 +21,45 @@ public final class PersonalLyricsLibraryService: ObservableObject {
     @Published public private(set) var syncFolderURL: URL?
     @Published public private(set) var isSyncing = false
 
+    @Published public var revisionDraft: LibraryLyricsRevisionDraft?
+    @Published public private(set) var revisionError: String?
+    @Published public private(set) var revisionBusy = false
+
+    public func beginRevision(versionID: UUID, entry: PersonalLyricsLibraryEntry) {
+        guard !revisionBusy else { return }
+        revisionBusy = true
+        revisionError = nil
+        Task {
+            defer { revisionBusy = false }
+            do {
+                let track = Track(title: entry.title, artist: entry.artist, album: entry.album ?? "", duration: entry.duration, isrc: entry.isrc, spotifyId: entry.spotifyTrackID, artworkURL: entry.artworkURL, spotifyURL: entry.spotifyURI.flatMap(URL.init(string:)))
+                try await repository.prepare()
+                guard let source = try await repository.loadEditableVersion(versionID: versionID, track: track, identity: TrackIdentity(track: track)) else {
+                    throw LyricsEditingRepositoryError.sourceNotFound
+                }
+                revisionDraft = LibraryLyricsRevisionDraft(track: track, source: source)
+            } catch {
+                statusMessage = "打开编辑失败：\(error.localizedDescription)"
+            }
+        }
+    }
+
+    public func saveRevision(_ draft: LibraryLyricsRevisionDraft) {
+        guard !revisionBusy else { return }
+        revisionBusy = true
+        revisionError = nil
+        Task {
+            defer { revisionBusy = false }
+            do {
+                let result = try await repository.saveManualEdit(draft.saveRequest())
+                guard result.lyricsVersion != nil else { throw LyricsEditingRepositoryError.sourceNotFound }
+                revisionDraft = nil
+                selectTrack(stableKey: draft.source.record.trackStableKey)
+                refresh()
+            } catch { revisionError = error.localizedDescription }
+        }
+    }
+
     private let repository: SQLiteLyricsRepository
     private let defaults: UserDefaults
     private var pendingSyncFolderURL: URL?
@@ -65,10 +104,11 @@ public final class PersonalLyricsLibraryService: ObservableObject {
 
     // MARK: - Version Actions
 
-    public func adoptLyricsVersion(versionID: UUID, trackStableKey: String) {
+    public func adoptLyricsVersion(versionID: UUID, trackStableKey: String, applyToPlayback: ((UUID) async throws -> Bool)? = nil) {
         Task {
             do {
                 try await repository.setPersonalLibraryActiveLyrics(trackStableKey: trackStableKey, lyricsVersionID: versionID)
+                _ = try await applyToPlayback?(versionID)
                 selectTrack(stableKey: trackStableKey)
                 refresh()
             } catch {

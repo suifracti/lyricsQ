@@ -77,3 +77,8 @@ git rev-parse '@{upstream}'
 ```
 
 If the worktree is dirty, describe the version as `base HEAD + uncommitted changes`. Do not infer freshness from `.app` files, DerivedData, `.local/`, screenshots, backups, or modification times.
+
+## 2026-09-06 Library content revisions preview
+
+- 歌词库可编辑原文/开始时间并保存独立修订版，原版保留；保存后可用“设为当前”切换新旧版。schema9 显式采用选择、资产包往返及原始数据保留已通过隔离验证。
+- Debug/Release与相关持久化、编辑器、迁移检查通过；新版已启动，原生编辑弹窗完整验收因 CUA 失效仍待验证。详见 `docs/work/experience-restoration/library-content-revisions-report.md`。

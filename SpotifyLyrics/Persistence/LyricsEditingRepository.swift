@@ -71,6 +71,7 @@ public struct LyricsEditSaveRequest: Equatable, Sendable {
     public let document: LyricsDocument
     public let createLyricsVersion: Bool
     public let lockLyricsVersion: Bool
+    public let preserveCurrentLyricsSelection: Bool
     public let targetSource: LyricsSource
     /// A fresh manual/import source has no provider version to compare against.
     /// Existing editor saves keep this false and remain compare-and-save
@@ -87,6 +88,7 @@ public struct LyricsEditSaveRequest: Equatable, Sendable {
         document: LyricsDocument,
         createLyricsVersion: Bool,
         lockLyricsVersion: Bool = false,
+        preserveCurrentLyricsSelection: Bool = false,
         targetSource: LyricsSource = .manualEdit,
         isNewSource: Bool = false,
         translation: ManualTranslationEdit? = nil,
@@ -99,6 +101,7 @@ public struct LyricsEditSaveRequest: Equatable, Sendable {
         self.document = document
         self.createLyricsVersion = createLyricsVersion
         self.lockLyricsVersion = lockLyricsVersion
+        self.preserveCurrentLyricsSelection = preserveCurrentLyricsSelection
         self.targetSource = targetSource
         self.isNewSource = isNewSource
         self.translation = translation
@@ -156,4 +159,45 @@ public protocol LyricsEditingRepository: Sendable {
     ) async throws -> [StoredTranslationVersion]
     func saveManualEdit(_ request: LyricsEditSaveRequest) async throws -> LyricsEditSaveResult
     func markLyricsVersionLocked(versionID: UUID, locked: Bool) async throws
+}
+
+/// A library edit is bound to its stored source, independently of Spotify playback.
+public struct LibraryLyricsRevisionDraft: Identifiable {
+    public let id = UUID()
+    public let track: Track
+    public let source: StoredEditableLyricsVersion
+    public var lines: [LyricsEditorLineDraft]
+    private let originalLines: [LyricsEditorLineDraft]
+
+    public init(track: Track, source: StoredEditableLyricsVersion) {
+        self.track = track
+        self.source = source
+        let lines = source.document.lines.enumerated().map {
+            LyricsEditorLineDraft(line: $0.element, startTimeIsMeaningful: source.document.lineHasExplicitTiming($0.offset))
+        }
+        self.lines = lines
+        self.originalLines = lines
+    }
+
+    public var hasChanges: Bool { lines != originalLines }
+
+    public func saveRequest() throws -> LyricsEditSaveRequest {
+        guard hasChanges else { throw LyricsEditingRepositoryError.noChanges }
+        // Derived text must not silently follow rewritten words into the revision.
+        let timingChanged = lines.map(\.id) != originalLines.map(\.id)
+            || lines.map(\.startTime) != originalLines.map(\.startTime)
+        let cleaned = lines.map { line -> LyricsEditorLineDraft in
+            var line = line
+            line.translationText = nil
+            if timingChanged { line.endTime = nil }
+            if originalLines.first(where: { $0.id == line.id })?.originalText != line.originalText {
+                line.kanaText = nil; line.romajiText = nil; line.rubyTokens = nil
+            }
+            return line
+        }
+        let hash = LyricsSourceContentHasher.hash(isSynchronized: source.record.isSynced, lines: source.lines)
+        let draft = LyricsEditorDraft(identity: source.document.identity, title: track.title, artist: track.artist, album: track.album, duration: track.duration, lines: cleaned, sourceVersionID: source.record.id, sourceContentHash: hash, source: .manualEdit)
+        guard let document = draft.document() else { throw LyricsEditingRepositoryError.invalidDocument("无法生成歌词版本") }
+        return LyricsEditSaveRequest(track: track, identity: source.document.identity, sourceVersionID: source.record.id, sourceContentHash: hash, document: document, createLyricsVersion: true, preserveCurrentLyricsSelection: true)
+    }
 }
