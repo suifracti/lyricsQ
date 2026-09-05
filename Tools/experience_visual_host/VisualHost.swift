@@ -27,7 +27,7 @@ private final class ExperiencePlaybackProvider: PlaybackProvider {
     func pause() async throws { playing = false }
     func previous() async throws { position = 8 }
     func next() async throws { position = 28 }
-    func seek(to position: TimeInterval) async throws { self.position = position }
+    func seek(to position: TimeInterval) async throws { self.position = position; print("VISUAL_SEEK", position); fflush(stdout) }
 }
 private struct ExperienceLyricsProvider: LyricsProvider {
     let name = "Generated fixture lyrics"
@@ -59,6 +59,11 @@ private struct ExperienceLyricsProvider: LyricsProvider {
         if ProcessInfo.processInfo.arguments.contains("--ruby-correction") {
             lines[2].originalText = "身体にしてあげよう"
             lines[2].kanaText = "しんたいにしてあげよう"
+        }
+        if ProcessInfo.processInfo.arguments.contains("--missing-ruby") {
+            lines[2].originalText = "既読の速度で愛はかって"
+            lines[2].kanaText = nil
+            lines[2].romajiText = nil
         }
         if ProcessInfo.processInfo.arguments.contains("--timed") {
             var offset = 0
@@ -134,7 +139,16 @@ struct ExperienceVisualHostApp: App {
         precondition(AppSettingsStore(defaults: defaults).v3StageReadabilityEnabled)
         settings.v3StageReadabilityEnabled = ProcessInfo.processInfo.arguments.contains("--stage-readability")
         precondition(AppSettingsStore(defaults: defaults).v3StageReadabilityEnabled == settings.v3StageReadabilityEnabled)
-        if ProcessInfo.processInfo.arguments.contains("--ruby-correction") {
+        settings.v3PlaybackDetailsOnHover = ProcessInfo.processInfo.arguments.contains("--hover-details")
+        precondition(AppSettingsStore(defaults: defaults).v3PlaybackDetailsOnHover == settings.v3PlaybackDetailsOnHover)
+        if ProcessInfo.processInfo.arguments.contains("--desktop-custom") {
+            settings.floatingDesktopOriginalColorHex = "FFFFFF"
+            settings.floatingDesktopHighlightColorHex = "41FFB6"
+            settings.floatingDesktopRubyColorHex = "FFE082"
+            settings.floatingDesktopTranslationColorHex = "D2E5FF"
+            settings.floatingDesktopOutlineColorHex = "121820"
+        }
+        if ProcessInfo.processInfo.arguments.contains("--ruby-correction") || ProcessInfo.processInfo.arguments.contains("--ruby-display") {
             var display = settings.displayPreferences
             display.showKana = true
             display.showRomaji = true

@@ -1,17 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
-
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 VIEW="$ROOT/SpotifyLyrics/Views/MainWindow/AppleMusicImmersiveV3WindowView.swift"
-
-grep -q 'let tokens = inlineRubyTokens' "$VIEW" || {
-  echo 'FAIL: V3 inline ruby can fall back to a whole-line kana annotation' >&2
-  exit 1
-}
-
-grep -q '!tokens.isEmpty' "$VIEW" || {
-  echo 'FAIL: V3 inline ruby does not require a non-empty per-token mapping' >&2
-  exit 1
-}
-
+# Verify the view consumes the shared projection and gates on usable annotations.
+grep -Fq 'private var inlineRubyTokens: [LyricRubyToken]? { rubyPresentation.rubyTokens }' "$VIEW"
+grep -Fq 'preferences.showOriginal && shouldShowRuby && rubyPresentation.hasRuby' "$VIEW"
+grep -Fq 'tokens: inlineRubyTokens' "$VIEW"
+grep -Fq 'return JapaneseRubyPresentation(line: line, reading: result,' "$VIEW"
+# Exercise alignment, partial unknown, authority, legacy precedence and no-timing behavior.
+bash "$ROOT/Tests/japanese_ruby_restoration_contract.sh"
 echo 'V3 inline ruby gate contract: PASS'

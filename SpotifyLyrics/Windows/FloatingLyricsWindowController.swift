@@ -126,6 +126,10 @@ final class FloatingLyricsWindowController: NSObject, ObservableObject, NSWindow
                     self.applyInteractionMode()
                 }
                 .store(in: &settingsCancellables)
+            settings.$floatingDesktopKeepsTextOpaque
+                .receive(on: RunLoop.main)
+                .sink { [weak self] _ in self?.applyOpacity() }
+                .store(in: &settingsCancellables)
             settings.$floatingWindowOpacity
                 .receive(on: RunLoop.main)
                 .sink { [weak self] _ in self?.applyOpacity() }
@@ -165,7 +169,7 @@ final class FloatingLyricsWindowController: NSObject, ObservableObject, NSWindow
                 .environmentObject(settings)
         )
         applyWindowLevel(to: panel, settings: settings)
-        panel.alphaValue = CGFloat(min(1, max(0.45, settings.floatingWindowOpacity)))
+        panel.alphaValue = CGFloat(FloatingDesktopTypography.panelOpacity(value: settings.floatingWindowOpacity, transparent: settings.floatingLyricsPresentation == .transparentV2, keepsTextOpaque: settings.floatingDesktopKeepsTextOpaque))
         return panel
     }
 
@@ -220,10 +224,11 @@ final class FloatingLyricsWindowController: NSObject, ObservableObject, NSWindow
 
     private func applyOpacity() {
         guard let panel, let settings else { return }
-        panel.alphaValue = CGFloat(min(1, max(0.45, settings.floatingWindowOpacity)))
+        panel.alphaValue = CGFloat(FloatingDesktopTypography.panelOpacity(value: settings.floatingWindowOpacity, transparent: settings.floatingLyricsPresentation == .transparentV2, keepsTextOpaque: settings.floatingDesktopKeepsTextOpaque))
     }
 
     private func applyPresentation() {
+        applyOpacity()
         // FloatingLyricsView observes the same settings object. The controller
         // observes these values too so an existing panel invalidates its
         // content immediately without changing any window state.

@@ -316,12 +316,8 @@ struct FullScreenLyricsView: View {
     }
 
     private func seekEditingChanged(_ isEditing: Bool) {
-        if isEditing {
-            draftSeekTime = max(0, min(state.currentTime, state.currentTrack.duration))
-            return
-        }
-
-        guard let draftSeekTime else { return }
+        // Keep a binding value that arrived before the tracking callback.
+        guard !isEditing, let draftSeekTime else { return }
         self.draftSeekTime = nil
         state.seek(to: draftSeekTime, source: "fullscreen-slider")
     }

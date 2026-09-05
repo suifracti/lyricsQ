@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 private struct LyricAgentPresentationMapKey: EnvironmentKey {
     static let defaultValue = LyricAgentPresentationMap(lines: [])
@@ -482,6 +483,13 @@ struct RubyLineView: View {
     /// Optional readable measure supplied by V3. The token flow remains
     /// intrinsic for legacy/focus callers when this is nil.
     var maxWidth: CGFloat? = nil
+    var highlightColor: Color? = nil
+    var outlineColor: Color = .clear
+    var outlineWidth: CGFloat = 0
+    var baseNSFont: NSFont? = nil
+    var rubyNSFont: NSFont? = nil
+    var unplayedOpacity: Double = 0.42
+    var showsRuby: Bool = true
 
     private var displayTokens: [LyricRubyToken] {
         guard let tokens, !tokens.isEmpty else {
@@ -489,7 +497,7 @@ struct RubyLineView: View {
                 LyricRubyToken(
                     id: 0,
                     surface: originalText,
-                    ruby: kanaText
+                    ruby: kanaText.isEmpty ? nil : kanaText
                 )
             ]
         }
@@ -522,7 +530,14 @@ struct RubyLineView: View {
                                 baseColor: baseColor,
                                 rubyColor: rubyColor,
                                 rubySpacing: rubySpacing,
-                                annotationOverhang: timedToken.hasRuby ? groupEdgeReserve : 0
+                                annotationOverhang: timedToken.hasRuby ? groupEdgeReserve : 0,
+                                highlightColor: highlightColor,
+                                outlineColor: outlineColor,
+                                outlineWidth: outlineWidth,
+                                baseNSFont: baseNSFont,
+                                rubyNSFont: rubyNSFont,
+                                unplayedOpacity: unplayedOpacity,
+                                showsRuby: showsRuby
                             )
                         }
                     }
@@ -543,7 +558,14 @@ struct RubyLineView: View {
                                 baseColor: baseColor,
                                 rubyColor: rubyColor,
                                 rubySpacing: rubySpacing,
-                                annotationOverhang: token.hasRuby ? groupEdgeReserve : 0
+                                annotationOverhang: token.hasRuby ? groupEdgeReserve : 0,
+                                highlightColor: highlightColor,
+                                outlineColor: outlineColor,
+                                outlineWidth: outlineWidth,
+                                baseNSFont: baseNSFont,
+                                rubyNSFont: rubyNSFont,
+                                unplayedOpacity: unplayedOpacity,
+                                showsRuby: showsRuby
                             )
                         }
                     }
@@ -629,6 +651,13 @@ private struct RubyTokenBlock: View {
     let rubyColor: Color
     let rubySpacing: CGFloat
     let annotationOverhang: CGFloat
+    let highlightColor: Color?
+    let outlineColor: Color
+    let outlineWidth: CGFloat
+    let baseNSFont: NSFont?
+    let rubyNSFont: NSFont?
+    let unplayedOpacity: Double
+    let showsRuby: Bool
 
     private let katakanaAnnotationTracking: CGFloat = 0.35
 
@@ -637,7 +666,7 @@ private struct RubyTokenBlock: View {
     }
 
     private var displayRuby: String? {
-        timedToken?.displayRubyText ?? token?.displayRubyText
+        showsRuby ? (timedToken?.displayRubyText ?? token?.displayRubyText) : nil
     }
 
     private var hasRuby: Bool {
@@ -650,13 +679,28 @@ private struct RubyTokenBlock: View {
         }
     }
 
+    @ViewBuilder private func renderedText(_ text: String, font: NSFont?, fill: Color) -> some View {
+        if outlineWidth > 0, let font {
+            OutlinedLyricText(text: text, font: font, fill: fill, outline: outlineColor, width: outlineWidth)
+        } else {
+            Text(text).foregroundColor(fill)
+        }
+    }
+
+    private func maskWidth(_ width: CGFloat, fraction: Double) -> CGFloat {
+        guard fraction > 0 else { return 0 }
+        guard fraction < 1 else { return width }
+        let inset = outlineWidth > 0 && baseNSFont != nil ? outlineWidth + 1 : 0
+        return inset + max(0, width - 2 * inset) * CGFloat(fraction)
+    }
+
     @ViewBuilder private func annotation(_ ruby: String) -> some View {
         if let correctRuby {
-            Button { correctRuby(surface, ruby) } label: { Text(ruby) }
+            Button { correctRuby(surface, ruby) } label: { renderedText(ruby, font: rubyNSFont, fill: rubyColor) }
                 .buttonStyle(.plain)
                 .help("点击修改「\(surface)」的读音")
                 .accessibilityLabel("修改\(surface)的读音：\(ruby)")
-        } else { Text(ruby) }
+        } else { renderedText(ruby, font: rubyNSFont, fill: rubyColor) }
     }
 
     var body: some View {
@@ -682,19 +726,17 @@ private struct RubyTokenBlock: View {
             }
 
             if timedToken != nil, currentTime != nil {
-                Text(surface)
+                renderedText(surface, font: baseNSFont, fill: baseColor.opacity(unplayedOpacity))
                     .font(baseFont)
-                    .foregroundColor(baseColor.opacity(0.42))
                     .overlay(
                         GeometryReader { geo in
-                            Text(surface)
+                            renderedText(surface, font: baseNSFont, fill: highlightColor ?? baseColor)
                                 .font(baseFont)
-                                .foregroundColor(baseColor)
                                 .frame(width: geo.size.width, height: geo.size.height, alignment: .leading)
                                 .mask(alignment: .leading) {
                                     Rectangle()
                                         .frame(
-                                            width: max(0, geo.size.width * CGFloat(fillFraction)),
+                                            width: maskWidth(geo.size.width, fraction: fillFraction),
                                             height: geo.size.height
                                         )
                                 }
@@ -703,9 +745,8 @@ private struct RubyTokenBlock: View {
                     .lineLimit(1)
                     .fixedSize(horizontal: true, vertical: false)
             } else {
-                Text(surface)
+                renderedText(surface, font: baseNSFont, fill: baseColor)
                     .font(baseFont)
-                    .foregroundStyle(baseColor)
                     .lineLimit(1)
                     .fixedSize(horizontal: true, vertical: false)
             }

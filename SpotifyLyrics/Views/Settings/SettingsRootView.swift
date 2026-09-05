@@ -228,9 +228,7 @@ private struct GeneralSettingsView: View {
                     Slider(value: $settings.floatingDesktopFontSize, in: 22...64, step: 1)
                     Text("\(Int(settings.floatingDesktopFontSize))").monospacedDigit().frame(width: 30)
                 }
-                Picker("桌面歌词配色", selection: $settings.floatingDesktopTheme) {
-                    ForEach(FloatingDesktopTheme.allCases, id: \.rawValue) { Text($0.title).tag($0.rawValue) }
-                }
+                FloatingDesktopColorControls(settings: settings)
                 Toggle("悬浮歌词保持置顶", isOn: $settings.floatingWindowAlwaysOnTop)
                 Picker("默认交互状态", selection: floatingModeBinding) {
                     ForEach(FloatingLyricsInteractionMode.allCases, id: \.self) { mode in
@@ -238,7 +236,7 @@ private struct GeneralSettingsView: View {
                     }
                 }
                 HStack {
-                    Text("悬浮窗透明度")
+                    Text(settings.floatingLyricsPresentation == .transparentV2 && settings.floatingDesktopKeepsTextOpaque ? "背景不透明度" : "整个悬浮窗透明度")
                     Slider(value: $settings.floatingWindowOpacity, in: 0.45...1, step: 0.01)
                     Text(String(format: "%.0f%%", settings.floatingWindowOpacity * 100))
                         .font(.system(.caption, design: .monospaced))

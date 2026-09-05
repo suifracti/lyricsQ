@@ -21,3 +21,9 @@ Base e08c54732082ce7ea21e0e378110f0a69e40d8ec, branch codex/lyrics-search-ambien
 ## Completion gate
 
 Focused ruby/seek/desktop/geometry/timing tests, source review and diff-check; standard Debug/Release (task-specific /tmp DerivedData). Isolated native tests of seek click, missing22sec ruby, hover enter/exit with three layouts, desktop light/dark backdrops/custom colors and timed/no-timing cases. Report any native limitation honestly. Commit/push explicit paths, verify upstream equality, create unique Downloads preview with SHA/BUILD_INFO, keep old app, update Obsidian Current. No generator, destructive git commands or automatic main merge.
+
+## User-queued second batch
+After the above: fix Dock visible in fullscreen, unify all3stylefullscreen with maintained V3 presentation; add status-bar lyric-text toggle preserving icon access; independent lyric placement selection (automatic/left/center/right) across3styles without moving/cropping cover unexpectedly. Investigate existing nonactivating floating panel vs native fullscreen before implementation.
+
+## User-queued third batch
+After fullscreen/status-bar/placement: label lyric versions with readable source names (e.g. 网易云音乐, QQ音乐); investigate cold-catalog misses and add useful international providers. User identified reference project as Lyrics Plus. Verify actual provider availability, timelines and matching behavior; source count alone is not acceptance. Preserve manual candidate selection and version provenance.

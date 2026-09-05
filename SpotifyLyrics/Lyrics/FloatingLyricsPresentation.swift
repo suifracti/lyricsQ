@@ -125,13 +125,57 @@ public enum FloatingDesktopTheme: String, CaseIterable, Sendable {
     }
 }
 
+public struct FloatingDesktopColor: Equatable, Sendable {
+    public let hex: String
+    public let red: Double
+    public let green: Double
+    public let blue: Double
+
+    public init(hex: String, fallback: String) {
+        func parse(_ value: String) -> UInt32? {
+            let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            let clean = trimmed.hasPrefix("#") ? String(trimmed.dropFirst()) : trimmed
+            guard clean.count == 6, clean.allSatisfy({ $0.isHexDigit }) else { return nil }
+            return UInt32(clean, radix: 16)
+        }
+        let value = parse(hex) ?? parse(fallback) ?? 0xFFFFFF
+        self.hex = String(format: "%06X", value)
+        red = Double((value >> 16) & 255) / 255
+        green = Double((value >> 8) & 255) / 255
+        blue = Double(value & 255) / 255
+    }
+}
+
 public enum FloatingDesktopTypography {
+    public static func outlineWidth(_ value: Double) -> Double {
+        value.isFinite ? min(3, max(0, value)) : 1.25
+    }
+
+    public static func panelOpacity(value: Double, transparent: Bool, keepsTextOpaque: Bool) -> Double {
+        if transparent && keepsTextOpaque { return 1 }
+        return value.isFinite ? min(1, max(0.45, value)) : 0.96
+    }
+
     public static func firstVisible(_ values: [String?]) -> String? {
         values.compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }.first { !$0.isEmpty }
     }
 
-    public static func fittedFontSize(requested: Double, height: Double, doubleLine: Bool) -> Double {
-        max(22, min(fontSize(requested), (height - 23) / (doubleLine ? 2.15 : 1.3)))
+    public static func ribbonHeight(fontSize: Double, hasRuby: Bool, outlineWidth: Double) -> Double {
+        let inset = 2 * (Self.outlineWidth(outlineWidth) + 1)
+        return ceil(fontSize * 1.3) + inset
+            + (hasRuby ? ceil(fontSize * 0.45 * 1.3) + inset + 2 : 0)
+    }
+
+    public static func fittedFontSize(requested: Double, height: Double, doubleLine: Bool, hasRuby: Bool = false, outlineWidth: Double = 0) -> Double {
+        var size = fontSize(requested)
+        let available = height.isFinite ? max(1, height) : 84
+        while size > 12 {
+            let primary = ribbonHeight(fontSize: size, hasRuby: hasRuby, outlineWidth: outlineWidth)
+            let companion = doubleLine ? ribbonHeight(fontSize: size * 0.66, hasRuby: false, outlineWidth: outlineWidth) + 7 : 0
+            if primary + companion + 16 <= available { break }
+            size -= 0.25
+        }
+        return max(12, size)
     }
 
     /// Spatial reveal only: never used as word highlighting or a playback clock.

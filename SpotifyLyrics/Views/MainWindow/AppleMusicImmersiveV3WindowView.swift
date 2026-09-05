@@ -1,6 +1,28 @@
 import Foundation
 import SwiftUI
 
+private struct V3PlaybackInteractionKey: EnvironmentKey {
+    static let defaultValue: (Bool) -> Void = { _ in }
+}
+
+extension EnvironmentValues {
+    var v3PlaybackInteractionChanged: (Bool) -> Void {
+        get { self[V3PlaybackInteractionKey.self] }
+        set { self[V3PlaybackInteractionKey.self] = newValue }
+    }
+}
+
+private struct V3PlaybackVisibility: ViewModifier {
+    let visible: Bool
+    let reduceMotion: Bool
+    func body(content: Content) -> some View {
+        content.opacity(visible ? 1 : 0)
+            .allowsHitTesting(visible)
+            .accessibilityHidden(!visible)
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.24), value: visible)
+    }
+}
+
 enum MainWindowResponsiveThresholds {
     static let technicalMinimumSize = LyricsDesignTokens.technicalMinimumMainWindowSize
     static let comfortableMinimumSize = LyricsDesignTokens.comfortableMainWindowSize
@@ -34,6 +56,22 @@ struct AppleMusicImmersiveV3WindowView: View {
     @State private var isPointerInToolbarRegion = false
     @State private var interactionToken = 0
     @State private var isAlignmentDetailsPresented = false
+    @State private var isPointerInsideCanvas = false
+    @State private var isPlaybackInteracting = false
+
+    private var playbackDetailsVisible: Bool {
+        !settings.v3PlaybackDetailsOnHover || isPointerInsideCanvas
+            || isPlaybackInteracting || toolbarPanelIsPresented
+    }
+
+    private var playbackVisibility: V3PlaybackVisibility {
+        V3PlaybackVisibility(visible: playbackDetailsVisible, reduceMotion: reduceMotion)
+    }
+
+    private func immersiveCoverScale(size: CGFloat, availableWidth: CGFloat) -> CGFloat {
+        guard !playbackDetailsVisible, !reduceMotion else { return 1 }
+        return max(1, min(1.055, (availableWidth - 8) / max(1, size)))
+    }
 
     private var showsForegroundArtwork: Bool {
         settings.v3ArtworkPresentation != .stage
@@ -82,6 +120,7 @@ struct AppleMusicImmersiveV3WindowView: View {
             .onContinuousHover(coordinateSpace: .local) { phase in
                 switch phase {
                 case .active(let location):
+                    isPointerInsideCanvas = true
                     isPointerInToolbarRegion = location.y <= MainWindowResponsiveThresholds.toolbarRevealHeight
                     if isPointerInToolbarRegion || toolbarPanelIsPresented {
                         revealTools()
@@ -89,6 +128,7 @@ struct AppleMusicImmersiveV3WindowView: View {
                         toolsVisible = false
                     }
                 case .ended:
+                    isPointerInsideCanvas = false
                     isPointerInToolbarRegion = false
                     if !toolbarPanelIsPresented {
                         toolsVisible = false
@@ -111,6 +151,7 @@ struct AppleMusicImmersiveV3WindowView: View {
         .ignoresSafeArea()
         .preferredColorScheme(.dark)
         .environment(\.lyricAgentPresentationMap, LyricAgentPresentationMap(lines: state.lyrics))
+        .environment(\.v3PlaybackInteractionChanged, { isPlaybackInteracting = $0 })
         .sheet(isPresented: $isAlignmentDetailsPresented) {
             if let report = state.liveLyricsState.alignmentReport {
                 AlignmentPreviewView(report: report)
@@ -200,6 +241,7 @@ struct AppleMusicImmersiveV3WindowView: View {
                     reduceMotion: reduceMotion
                 )
                 .padding(.bottom, LyricsDesignTokens.Spacing.md)
+                .modifier(playbackVisibility)
             }
         }
     }
@@ -213,11 +255,14 @@ struct AppleMusicImmersiveV3WindowView: View {
             showsAlbumLabel: false, cornerRadiusRatio: 0.06,
             preservesCompleteArtwork: true
         )
+        .scaleEffect(immersiveCoverScale(size: metrics.coverSize, availableWidth: metrics.coverColumnWidth))
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.32), value: playbackDetailsVisible)
         .frame(width: metrics.coverColumnWidth, height: metrics.headerHeight - metrics.headerInset * 2)
         let details = trackPlaybackDetails(
             width: metrics.metadataWidth, titleSize: 26,
             alignment: .leading, progressDensity: .medium
         )
+        .modifier(playbackVisibility)
 
         return VStack(spacing: metrics.gap) {
             HStack(spacing: metrics.headerGap) {
@@ -231,7 +276,8 @@ struct AppleMusicImmersiveV3WindowView: View {
             }
             .padding(metrics.headerInset)
             .frame(width: metrics.contentWidth, height: metrics.headerHeight)
-            .background(V3PlaybackSurface())
+            .background(V3PlaybackSurface().opacity(playbackDetailsVisible ? 1 : 0)
+                .animation(reduceMotion ? nil : .easeInOut(duration: 0.24), value: playbackDetailsVisible))
 
             lyricsColumn(width: metrics.contentWidth, compact: false)
                 .frame(width: metrics.contentWidth, height: metrics.lyricsHeight)
@@ -428,6 +474,7 @@ struct AppleMusicImmersiveV3WindowView: View {
                 .frame(width: reading.width, height: reading.height)
                 .position(x: reading.midX, y: reading.midY)
             StageHUDView(state: state, width: hudWidth)
+                .modifier(playbackVisibility)
                 .frame(width: hudWidth, height: 96)
                 .position(x: canvasWidth / 2, y: canvasHeight - 60)
         }
@@ -534,6 +581,10 @@ struct AppleMusicImmersiveV3WindowView: View {
                 )
                 .frame(maxWidth: width, alignment: alignment == .center ? .center : .leading)
 
+                .scaleEffect(immersiveCoverScale(size: coverSize, availableWidth: width))
+                .offset(y: !playbackDetailsVisible && !reduceMotion ? 8 : 0)
+                .animation(reduceMotion ? nil : .easeInOut(duration: 0.32), value: playbackDetailsVisible)
+
                 Spacer().frame(height: compact ? LyricsDesignTokens.Spacing.lg - 2 : LyricsDesignTokens.Spacing.xl)
 
                 trackPlaybackDetails(
@@ -543,6 +594,7 @@ struct AppleMusicImmersiveV3WindowView: View {
                 )
                 .padding(14)
                 .background(V3PlaybackSurface())
+                .modifier(playbackVisibility)
             } else {
                 Spacer(minLength: 0)
 
@@ -573,6 +625,7 @@ struct AppleMusicImmersiveV3WindowView: View {
                         .stroke(Color.white.opacity(0.14), lineWidth: 0.8)
                 )
                 .shadow(color: Color.black.opacity(0.16), radius: 16, x: 0, y: 8)
+                .modifier(playbackVisibility)
             }
         }
         // Give the column the actual content height. Without an explicit
@@ -814,16 +867,18 @@ private struct AppleMusicImmersiveV3PlaybackProgress: View {
     let maxWidth: CGFloat?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    @Environment(\.v3PlaybackInteractionChanged) private var interactionChanged
+
     @State private var isHovered = false
     @State private var isEditing = false
-    @State private var draftPosition: Double = 0
+    @State private var draftPosition: Double?
 
     private var duration: Double {
         max(0.1, state.currentTrack.duration)
     }
 
     private var visiblePosition: Double {
-        let rawValue = isEditing ? draftPosition : state.currentTime
+        let rawValue = draftPosition ?? state.currentTime
         return min(max(rawValue, 0), duration)
     }
 
@@ -885,18 +940,15 @@ private struct AppleMusicImmersiveV3PlaybackProgress: View {
                 // The native control remains the accessibility and input
                 // surface; the custom rail above keeps the resting visual
                 // quiet without introducing a second seek implementation.
-                Slider(
+                V3PlaybackInputSlider(
                     value: Binding(
                         get: { visiblePosition },
                         set: { draftPosition = min(max($0, 0), duration) }
                     ),
-                    in: 0...duration,
+                    duration: duration,
                     onEditingChanged: handleEditingChanged
                 )
-                .labelsHidden()
-                .tint(.clear)
-                .opacity(0.01)
-                .accessibilityLabel("播放进度")
+                .frame(height: density.interactionHeight)
             }
             .contentShape(Rectangle())
             .onHover { hovering in
@@ -917,16 +969,103 @@ private struct AppleMusicImmersiveV3PlaybackProgress: View {
     }
 
     private func handleEditingChanged(_ editing: Bool) {
-        if editing {
-            draftPosition = min(max(state.currentTime, 0), duration)
-            isEditing = true
-            return
-        }
-
-        guard isEditing else { return }
-        isEditing = false
+        isEditing = editing
+        interactionChanged(editing)
+        // A native Slider may write its binding before beginning tracking.
+        // Preserve that target rather than replacing it with the live clock.
+        guard !editing, let draftPosition else { return }
+        self.draftPosition = nil
         state.seek(to: min(max(draftPosition, 0), duration), source: "v3-progress-slider")
     }
+}
+
+/// Keep the native accessibility/keyboard control fully hit-testable. A
+/// translucent SwiftUI Slider can let its hosting window claim the drag.
+private struct V3PlaybackInputSlider: NSViewRepresentable {
+    @Binding var value: Double
+    let duration: Double
+    let onEditingChanged: (Bool) -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
+
+    func makeNSView(context: Context) -> V3PlaybackNativeSlider {
+        let slider = V3PlaybackNativeSlider()
+        slider.cell = V3PlaybackSliderCell()
+        slider.minValue = 0
+        slider.maxValue = duration
+        slider.isContinuous = true
+        slider.target = context.coordinator
+        slider.action = #selector(Coordinator.changed(_:))
+        slider.setAccessibilityLabel("播放进度")
+        slider.onTrackingChanged = { [weak coordinator = context.coordinator] editing in
+            coordinator?.parent.onEditingChanged(editing)
+        }
+        return slider
+    }
+
+    func updateNSView(_ slider: V3PlaybackNativeSlider, context: Context) {
+        context.coordinator.parent = self
+        slider.maxValue = duration
+        if !slider.isTrackingInteraction { slider.doubleValue = value }
+    }
+
+    final class Coordinator: NSObject {
+        var parent: V3PlaybackInputSlider
+        init(parent: V3PlaybackInputSlider) { self.parent = parent }
+
+        @objc func changed(_ sender: V3PlaybackNativeSlider) {
+            // Keyboard and accessibility changes need the same single commit
+            // as pointer tracking, even when AppKit skips mouseDown entirely.
+            let standalone = !sender.isTrackingInteraction
+            if standalone { parent.onEditingChanged(true) }
+            parent.value = sender.doubleValue
+            if standalone { parent.onEditingChanged(false) }
+        }
+    }
+}
+
+private final class V3PlaybackNativeSlider: NSSlider {
+    var onTrackingChanged: ((Bool) -> Void)?
+    private(set) var isTrackingInteraction = false
+
+    override var mouseDownCanMoveWindow: Bool { false }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func mouseDown(with event: NSEvent) {
+        isTrackingInteraction = true
+        onTrackingChanged?(true)
+        defer {
+            isTrackingInteraction = false
+            onTrackingChanged?(false)
+        }
+        applyPointerPosition(event)
+        // AppKit's cell tracker can miss a sparse final jump. Apply mouseUp
+        // too, so the committed draft always reflects where tracking ended.
+        while let next = window?.nextEvent(
+            matching: [.leftMouseDragged, .leftMouseUp],
+            until: .distantFuture, inMode: .eventTracking, dequeue: true
+        ) {
+            applyPointerPosition(next)
+            if next.type == .leftMouseUp { break }
+        }
+    }
+
+    private func applyPointerPosition(_ event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        doubleValue = Self.pointerPosition(x: point.x, width: bounds.width, duration: maxValue)
+        _ = sendAction(action, to: target)
+    }
+
+    static func pointerPosition(x: CGFloat, width: CGFloat, duration: Double) -> Double {
+        guard x.isFinite, width.isFinite, width > 0,
+              duration.isFinite, duration > 0 else { return 0 }
+        return min(1, max(0, Double(x / width))) * duration
+    }
+}
+
+private final class V3PlaybackSliderCell: NSSliderCell {
+    override func drawBar(inside rect: NSRect, flipped: Bool) {}
+    override func drawKnob(_ knobRect: NSRect) {}
 }
 
 private struct AppleMusicImmersiveV3TransportControls: View {
@@ -1525,6 +1664,20 @@ private struct AppleMusicImmersiveV3LyricsViewport: View {
 /// kana layer. Keep it outside the SwiftUI body so a row redraw does not run
 /// MeCab repeatedly, which otherwise makes lyric scrolling feel sticky.
 enum V3JapaneseReadingCache {
+    static func presentation(for line: LyricLine, language: String?, userEntries: [ReadingDictionaryEntry],
+                             trackStableKey: String?, artistDisplay: String?) -> JapaneseRubyPresentation {
+        let original = line.readingSurfaceText ?? line.originalText
+        guard LyricsLanguageGate.allowsJapaneseReadings(language: language, text: original) else {
+            return JapaneseRubyPresentation(originalText: original, reading: nil)
+        }
+        let stored = line.kanaText?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let kana = stored.flatMap { $0.isEmpty ? nil : JapaneseRomanizer.displayKana($0) }
+        let result = reading(for: original, userEntries: userEntries, trackStableKey: trackStableKey,
+                             artistDisplay: artistDisplay, providerKana: kana)
+        return JapaneseRubyPresentation(line: line, reading: result,
+            storedRubyIsAuthoritative: line.readingRepresentationID == ReadingRepresentationID.kana.rawValue)
+    }
+
     private static let lock = NSLock()
     private static var values: [String: JapaneseReadingResult] = [:]
 
@@ -1532,7 +1685,8 @@ enum V3JapaneseReadingCache {
         for text: String,
         userEntries: [ReadingDictionaryEntry],
         trackStableKey: String?,
-        artistDisplay: String?
+        artistDisplay: String?,
+        providerKana: String? = nil
     ) -> JapaneseReadingResult? {
         let normalizedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalizedText.isEmpty else { return nil }
@@ -1552,7 +1706,7 @@ enum V3JapaneseReadingCache {
             ].joined(separator: "|")
         }
         let key = ReadingEngineSupport.hashContext(
-            [normalizedText, trackStableKey ?? "", artistDisplay ?? ""] + correctionSignature
+            [normalizedText, trackStableKey ?? "", artistDisplay ?? "", providerKana ?? ""] + correctionSignature
         )
 
         lock.lock()
@@ -1562,7 +1716,7 @@ enum V3JapaneseReadingCache {
         }
         lock.unlock()
 
-        let result = JapaneseContextualReadingEngine.analyze(
+        let result = providerKana.map { JapaneseReadingPipeline.analyze(originalText: normalizedText, providerKana: $0) } ?? JapaneseContextualReadingEngine.analyze(
             text: normalizedText,
             userEntries: applicableEntries,
             trackStableKey: trackStableKey,
@@ -1725,30 +1879,12 @@ private struct AppleMusicImmersiveV3LyricRow: View {
         return JapaneseRomanizer.displayKana(kana)
     }
 
-    private var automaticReading: JapaneseReadingResult? {
-        guard !effectiveOriginalText.isEmpty,
-              effectiveOriginalText.unicodeScalars.contains(where: { scalar in
-                  let value = scalar.value
-                  return (0x3400...0x4DBF).contains(value)
-                      || (0x4E00...0x9FFF).contains(value)
-                      || (0xF900...0xFAFF).contains(value)
-              }) else {
-            return nil
-        }
-        return V3JapaneseReadingCache.reading(
-            for: effectiveOriginalText,
-            userEntries: settings.readingUserDictionary.load(),
-            trackStableKey: trackStableKey,
-            artistDisplay: artistDisplay
-        )
+    private var rubyPresentation: JapaneseRubyPresentation {
+        V3JapaneseReadingCache.presentation(for: line, language: language,
+            userEntries: settings.readingUserDictionary.load(), trackStableKey: trackStableKey, artistDisplay: artistDisplay)
     }
 
-    private var displayKanaText: String? {
-        guard LyricsLanguageGate.allowsJapaneseReadings(language: language, text: effectiveOriginalText) else {
-            return nil
-        }
-        return storedKanaText ?? automaticReading?.kanaText
-    }
+    private var displayKanaText: String? { rubyPresentation.kanaText }
 
     private var effectiveOriginalText: String {
         line.readingSurfaceText ?? line.originalText
@@ -1777,67 +1913,10 @@ private struct AppleMusicImmersiveV3LyricRow: View {
         return representation.hasPrefix("readingRepresentation.pinyin")
     }
 
-    private var reliableRubyTokens: [LyricRubyToken]? {
-        guard storedKanaText == nil, let tokens = line.rubyTokens,
-              tokens.contains(where: { $0.hasDisplayRuby }) else {
-            return nil
-        }
-        return tokens
-    }
-
-    private var providerRubyTokens: [LyricRubyToken]? {
-        guard let kana = storedKanaText else { return nil }
-        let reading = JapaneseReadingPipeline.analyze(
-            originalText: effectiveOriginalText,
-            providerKana: kana
-        )
-        guard reading.isTokenAligned else {
-            // Keep the provider kana available to the independent/replacement
-            // modes, but never turn an unbounded line reading into one ruby
-            // annotation spanning the whole sentence.
-            return nil
-        }
-        let tokens = reading.tokens.flatMap { JapaneseReadingPipeline.rubyTokens(for: $0) }
-        return tokens.contains(where: { $0.hasDisplayRuby }) ? tokens : nil
-    }
-
-    private var automaticRubyTokens: [LyricRubyToken]? {
-        guard storedKanaText == nil, let reading = automaticReading, reading.isTokenAligned else { return nil }
-        let tokens = reading.tokens.flatMap { JapaneseReadingPipeline.rubyTokens(for: $0) }
-        return tokens.contains(where: { $0.hasDisplayRuby }) ? tokens : nil
-    }
-
-    private var inlineRubyTokens: [LyricRubyToken]? {
-        // A provider reading that has been proven against the local morphology
-        // boundaries is authoritative for the visible ruby. This matters for
-        // ambiguous kanji such as 満, where isolated MeCab may choose a name
-        // reading while the lyric source provides the phrase reading まん.
-        // Unprojectable provider and automatic line readings return nil above;
-        // they remain available only as independent line-level kana.
-        if line.readingRepresentationID == ReadingRepresentationID.kana.rawValue,
-           let tokens = line.rubyTokens, tokens.map(\.surface).joined() == effectiveOriginalText,
-           tokens.contains(where: \.hasDisplayRuby) { return tokens }
-        return providerRubyTokens ?? automaticRubyTokens ?? reliableRubyTokens
-    }
+    private var inlineRubyTokens: [LyricRubyToken]? { rubyPresentation.rubyTokens }
 
     private var shouldRenderInlineRuby: Bool {
-        guard preferences.showOriginal,
-              shouldShowRuby,
-              let kana = displayKanaText,
-              let tokens = inlineRubyTokens,
-              !tokens.isEmpty,
-              !kana.isEmpty else {
-            return false
-        }
-
-        // Do not create a redundant ruby block for an already-hiragana line.
-        // Kanji and katakana surfaces both benefit from a confirmed reading.
-        return effectiveOriginalText.unicodeScalars.contains { scalar in
-            (0x3400...0x4DBF).contains(scalar.value)
-                || (0x4E00...0x9FFF).contains(scalar.value)
-                || (0xF900...0xFAFF).contains(scalar.value)
-                || (0x30A1...0x30FA).contains(scalar.value)
-        }
+        preferences.showOriginal && shouldShowRuby && rubyPresentation.hasRuby
     }
 
     private var distinctRomaji: String? {
@@ -1952,8 +2031,8 @@ private struct AppleMusicImmersiveV3LyricRow: View {
                         .stroke(Color.white.opacity(0.20), lineWidth: 0.8)
                 )
                 .shadow(color: Color.black.opacity(0.2), radius: 8, x: 0, y: 3)
-            } else if shouldRenderInlineRuby,
-               let kana = displayKanaText {
+            } else if shouldRenderInlineRuby {
+                let kana = displayKanaText ?? ""
                 #if DEBUG
                 let _ = Self.logRubyDecisionIfNeeded(
                     isActive: isActive,
@@ -2145,14 +2224,7 @@ private struct AppleMusicImmersiveV3LyricRow: View {
             rubyTokens: rubyTokens
         )
         return V3TimedLayoutCache.ruby(for: key) {
-            TimedTextComposer.computeTimedRubyLayout(
-                originalText: line.originalText,
-                spans: spans,
-                rubyTokens: rubyTokens,
-                fontSize: fontSize,
-                weight: weight,
-                design: "rounded"
-            )
+            rubyPresentation.timedLayout(spans: spans, fontSize: fontSize, weight: weight)
         }
     }
 
@@ -2296,6 +2368,13 @@ private struct V3VisualTuningPopoverView: View {
                 .foregroundStyle(.primary)
 
             Divider()
+
+            VStack(alignment: .leading, spacing: 5) {
+                Toggle("悬停时显示播放信息", isOn: $settings.v3PlaybackDetailsOnHover)
+                Text("鼠标移入窗口时显示歌名与播放控制，移出后淡出；三种构图均适用。")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
 
             VStack(alignment: .leading, spacing: 6) {
                 Picker("背景构图", selection: Binding(

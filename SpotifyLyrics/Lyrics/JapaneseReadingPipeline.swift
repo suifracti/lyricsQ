@@ -353,6 +353,65 @@ public struct JapaneseReadingResult: Equatable, Sendable {
     }
 }
 
+/// A shared, timing-neutral reading projection for the main and desktop surfaces.
+/// Partial confirmed annotations remain visible without inventing unknown readings.
+struct JapaneseRubyPresentation {
+    let originalText: String
+    let kanaText: String?
+    let romajiText: String?
+    let rubyTokens: [LyricRubyToken]?
+
+    init(originalText: String, reading: JapaneseReadingResult?, preferredRubyTokens: [LyricRubyToken]? = nil,
+         kanaText: String? = nil, romajiText: String? = nil) {
+        self.originalText = originalText
+        self.kanaText = kanaText ?? reading?.kanaText
+        self.romajiText = romajiText ?? reading?.romajiText
+        if let preferredRubyTokens, !preferredRubyTokens.isEmpty,
+           preferredRubyTokens.map(\.surface).joined() == originalText {
+            rubyTokens = preferredRubyTokens
+        } else if let reading, reading.isTokenAligned, reading.originalText == originalText {
+            let tokens = reading.tokens.flatMap { JapaneseReadingPipeline.rubyTokens(for: $0) }
+            rubyTokens = tokens.map(\.surface).joined() == originalText ? tokens : nil
+        } else {
+            rubyTokens = nil
+        }
+    }
+
+    /// Legacy enrichment tokens carry no authority: a freshly resolved contextual
+    /// reading must replace them. Only a selected kana version overrides it.
+    init(line: LyricLine, reading: JapaneseReadingResult?, storedRubyIsAuthoritative: Bool) {
+        let original = line.readingSurfaceText ?? line.originalText
+        let stored = line.kanaText?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let kana = stored.flatMap { $0.isEmpty ? nil : JapaneseRomanizer.displayKana($0) }
+        let resolved = Self(originalText: original, reading: reading,
+            preferredRubyTokens: storedRubyIsAuthoritative ? line.rubyTokens : nil,
+            kanaText: kana, romajiText: line.romajiText)
+        if !resolved.hasRuby, kana == nil, !storedRubyIsAuthoritative {
+            self = Self(originalText: original, reading: reading, preferredRubyTokens: line.rubyTokens,
+                        kanaText: kana, romajiText: line.romajiText)
+        } else {
+            self = resolved
+        }
+    }
+
+    var hasRuby: Bool {
+        rubyTokens?.contains { token in
+            if let ruby = token.ruby, !ruby.isEmpty { return true }
+            return token.surface.unicodeScalars.contains { (0x30A1...0x30FA).contains($0.value) }
+        } ?? false
+    }
+
+    func timedLayout(spans: [TimedTextSpan], fontSize: CGFloat, weight: CGFloat, showsRuby: Bool = true, design: String = "rounded") -> TimedRubyLayout? {
+        guard !spans.isEmpty else { return nil }
+        let tokens = showsRuby ? rubyTokens : nil
+        return TimedTextComposer.computeTimedRubyLayout(
+            originalText: originalText, spans: spans,
+            rubyTokens: tokens ?? [LyricRubyToken(id: 0, surface: originalText, ruby: nil)],
+            fontSize: fontSize, weight: weight, design: design
+        )
+    }
+}
+
 /// Morphology-first Japanese reading pipeline.
 public enum JapaneseReadingPipeline {
     public static func analyze(
@@ -854,6 +913,8 @@ public enum JapaneseReadingPipeline {
     /// boundaries, so ruby remains attached only to the corresponding Han
     /// span. Add rules here only when the surrounding phrase is unambiguous.
     private static let contextualPhraseRules: [ContextualPhraseRule] = [
+        // IPADIC splits this established compound into an unrelated 既 reading and unknown 読.
+        ContextualPhraseRule(surfaces: ["既", "読"], replacementReadings: [0: "キ", 1: "ドク"]),
         ContextualPhraseRule(
             surfaces: ["満", "を", "持", "し", "て"],
             replacementReadings: [0: "マン"]
