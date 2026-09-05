@@ -13,9 +13,9 @@ public enum LyricsSourceMode: String, CaseIterable, Codable, Identifiable, Senda
     public var id: String { rawValue }
 
     /// This repository is currently a personal-use companion rather than a
-    /// commercial distribution build. Keep both maintained experimental
+    /// commercial distribution build. Keep maintained experimental
     /// providers active by default so cold tracks actually benefit from the
-    /// NetEase/QQ coverage work. The standard mode remains available as an
+    /// expanded catalog coverage work. The standard mode remains available as an
     /// explicit conservative choice.
     public static let `default` = LyricsSourceMode.experimentalFree
 
@@ -36,9 +36,9 @@ public enum LyricsSourceMode: String, CaseIterable, Codable, Identifiable, Senda
     public var detail: String {
         switch self {
         case .standardFree:
-            return "使用本地歌词、已保存版本、AMLL、LRCLIB 与用户导入/创建。不调用网易或 QQ 实验接口。"
+            return "使用本地歌词、已保存版本、AMLL、LRCLIB、lyrics.ovh 与用户导入/创建。不调用实验接口。"
         case .experimentalFree:
-            return "在标准免费能力之上，额外尝试网易云与 QQ 音乐实验源。可能失效，不保证覆盖率，不建议正式商业发行。"
+            return "在标准免费能力之上，额外尝试网易云、QQ 音乐、酷我与酷狗实验源。可能失效，不保证覆盖率，不建议正式商业发行。"
         }
     }
 
@@ -111,6 +111,9 @@ public enum LyricsProviderID: String, CaseIterable, Codable, Hashable, Identifia
     case lrclib
     case netEaseExperimental
     case qqExperimental
+    case kuwoExperimental
+    case kugouExperimental
+    case lyricsOVH
 
     public var id: String { rawValue }
 
@@ -122,6 +125,9 @@ public enum LyricsProviderID: String, CaseIterable, Codable, Hashable, Identifia
         case .lrclib: return "LRCLIB"
         case .netEaseExperimental: return "网易云实验源"
         case .qqExperimental: return "QQ 音乐实验源"
+        case .kuwoExperimental: return "酷我音乐实验源"
+        case .kugouExperimental: return "酷狗音乐实验源"
+        case .lyricsOVH: return "lyrics.ovh"
         }
     }
 
@@ -133,6 +139,8 @@ public enum LyricsProviderID: String, CaseIterable, Codable, Hashable, Identifia
         case .lrclib: return "network"
         case .netEaseExperimental: return "globe.asia.australia"
         case .qqExperimental: return "bubble.left.and.bubble.right"
+        case .kuwoExperimental, .kugouExperimental: return "music.note.list"
+        case .lyricsOVH: return "globe"
         }
     }
 
@@ -141,14 +149,14 @@ public enum LyricsProviderID: String, CaseIterable, Codable, Hashable, Identifia
     }
 
     public var isExperimental: Bool {
-        self == .netEaseExperimental || self == .qqExperimental
+        [Self.netEaseExperimental, .qqExperimental, .kuwoExperimental, .kugouExperimental].contains(self)
     }
 
     public var stabilityLabel: String {
         switch self {
         case .localFiles, .sqliteDatabase: return "稳定"
-        case .amll, .lrclib: return "在线"
-        case .netEaseExperimental, .qqExperimental: return "实验"
+        case .amll, .lrclib, .lyricsOVH: return "在线"
+        case .netEaseExperimental, .qqExperimental, .kuwoExperimental, .kugouExperimental: return "实验"
         }
     }
 
@@ -164,8 +172,10 @@ public enum LyricsProviderID: String, CaseIterable, Codable, Hashable, Identifia
             return "公共在线歌词源，网络失败会隔离"
         case .netEaseExperimental:
             return "实验源；目录命中不代表正文可用；仅扩展免费实验模式可用"
-        case .qqExperimental:
+        case .qqExperimental, .kuwoExperimental, .kugouExperimental:
             return "实验源；结果必须经过版本匹配；仅扩展免费实验模式可用"
+        case .lyricsOVH:
+            return "国际歌曲纯文本补充；没有时间轴，需手动核对后采用"
         }
     }
 
@@ -193,7 +203,7 @@ public enum LyricsProviderID: String, CaseIterable, Codable, Hashable, Identifia
                 allowedInStandardFree: true,
                 allowedInExperimentalFree: true
             )
-        case .amll, .lrclib:
+        case .amll, .lrclib, .lyricsOVH:
             return LyricsProviderPolicy(
                 capabilityClass: .openFree,
                 allowsAutomaticSearch: true,
@@ -204,7 +214,7 @@ public enum LyricsProviderID: String, CaseIterable, Codable, Hashable, Identifia
                 allowedInStandardFree: true,
                 allowedInExperimentalFree: true
             )
-        case .netEaseExperimental, .qqExperimental:
+        case .netEaseExperimental, .qqExperimental, .kuwoExperimental, .kugouExperimental:
             return LyricsProviderPolicy(
                 capabilityClass: .experimentalFree,
                 allowsAutomaticSearch: true,
@@ -308,7 +318,10 @@ public struct LyricsProviderConfiguration: Equatable, Sendable {
             .amll,
             .lrclib,
             .netEaseExperimental,
-            .qqExperimental
+            .qqExperimental,
+            .kuwoExperimental,
+            .kugouExperimental,
+            .lyricsOVH
         ]
     )
 
@@ -332,6 +345,12 @@ public struct LyricsProviderConfiguration: Equatable, Sendable {
             } else {
                 order.append(.amll)
             }
+        }
+        // Missing IDs distinguish pre-expansion preferences from explicit disables.
+        for id in [LyricsProviderID.kuwoExperimental, .kugouExperimental, .lyricsOVH]
+            where !order.contains(id) && !enabled.contains(id) {
+            enabled.insert(id)
+            order.append(id)
         }
         let all = Set(LyricsProviderID.allCases)
         enabled.formUnion([.localFiles, .sqliteDatabase])

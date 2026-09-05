@@ -1053,15 +1053,19 @@ private struct LyricsVersionPickerView: View {
 
     private func versionRow(_ version: StoredEditableLyricsVersion) -> some View {
         let isCurrent = version.record.id == currentVersionID
-        let source = LyricsSource(rawValue: version.record.source)?.displayName ?? version.record.source
+        let source = DatabaseSourceIdentifier.displayName(for: version.record.source)
+        let provenance = DatabaseSourceIdentifier.provenanceDescription(source: version.record.source,
+            parentVersionID: version.record.parentVersionID) { id in
+                guard let parent = versions.first(where: { $0.record.id == id })?.record else { return nil }
+                return (parent.source, parent.parentVersionID)
+            }
         let timing = version.record.isSynced ? "已同步" : "纯文本"
         let kind = version.record.isManuallyEdited ? "人工编辑" : "来源版本"
 
         return HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 8) {
-                    Text(source)
-                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    LibraryVersionLabel(kind: "lyrics", id: version.record.id, originalTitle: source)
                     Text(timing)
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -1072,12 +1076,10 @@ private struct LyricsVersionPickerView: View {
                 Text("更新于 \(version.record.updatedAt.formatted(date: .abbreviated, time: .shortened))")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                if !version.record.providerSourceID.isEmpty {
-                    Text(version.record.providerSourceID)
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                        .lineLimit(1)
-                }
+                Text("来源：\(provenance)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             Spacer(minLength: 8)

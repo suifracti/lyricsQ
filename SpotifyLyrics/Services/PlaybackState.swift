@@ -343,6 +343,15 @@ public final class PlaybackState: ObservableObject {
                     continue
                 }
                 providers.append(QQExperimentalLyricsProvider())
+            case .lyricsOVH:
+                guard ProcessInfo.processInfo.environment["SPOTIFYLYRICS_DISABLE_LYRICSOVH"] != "1" else { continue }
+                providers.append(LyricsOVHProvider())
+            case .kuwoExperimental:
+                guard ProcessInfo.processInfo.environment["SPOTIFYLYRICS_DISABLE_KUWO"] != "1" else { continue }
+                providers.append(KuwoExperimentalLyricsProvider())
+            case .kugouExperimental:
+                guard ProcessInfo.processInfo.environment["SPOTIFYLYRICS_DISABLE_KUGOU"] != "1" else { continue }
+                providers.append(KugouExperimentalLyricsProvider())
             }
         }
         // A corrupted/legacy preference must not remove the read-only local

@@ -329,7 +329,7 @@ public struct PersonalLibraryTrackDetailView: View {
                                 emptyPlaceholder("暂无保存的歌词版本")
                             } else {
                                 ForEach(detail.lyricsVersions) { lv in
-                                    lyricsVersionCard(lv, entry: detail.entry)
+                                    lyricsVersionCard(lv, entry: detail.entry, versions: detail.lyricsVersions)
                                 }
                             }
                         }
@@ -470,12 +470,16 @@ public struct PersonalLibraryTrackDetailView: View {
 
     // MARK: - Version Cards
 
-    private func lyricsVersionCard(_ lv: PersonalLyricsVersionItem, entry: PersonalLyricsLibraryEntry) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+    private func lyricsVersionCard(_ lv: PersonalLyricsVersionItem, entry: PersonalLyricsLibraryEntry, versions: [PersonalLyricsVersionItem]) -> some View {
+        let provenance = DatabaseSourceIdentifier.provenanceDescription(source: lv.source, parentVersionID: lv.parentVersionID) { id in
+            guard let parent = versions.first(where: { $0.id == id }) else { return nil }
+            return (parent.source, parent.parentVersionID)
+        }
+        return VStack(alignment: .leading, spacing: 8) {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
-                        LibraryVersionLabel(kind: "lyrics", id: lv.id, originalTitle: lv.source.uppercased())
+                        LibraryVersionLabel(kind: "lyrics", id: lv.id, originalTitle: DatabaseSourceIdentifier.displayName(for: lv.source))
                         if lv.parentVersionID != nil { statusTag("修订版", color: .orange) }
                         if lv.isCurrent {
                             statusTag("当前采用", color: .blue)
@@ -490,6 +494,9 @@ public struct PersonalLibraryTrackDetailView: View {
                             statusTag("时间轴", color: .teal)
                         }
                     }
+                    Text("来源：\(provenance)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                     Text("行数: \(lv.lineCount) · 语言: \(lv.language) · 更新于 \(formattedDate(lv.updatedAt))")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -909,7 +916,7 @@ public struct UnifiedLibraryHistoryWindowView: View {
 
 
 /// Local presentation metadata only; asset identity and source content stay immutable.
-private struct LibraryVersionLabel: View {
+struct LibraryVersionLabel: View {
     let originalTitle: String
     @AppStorage private var customTitle: String
     @AppStorage private var note: String

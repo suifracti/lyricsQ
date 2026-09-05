@@ -6,6 +6,10 @@ public enum LyricsSource: String, CaseIterable, Codable, Sendable {
     case lrclib
     case neteaseExperimental
     case qqExperimental
+    case lyricsOVH
+    case kuwoExperimental
+    case kugouExperimental
+    case unknown
     case asrMachineGenerated
     case automaticAlignment
     case manualImport
@@ -20,6 +24,10 @@ public enum LyricsSource: String, CaseIterable, Codable, Sendable {
         case .lrclib: return "LRCLIB"
         case .neteaseExperimental: return "网易云（实验）"
         case .qqExperimental: return "QQ音乐（实验）"
+        case .lyricsOVH: return "lyrics.ovh"
+        case .kuwoExperimental: return "酷我音乐（实验）"
+        case .kugouExperimental: return "酷狗音乐（实验）"
+        case .unknown: return "未知来源"
         case .asrMachineGenerated: return "ASR 草稿（待校正）"
         case .automaticAlignment: return "自动排轴"
         case .manualImport: return "手动导入"

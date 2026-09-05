@@ -75,7 +75,7 @@ private struct ExperienceLyricsProvider: LyricsProvider {
                                      utf16Start: offset, utf16Length: text.utf16.count)
             }
         }
-        return .match(LyricsDocument(identity: identity, title: track.title, artist: track.artist, album: track.album, duration: track.duration, lines: lines, isSynchronized: true, source: .local, confidence: 1))
+        return .match(LyricsDocument(identity: identity, title: track.title, artist: track.artist, album: track.album, duration: track.duration, lines: lines, isSynchronized: true, source: ProcessInfo.processInfo.arguments.contains("--source-provenance") ? .neteaseExperimental : .local, confidence: 1))
     }
 }
 

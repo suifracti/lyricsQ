@@ -80,6 +80,19 @@ public enum LyricsSafeMatcher {
         aliasUsed: TrackAlias? = nil,
         queryVariant: LyricsQueryVariant? = nil
     ) -> LyricsMatchDecision {
+        // This endpoint returns only a lyric body. Query echoes are not identity evidence.
+        if candidate.source == .lyricsOVH {
+            let hasText = candidate.lines.contains { !$0.originalText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+            return LyricsMatchDecision(
+                tier: hasText ? .candidates : .reject,
+                score: 0,
+                versionConflict: false,
+                queryKind: queryVariant?.queryKind,
+                reasons: ["仅按搜索词返回，需人工核对"],
+                evidence: [],
+                hardReject: !hasText
+            )
+        }
         var score = 0.0
         var reasons: [String] = []
         var evidence: [LyricsMatchEvidence] = []

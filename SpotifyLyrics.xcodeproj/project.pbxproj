@@ -66,6 +66,9 @@
 		110000402D83400100000001 /* japanese_kanji_readings.json in Resources */ = {isa = PBXBuildFile; fileRef = 110000402D83400100000000 /* japanese_kanji_readings.json */; };
 		110000432D83400100000001 /* NetEaseExperimentalLyricsProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000432D83400100000000 /* NetEaseExperimentalLyricsProvider.swift */; };
 		110000442D83400100000001 /* QQExperimentalLyricsProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000442D83400100000000 /* QQExperimentalLyricsProvider.swift */; };
+		A60F09060000000000000101 /* LyricsOVHProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60F09060000000000000100 /* LyricsOVHProvider.swift */; };
+		A60F09060000000000000201 /* KuwoExperimentalLyricsProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60F09060000000000000200 /* KuwoExperimentalLyricsProvider.swift */; };
+		A60F09060000000000000301 /* KugouExperimentalLyricsProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60F09060000000000000300 /* KugouExperimentalLyricsProvider.swift */; };
 		110000452D83400100000001 /* LocalAudioASRService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000452D83400100000000 /* LocalAudioASRService.swift */; };
 		110000462D83400100000001 /* LyricsE2ELog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000462D83400100000000 /* LyricsE2ELog.swift */; };
 		110000472D83400100000001 /* AlignmentModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000472D83400100000000 /* AlignmentModels.swift */; };
@@ -270,6 +273,9 @@
 		110000402D83400100000000 /* japanese_kanji_readings.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = japanese_kanji_readings.json; sourceTree = "<group>"; };
 		110000432D83400100000000 /* NetEaseExperimentalLyricsProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetEaseExperimentalLyricsProvider.swift; sourceTree = "<group>"; };
 		110000442D83400100000000 /* QQExperimentalLyricsProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QQExperimentalLyricsProvider.swift; sourceTree = "<group>"; };
+		A60F09060000000000000100 /* LyricsOVHProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricsOVHProvider.swift; sourceTree = "<group>"; };
+		A60F09060000000000000200 /* KuwoExperimentalLyricsProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KuwoExperimentalLyricsProvider.swift; sourceTree = "<group>"; };
+		A60F09060000000000000300 /* KugouExperimentalLyricsProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KugouExperimentalLyricsProvider.swift; sourceTree = "<group>"; };
 		110000452D83400100000000 /* LocalAudioASRService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalAudioASRService.swift; sourceTree = "<group>"; };
 		110000462D83400100000000 /* LyricsE2ELog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricsE2ELog.swift; sourceTree = "<group>"; };
 		110000472D83400100000000 /* AlignmentModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlignmentModels.swift; sourceTree = "<group>"; };
@@ -625,6 +631,9 @@
 				110000102D83400100000000 /* ArtworkImageLoader.swift */,
 				110000432D83400100000000 /* NetEaseExperimentalLyricsProvider.swift */,
 				110000442D83400100000000 /* QQExperimentalLyricsProvider.swift */,
+				A60F09060000000000000100 /* LyricsOVHProvider.swift */,
+				A60F09060000000000000200 /* KuwoExperimentalLyricsProvider.swift */,
+				A60F09060000000000000300 /* KugouExperimentalLyricsProvider.swift */,
 			);
 			path = Providers;
 			sourceTree = "<group>";
@@ -936,6 +945,9 @@
 				110000432D83400100000001 /* NetEaseExperimentalLyricsProvider.swift in Sources */,
 				110000452D83400100000001 /* LocalAudioASRService.swift in Sources */,
 				110000442D83400100000001 /* QQExperimentalLyricsProvider.swift in Sources */,
+				A60F09060000000000000101 /* LyricsOVHProvider.swift in Sources */,
+				A60F09060000000000000201 /* KuwoExperimentalLyricsProvider.swift in Sources */,
+				A60F09060000000000000301 /* KugouExperimentalLyricsProvider.swift in Sources */,
 				110000302D83400100000001 /* TrackAlias.swift in Sources */,
 				110000312D83400100000001 /* TrackMetadata.swift in Sources */,
 				110000322D83400100000001 /* TrackTextNormalizer.swift in Sources */,
