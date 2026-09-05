@@ -100,6 +100,9 @@ struct MainLyricsWindowView: View {
             MenuBarLyricsController.shared.setOpenMainWindowHandler { [openWindow] in
                 openWindow(id: "main-window")
             }
+            MenuBarLyricsController.shared.setOpenLibraryHandler { [openWindow] in
+                openWindow(id: "personal-library-activity")
+            }
         }
         .task {
             state.startProvider(connectSpotify: settings.connectSpotifyOnLaunch)

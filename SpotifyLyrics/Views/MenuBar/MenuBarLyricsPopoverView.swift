@@ -10,14 +10,9 @@ public struct MenuBarLyricsPopoverView: View {
     public var body: some View {
         let snapshot = controller.currentSnapshot
         VStack(alignment: .leading, spacing: 12) {
-            // Header: Track title & Artist
+            // Header: Cover artwork + Track title & Artist
             HStack(alignment: .center, spacing: 10) {
-                Image(systemName: "music.note")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(Color.accentColor)
-                    .frame(width: 32, height: 32)
-                    .background(Color.accentColor.opacity(0.12))
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                artworkView(snapshot.artworkURL)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(snapshot.trackTitle ?? "未在播放歌曲")
@@ -109,13 +104,15 @@ public struct MenuBarLyricsPopoverView: View {
 
             Divider()
 
-            // Bottom Controls & Open Main Window
-            HStack(alignment: .center, spacing: 14) {
+            // Transport Controls
+            HStack(alignment: .center, spacing: 18) {
+                Spacer()
+
                 Button(action: {
                     controller.previousTrack()
                 }) {
                     Image(systemName: "backward.fill")
-                        .font(.system(size: 12))
+                        .font(.system(size: 13))
                 }
                 .buttonStyle(.plain)
                 .disabled(!snapshot.hasLiveTrack)
@@ -124,7 +121,7 @@ public struct MenuBarLyricsPopoverView: View {
                     controller.togglePlayPause()
                 }) {
                     Image(systemName: snapshot.isPlaying ? "pause.fill" : "play.fill")
-                        .font(.system(size: 14, weight: .bold))
+                        .font(.system(size: 16, weight: .bold))
                 }
                 .buttonStyle(.plain)
                 .disabled(!snapshot.hasLiveTrack)
@@ -133,21 +130,105 @@ public struct MenuBarLyricsPopoverView: View {
                     controller.nextTrack()
                 }) {
                     Image(systemName: "forward.fill")
-                        .font(.system(size: 12))
+                        .font(.system(size: 13))
                 }
                 .buttonStyle(.plain)
                 .disabled(!snapshot.hasLiveTrack)
 
                 Spacer()
+            }
+            .padding(.vertical, 2)
 
-                Button("打开主窗口") {
+            Divider()
+
+            // Entrypoints
+            VStack(spacing: 2) {
+                menuRow(title: "打开 Lyric Island", icon: "macwindow") {
                     controller.openMainWindow()
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.small)
+
+                menuRow(title: "歌词库与收听记录", icon: "music.note.list") {
+                    controller.openLibrary()
+                }
+
+                menuRow(title: "设置…", icon: "gearshape") {
+                    controller.openSettings()
+                }
+
+                Divider()
+                    .padding(.vertical, 4)
+
+                menuRow(title: "退出 Lyric Island", icon: "power") {
+                    controller.quit()
+                }
             }
         }
         .padding(14)
         .frame(width: 290)
+    }
+
+    @ViewBuilder
+    private func artworkView(_ url: URL?) -> some View {
+        if let url {
+            AsyncImage(url: url) { phase in
+                switch phase {
+                case .success(let image):
+                    image
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(width: 38, height: 38)
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                case .failure, .empty:
+                    fallbackArtwork
+                @unknown default:
+                    fallbackArtwork
+                }
+            }
+            .frame(width: 38, height: 38)
+        } else {
+            fallbackArtwork
+        }
+    }
+
+    private var fallbackArtwork: some View {
+        Image(systemName: "music.note")
+            .font(.system(size: 16, weight: .semibold))
+            .foregroundStyle(Color.accentColor)
+            .frame(width: 38, height: 38)
+            .background(Color.accentColor.opacity(0.12))
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private func menuRow(title: String, icon: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Image(systemName: icon)
+                    .font(.system(size: 12))
+                    .frame(width: 16, alignment: .center)
+                    .foregroundStyle(.secondary)
+                Text(title)
+                    .font(.system(size: 12))
+                Spacer()
+            }
+            .contentShape(Rectangle())
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+        }
+        .buttonStyle(HoverRowButtonStyle())
+    }
+}
+
+private struct HoverRowButtonStyle: ButtonStyle {
+    @State private var isHovered = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .background(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(isHovered ? Color.primary.opacity(0.08) : (configuration.isPressed ? Color.primary.opacity(0.12) : Color.clear))
+            )
+            .onHover { hovering in
+                isHovered = hovering
+            }
     }
 }
