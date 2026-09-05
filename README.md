@@ -6,7 +6,7 @@
 
 lyricsQ 会跟随 Spotify Desktop 当前播放的歌曲和进度显示歌词。你可以在主窗口里看歌词，也可以把歌词放到桌面、全屏或屏幕顶部；找不到合适版本时，还能导入、粘贴和编辑自己的歌词。
 
-这是一个正在开发的个人项目。当前 canonical `main` 为 `b16caee38eb4bb1d02d30c2971437d39ed59eb93`。
+这是一个正在开发的个人项目。工程权威基线为远端最新的 **fresh `origin/main`**。最后一次产品代码变更基线为 `b16caee38eb4bb1d02d30c2971437d39ed59eb93`（C5 合并）；状态收敛文档合并为 `54ab96226fb62064e6dad7f6d888dc47cdbd28b9`（PR #20）。
 
 已提供内部测试预发布版本 `v0.1.1`（基于提交 `9e65fbbe13b82626bfb5d9bc36f2620a44dd2762`，包含 C3，**不包含后续完成的 C4 / C5**）。当前处于 `Concentrated user experience / reliability triage` 阶段。
 
@@ -87,7 +87,10 @@ xcodebuild -project SpotifyLyrics.xcodeproj \
 
 ## 当前状态与限制
 
-- **Canonical `origin/main`**：`b16caee38eb4bb1d02d30c2971437d39ed59eb93`。
+- **Canonical engineering SOT**：fresh remote `origin/main`。
+- **历史锚点**：
+  - 最后一次产品代码变更合并（Latest product-code baseline）：`b16caee38eb4bb1d02d30c2971437d39ed59eb93`（C5）
+  - 状态收敛文档合并（Status-convergence docs-only merge）：`54ab96226fb62064e6dad7f6d888dc47cdbd28b9`（PR #20）
 - **Other Windows C1–C5**：全部 `CLOSED / FROZEN / MERGED` 合入主线（含独立歌词库、最近播放、统一“歌词库与收听记录”工具窗口、听歌统计完善、菜单栏 Quick Glance / Transport 控制）。
 - **已发布内部测试版**：`v0.1.1`（源提交 `9e65fbbe13b82626bfb5d9bc36f2620a44dd2762`，包含 C3，**不包含后续 C4 / C5**，不覆盖重打）。
 - **本地主目录警告**：`/Users/apple/backup/sptifylyrics` 存在用户未提交资产，不是 canonical main，严禁 reset / clean / pull / checkout 覆盖；新开发必须基于 fresh `origin/main` 建立全新 isolated worktree。
