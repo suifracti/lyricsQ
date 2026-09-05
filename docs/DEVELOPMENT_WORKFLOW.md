@@ -83,16 +83,22 @@ Run additional focused scripts from `Tests/` when the changed area requires them
 
 ## Branches, commits, and releases
 
-- `main` is the confirmed baseline and default starting point.
+- `main` is the confirmed baseline and default starting point. Current canonical `origin/main`: `b16caee38eb4bb1d02d30c2971437d39ed59eb93`.
+- Other Windows C1–C5 are `CLOSED / FROZEN / MERGED`.
 - `codex/<topic>` is for Codex work.
 - `antigravity/<topic>` is for Antigravity/Gemini work.
 - Other agents use `<agent>/<topic>`.
 - Start new work from `main` unless the user explicitly identifies another current branch.
+- **Dirty checkout policy**: `/Users/apple/backup/sptifylyrics` is not canonical main and contains uncommitted user assets and tools. Strictly prohibited to run `git reset --hard`, `git clean`, `git restore`, `git pull`, or checkout overwrite. New work must be created from fresh `origin/main` in an isolated worktree under `/private/tmp/`.
 - A runnable, reviewable small stage should end with an intentional commit and push.
 - Use clear Conventional Commit messages and never force-push or rewrite shared history.
-- Create a tag only at a user-confirmed important milestone.
-- There is currently no formal SemVer release or release tag. Do not invent `v1.0.0` or another version now.
-- After formal releases exist, use immutable `vMAJOR.MINOR.PATCH` tags pointing to the exact released commit.
+- **Internal test releases**:
+  - `v0.1.0`: `910df5dc55e44a19144be0b6ccf79a3145a67943`
+  - `v0.1.1`: `9e65fbbe13b82626bfb5d9bc36f2620a44dd2762` (includes C3; does **not** include subsequent C4/C5; not a full experience package of current main).
+  - Tags and release packages are frozen and immutable. Do not overwrite or re-tag.
+- **Current phase**: `Concentrated user experience / reliability triage` (not C6).
+  - Only real **Blocker** or necessary **Relevant** issues trigger code work.
+  - Reliability candidates remain deferred (e.g., statistics read failure empty-state presentation, listening history read failure lack of independent failed state, statistics contract midnight boundary stability).
 
 ## Handoff identity
 

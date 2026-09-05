@@ -6,7 +6,9 @@
 
 lyricsQ 会跟随 Spotify Desktop 当前播放的歌曲和进度显示歌词。你可以在主窗口里看歌词，也可以把歌词放到桌面、全屏或屏幕顶部；找不到合适版本时，还能导入、粘贴和编辑自己的歌词。
 
-这是一个正在开发的个人项目。目前提供源码，没有正式 Release、签名安装包或稳定版本。
+这是一个正在开发的个人项目。当前 canonical `main` 为 `b16caee38eb4bb1d02d30c2971437d39ed59eb93`。
+
+已提供内部测试预发布版本 `v0.1.1`（基于提交 `9e65fbbe13b82626bfb5d9bc36f2620a44dd2762`，包含 C3，**不包含后续完成的 C4 / C5**）。当前处于 `Concentrated user experience / reliability triage` 阶段。
 
 ## 它能做什么
 
@@ -83,13 +85,17 @@ xcodebuild -project SpotifyLyrics.xcodeproj \
 - 使用用户自行配置的 AI 翻译服务时，歌词文本和请求会发送到该服务端点。
 - 自动排轴可能读取 Spotify 进程音频；所选语音识别后端可能有自己的权限和数据处理规则。
 
-## 当前限制
+## 当前状态与限制
 
+- **Canonical `origin/main`**：`b16caee38eb4bb1d02d30c2971437d39ed59eb93`。
+- **Other Windows C1–C5**：全部 `CLOSED / FROZEN / MERGED` 合入主线（含独立歌词库、最近播放、统一“歌词库与收听记录”工具窗口、听歌统计完善、菜单栏 Quick Glance / Transport 控制）。
+- **已发布内部测试版**：`v0.1.1`（源提交 `9e65fbbe13b82626bfb5d9bc36f2620a44dd2762`，包含 C3，**不包含后续 C4 / C5**，不覆盖重打）。
+- **本地主目录警告**：`/Users/apple/backup/sptifylyrics` 存在用户未提交资产，不是 canonical main，严禁 reset / clean / pull / checkout 覆盖；新开发必须基于 fresh `origin/main` 建立全新 isolated worktree。
+- **当前阶段**：`Concentrated user experience / reliability triage`（非 C6）。后续仅真实 Blocker 或必要 Relevant 缺陷触发代码工作。
 - 在线歌词的命中、时间轴和翻译质量取决于歌曲元数据与第三方来源。
 - 网易云和 QQ 音乐接入使用非官方实验接口，可能失效，也不代表正式发行承诺。
 - 日语读音在姓名、罕见词和多音词上仍可能出错。
 - 自动排轴、实验工作台以及部分界面仍在测试和验收。
-- 当前没有正式 Release、SemVer 标签、签名安装包或完整发布流程。
 
 更细的实现状态见 [`docs/STATUS.md`](docs/STATUS.md)。
 
