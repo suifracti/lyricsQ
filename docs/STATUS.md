@@ -38,7 +38,7 @@ This file describes what is present in the repository and how mature it is. It i
 - 用户于 2026-09-05 明确授权修复可靠性问题，恢复灵动岛、完善桌面歌词和三种封面风格，并自主迭代。该范围重新开放；历史 C1–C5 合并记录与冻结 release 不改写。
 - 工作分支 `codex/experience-restoration`，从 `fb95a9e` 建立；未合入 main。
 - 预览候选采用路由、菜单栏设置入口、历史/统计读取错误表达已修复；五项定向合同与独立审查通过。实际 SQLite 锁读取失败会报错，界面保留上次结果并支持重试。
-- 灵动岛已恢复为默认，桌面歌词采用独立的大字描边/单双行/配色方案，三种风格完成原生迭代；用户进一步确认封面必须完整：舞台改为原图居中等比适配、不裁切，模糊延展补边；歌词布局暂不调整。定向测试、独立复核及生产 Debug/Release 构建通过；作为独立预览交付，未合入 main 或发布新版本。
+- 灵动岛已恢复为默认，桌面歌词采用独立的大字描边/单双行/配色方案，三种风格完成原生迭代；用户进一步确认封面必须完整：舞台保留原图居中等比适配、不裁切，采用镜像边缘延展并向外柔化；窗口自由缩放，禁止锁比例或自动改尺寸，歌词布局暂不调整。定向测试、独立复核及生产 Debug/Release 构建通过；作为独立预览交付，未合入 main 或发布新版本。
 - 原生生成夹具验证包括封面比例、桌面明暗背景与最小布局、逐字时间高亮和灵动岛更多菜单。物理刘海屏、多屏切换、系统 Reduce Motion 与长期真实 Spotify 播放未作最终实机验收。
 - 标题/手动歌词恢复已修复：保留无艺人搜索、LRCLIB 全文查询和候选展示；真实 Marigold 查询可返回 Aimyon 候选，自动跨艺人保护保留。专项检查及 Debug/Release 通过，新预览已打开；Marigold 原生选词待再次播放确认。旧 real_track 综合脚本存在依赖缺失，未通过。详见 `docs/work/experience-restoration/title-only-recovery-report.md`。
 - statistics contract 午夜日期夹具稳定性仍为既有 Deferred。

@@ -221,15 +221,22 @@ struct AppleMusicImmersiveV3BackdropView: View {
                 ? image.size.width / image.size.height : 1.0
             let artworkRect = stageArtworkPlaneSize(canvas: geometry.size, artworkAspectRatio: aspect)
             ZStack {
-                // Only the diffuse extension fills/crops; the original stays complete.
-                Image(nsImage: ambientImage ?? image)
-                    .resizable()
-                    .scaledToFill()
-                    .frame(width: geometry.size.width, height: geometry.size.height)
-                    .clipped()
-                    .blur(radius: 24 + normalizedBlur * 42)
-                    .scaleEffect(1.12)
-                    .opacity(0.65)
+                if artworkRect.minX > 0.5 {
+                    stageEdgeExtension(image: image, horizontal: true, leading: true)
+                        .frame(width: artworkRect.minX, height: artworkRect.height)
+                        .position(x: artworkRect.minX / 2, y: artworkRect.midY)
+                    stageEdgeExtension(image: image, horizontal: true, leading: false)
+                        .frame(width: artworkRect.minX, height: artworkRect.height)
+                        .position(x: artworkRect.maxX + artworkRect.minX / 2, y: artworkRect.midY)
+                }
+                if artworkRect.minY > 0.5 {
+                    stageEdgeExtension(image: image, horizontal: false, leading: true)
+                        .frame(width: artworkRect.width, height: artworkRect.minY)
+                        .position(x: artworkRect.midX, y: artworkRect.minY / 2)
+                    stageEdgeExtension(image: image, horizontal: false, leading: false)
+                        .frame(width: artworkRect.width, height: artworkRect.minY)
+                        .position(x: artworkRect.midX, y: artworkRect.maxY + artworkRect.minY / 2)
+                }
                 Image(nsImage: image)
                     .resizable()
                     .interpolation(.high)
@@ -244,6 +251,31 @@ struct AppleMusicImmersiveV3BackdropView: View {
         Color.black.opacity(increaseContrast ? 0.40 : 0.24)
         LinearGradient(colors: [.black.opacity(0.08), .clear, .black.opacity(0.30)],
                        startPoint: .top, endPoint: .bottom)
+    }
+
+    /// Matching reflected edge pixels join the original without a separate tonal band.
+    /// Only the extension stretches; blur rises towards the outside of the window.
+    private func stageEdgeExtension(image: NSImage, horizontal: Bool, leading: Bool) -> some View {
+        let outer: UnitPoint = horizontal ? (leading ? .leading : .trailing) : (leading ? .top : .bottom)
+        let inner: UnitPoint = horizontal ? (leading ? .trailing : .leading) : (leading ? .bottom : .top)
+        return GeometryReader { geometry in
+            let reflected = Image(nsImage: image)
+                .resizable()
+                .interpolation(.high)
+                .frame(width: geometry.size.width, height: geometry.size.height)
+                .scaleEffect(x: horizontal ? -1 : 1, y: horizontal ? 1 : -1)
+            ZStack {
+                reflected
+                reflected
+                    .blur(radius: 18 + normalizedBlur * 42)
+                    .mask(LinearGradient(stops: [
+                        .init(color: .white, location: 0),
+                        .init(color: .white, location: 0.55),
+                        .init(color: .clear, location: 1)
+                    ], startPoint: outer, endPoint: inner))
+            }
+            .clipped()
+        }
     }
 
     /// Stage presentation sizing helper for geometry contracts.
