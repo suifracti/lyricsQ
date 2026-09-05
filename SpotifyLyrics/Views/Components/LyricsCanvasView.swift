@@ -442,6 +442,11 @@ struct LyricsCanvasView: View {
                             .clipShape(Capsule())
                     }
                 }
+                if let notice = candidate.arrangementNotice {
+                    Text(notice)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.orange)
+                }
                 Text("\(candidate.artist) · \(candidate.album)")
                     .font(.system(size: 12, design: .rounded))
                     .foregroundStyle(LyricsDesignTokens.mutedText)
@@ -878,6 +883,12 @@ struct LyricsStateContentFirstView: View {
                     }
                     .font(.system(size: 10, weight: .medium, design: .rounded))
                     .foregroundStyle(LyricsDesignTokens.mutedText.opacity(0.9))
+                    if let notice = candidate.arrangementNotice {
+                        Text(notice)
+                            .font(.system(size: 11))
+                            .foregroundStyle(.orange)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                     if !candidate.matchExplanation.isEmpty {
                         Text(candidate.matchExplanation.prefix(3).joined(separator: " · "))
                             .font(.system(size: 9, design: .rounded))

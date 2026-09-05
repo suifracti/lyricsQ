@@ -136,7 +136,7 @@ public enum TrackTextNormalizer {
 
     private static func splitArtistList(_ raw: String) -> [String] {
         guard let regex = try? NSRegularExpression(
-            pattern: #"\s*(?:,|，|、|&|×|\s+x\s+)\s*"#,
+            pattern: #"\s*(?:,|，|、|;|；|&|×|\s+x\s+)\s*"#,
             options: [.caseInsensitive]
         ) else {
             return [raw.trimmingCharacters(in: .whitespacesAndNewlines)]
@@ -154,6 +154,9 @@ public enum TrackTextNormalizer {
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
     }
+
+    // Only explicit arrangement suffixes count; titles such as “Piano Man” stay intact.
+    private static let pianoSuffix = #"\s*(?:[-–—]\s*(?:piano(?:\s+(?:ver\.?|version))?|ピアノ版)|[\(\[（【]\s*(?:piano(?:\s+(?:ver\.?|version))?|ピアノ版)\s*[\)\]）】])\s*$"#
 
     public static func extractVersionTags(fromTitle title: String) -> [VersionTag] {
         let n = normalize(title)
@@ -184,6 +187,9 @@ public enum TrackTextNormalizer {
         for (key, tag) in rules where n.contains(key) {
             if !tags.contains(tag) { tags.append(tag) }
         }
+        if title.range(of: pianoSuffix, options: [.regularExpression, .caseInsensitive]) != nil {
+            tags.append(.piano)
+        }
         // Japanese markers
         if title.contains("ライブ") {
             if !tags.contains(.live) { tags.append(.live) }
@@ -203,6 +209,7 @@ public enum TrackTextNormalizer {
     public static func stripVersionMarkers(fromTitle title: String) -> String {
         var s = title
         let patterns = [
+            pianoSuffix,
             #"\s*[\(\[\{（【].*?(live|remix|acoustic|instrumental|karaoke|radio\s*edit|demo|cover|remaster(?:ed)?|first\s*take|movie|anime|short).*?[\)\]\}）】]\s*"#,
             #"\s*-\s*(live|remix|acoustic|instrumental|remaster(?:ed)?|from\s+the\s+first\s+take).*$"#
         ]

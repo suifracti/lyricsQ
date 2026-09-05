@@ -97,6 +97,8 @@ public enum LyricsSafeMatcher {
 
         let metadataTitle = TrackTextNormalizer.normalize(metadata.track.title)
         let candidateTitle = TrackTextNormalizer.normalize(candidate.title)
+        let metadataBaseTitle = TrackTextNormalizer.normalize(TrackTextNormalizer.stripVersionMarkers(fromTitle: metadata.track.title))
+        let candidateBaseTitle = TrackTextNormalizer.normalize(TrackTextNormalizer.stripVersionMarkers(fromTitle: candidate.title))
         let manualQueryTitle = queryVariant?.queryKind == .manualOverride
             ? TrackTextNormalizer.normalize(queryVariant?.titleQuery ?? "") : ""
         let manualTitleMatches = !manualQueryTitle.isEmpty && !candidateTitle.isEmpty
@@ -121,6 +123,11 @@ public enum LyricsSafeMatcher {
             // have a persisted TrackAlias record. They still expand recall,
             // but receive less title evidence than a confirmed alias.
             add("titleAliasQuery", queryVariant.queryKind == .romajiAlias ? 0.10 : 0.12)
+        } else if !candidateBaseTitle.isEmpty, candidateBaseTitle == metadataBaseTitle,
+                  (TrackTextNormalizer.extractVersionTags(fromTitle: metadata.track.title).contains(.piano)
+                   || TrackTextNormalizer.extractVersionTags(fromTitle: candidate.title).contains(.piano)) {
+            // Same composition is useful for explicit recovery, not proof of the same recording.
+            add("pianoBaseTitleExact", 0.24)
         } else if manualTitleMatches {
             add("manualTitleMatch", 0.20)
         } else if !candidateTitle.isEmpty,
@@ -395,6 +402,11 @@ public enum LyricsSafeMatcher {
             guard inMetadata != inCandidate else { continue }
             conflict = true
             evidence.append(LyricsMatchEvidence(code: code, delta: -0.35, hardReject: true))
+        }
+
+        if metadata.contains(.piano) != candidate.contains(.piano) {
+            conflict = true
+            evidence.append(LyricsMatchEvidence(code: "pianoConflict", delta: -0.18, hardReject: true))
         }
 
         if metadata.contains(.remaster) != candidate.contains(.remaster) {

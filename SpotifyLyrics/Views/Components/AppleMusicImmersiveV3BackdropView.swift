@@ -298,7 +298,7 @@ struct AppleMusicImmersiveV3BackdropView: View {
             1.3,
             style.paletteSaturation * 1.18 + (increaseContrast ? 0.06 : 0)
         )
-        let diffusionRadius = normalizedBlur * 24.0
+        let diffusionRadius = normalizedBlur * 48.0
 
         // A luminance-clamped album field keeps very bright artwork legible
         // without falling back to an unrelated black canvas.
@@ -313,16 +313,17 @@ struct AppleMusicImmersiveV3BackdropView: View {
         )
 
         // Retain album structure before applying the user-controlled diffusion.
-        if let ambientImage {
-            Image(nsImage: ambientImage)
+        // Keep image visibility independent of diffusion, including at 0%.
+        // The full-resolution snapshot avoids baked-in blur at the clear endpoint.
+        Group {
+            Image(nsImage: image)
                 .resizable()
                 .interpolation(.high)
                 .scaledToFill()
                 .scaleEffect(1.12)
                 .blur(radius: diffusionRadius, opaque: true)
                 .saturation(saturation)
-                .brightness(-normalizedBlur * 0.10)
-                .opacity(normalizedBlur * 0.46)
+                .opacity(0.56)
         }
 
         RadialGradient(

@@ -326,35 +326,16 @@ struct AppleMusicImmersiveV3WindowView: View {
         )
         let lyricsCol = lyricsColumn(width: split.lyrics, compact: false)
 
-        let classicDivider = Divider()
-            .overlay(LyricsDesignTokens.controlBorder.opacity(0.35))
-            .mask(
-                LinearGradient(
-                    stops: [
-                        .init(color: .clear, location: 0.0),
-                        .init(color: .white, location: 0.18),
-                        .init(color: .white, location: 0.82),
-                        .init(color: .clear, location: 1.0)
-                    ],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-            )
-
-        return HStack(spacing: 0) {
+        return HStack(spacing: gap) {
             if settings.v3ArtworkPosition == "right" {
                 lyricsCol
                     .frame(width: split.lyrics, height: availableHeight)
-
-                classicDivider
 
                 trackCol
                     .frame(width: split.artwork, height: availableHeight)
             } else {
                 trackCol
                     .frame(width: split.artwork, height: availableHeight)
-
-                classicDivider
 
                 lyricsCol
                     .frame(width: split.lyrics, height: availableHeight)
@@ -2255,9 +2236,9 @@ private struct V3VisualTuningPopoverView: View {
     private var blurPresetName: String {
         let r = settings.v3BackdropBlurRadius
         if r <= 5 { return "清晰" }
-        if r <= 35 { return "超清" }
-        if r <= 75 { return "标准" }
-        return "深幻"
+        if r <= 35 { return "轻柔" }
+        if r <= 75 { return "柔和" }
+        return "弥散"
     }
 
     private var sizePresetName: String {
@@ -2308,11 +2289,11 @@ private struct V3VisualTuningPopoverView: View {
                 HStack(spacing: 0) {
                     blurPresetButton("清晰 0%", val: 0)
                     Spacer()
-                    blurPresetButton("超清 25%", val: 25)
+                    blurPresetButton("轻柔 25%", val: 25)
                     Spacer()
-                    blurPresetButton("标准 60%", val: 60)
+                    blurPresetButton("柔和 60%", val: 60)
                     Spacer()
-                    blurPresetButton("深幻 100%", val: 100)
+                    blurPresetButton("弥散 100%", val: 100)
                 }
             }
 

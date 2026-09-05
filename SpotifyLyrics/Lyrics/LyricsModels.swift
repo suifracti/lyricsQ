@@ -182,6 +182,11 @@ public struct LyricsCandidate: Identifiable, Equatable, Sendable {
 
     public var displayedConfidence: Double { matchScore ?? confidence }
 
+    public var arrangementNotice: String? {
+        matchExplanation.contains { $0.hasPrefix("pianoConflict ") }
+            ? "钢琴版与原曲编排可能不同，请预览确认歌词与时间轴" : nil
+    }
+
     public var queryMethodLabel: String {
         switch queryKind {
         case "exactTitleFullArtist": return "精确标题 + 完整艺人"

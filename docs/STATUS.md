@@ -1,6 +1,8 @@
 # Project Status
 
-Status snapshot: 2026-09-05.
+Status snapshot: 2026-09-06.
+
+Latest task preview (feature branch `codex/lyrics-search-ambient-fix`, based on main PR #22 / `54a73a2`): piano-version searches retain raw Japanese base titles and semicolon-separated primary artists; original-arrangement lyrics remain explicit candidates with a warning. A live QQ lookup recovered 72 lines for stb《アーカイブ - Piano Ver.》, with no timeline and no automatic adoption. Ambient 0% retains artwork; increasing diffusion softens it without increasing opacity. Classic split layout uses spacing instead of a vertical divider. See [verification report](work/experience-restoration/search-ambient-correction-report.md). Native feel still awaits user feedback; this is not a release or main merge.
 
 Library preview: per-version local names and notes can be edited for lyrics, translations, readings and timing. Original labels remain visible; Restore Default clears only local presentation metadata. Metadata does not travel in asset exports.
 

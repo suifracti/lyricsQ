@@ -240,6 +240,13 @@ public enum LyricsQueryPlanner {
         // blocks Live/Remix/Cover/Instrumental conflicts.
         if !normalizedVersionTitle.isEmpty,
            normalizedVersionTitle != normalizedTitle {
+            // Preserve Japanese spelling for providers that do not fold kana width.
+            add(
+                .normalizedVersionFullArtist,
+                kind: .normalizedVersionTitleFullArtist,
+                title: versionStrippedTitle,
+                artist: fullArtist
+            )
             add(
                 .normalizedVersionFullArtist,
                 kind: .normalizedVersionTitleFullArtist,
