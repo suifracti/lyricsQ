@@ -42,6 +42,7 @@ This file describes what is present in the repository and how mature it is. It i
 - 原生生成夹具验证包括封面比例、桌面明暗背景与最小布局、逐字时间高亮和灵动岛更多菜单。物理刘海屏、多屏切换、系统 Reduce Motion 与长期真实 Spotify 播放未作最终实机验收。
 - 标题/手动歌词恢复已修复：保留无艺人搜索、LRCLIB 全文查询和候选展示；真实 Marigold 查询可返回 Aimyon 候选，自动跨艺人保护保留。专项检查及 Debug/Release 通过，新预览已打开；Marigold 原生选词待再次播放确认。旧 real_track 综合脚本存在依赖缺失，未通过。详见 `docs/work/experience-restoration/title-only-recovery-report.md`。
 - V3 右上角工具栏收敛为窗口、搜索、更多三个入口；更多中保留歌词操作、外观、设置和来源恢复；窗口仍自由缩放。新增悬停保持显示，弹出面板保持可见。
+- 主窗口长歌词保持字号并按阅读宽度换行；翻译、假名和罗马音移除两行截断。复用现有 CoreText/SwiftUI 排版与逐字时间映射，不拆分歌词记录。
 - statistics contract 午夜日期夹具稳定性仍为既有 Deferred。
 
 ## Implemented in the repository

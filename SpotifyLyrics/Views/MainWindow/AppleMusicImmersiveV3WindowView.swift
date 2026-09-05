@@ -1698,14 +1698,9 @@ private struct AppleMusicImmersiveV3LyricRow: View {
         let sizeScale = max(0.7, preferences.fontSize / 18)
         let upperBound = (compact ? 34 : 42) * sizeScale
         let lowerBound: CGFloat = compact ? 22 : 28
-        let characterCount = max(1, effectiveOriginalText.count)
-        let fitWidth = max(220, availableWidth - 24)
-        let estimatedWidth = CGFloat(characterCount) * CGFloat(upperBound) * 0.82
-        // Prefer a large display face and allow a long lyric to wrap rather
-        // than collapsing every active line into a small subtitle size.
-        let fitScale = min(1, max(0.72, fitWidth / max(1, estimatedWidth)))
+        // Long lyrics keep their reading size and gain visual lines instead.
         let layerPenalty = CGFloat(max(0, layerCount - 2)) * 1.7
-        return max(lowerBound, min(CGFloat(upperBound), CGFloat(upperBound) * fitScale - layerPenalty))
+        return max(lowerBound, CGFloat(upperBound) - layerPenalty)
     }
 
     private var baseSize: CGFloat {
@@ -2074,7 +2069,7 @@ private struct AppleMusicImmersiveV3LyricRow: View {
                     Text(kana)
                         .font(.system(size: auxiliarySize, weight: .medium, design: .rounded))
                         .foregroundStyle(.white.opacity(rubyOpacity))
-                        .lineLimit(2)
+                        .lineLimit(nil)
                         .fixedSize(horizontal: false, vertical: true)
                         .transition(.opacity)
                 }
@@ -2089,7 +2084,7 @@ private struct AppleMusicImmersiveV3LyricRow: View {
                 Text(romaji)
                     .font(.system(size: auxiliarySize, weight: .medium, design: .rounded))
                     .foregroundStyle(.white.opacity(romajiOpacity))
-                    .lineLimit(2)
+                    .lineLimit(nil)
                     .fixedSize(horizontal: false, vertical: true)
                     .transition(.opacity)
             }
@@ -2098,12 +2093,15 @@ private struct AppleMusicImmersiveV3LyricRow: View {
                 Text(translation)
                     .font(.system(size: max(12, auxiliarySize * 0.82), weight: .regular, design: .rounded))
                     .foregroundStyle(.white.opacity(0.58))
-                    .lineLimit(2)
+                    .lineLimit(nil)
                     .fixedSize(horizontal: false, vertical: true)
                     .transition(.opacity)
             }
         }
-        .frame(maxWidth: readableLineWidth, alignment: .leading)
+        .lineLimit(nil)
+        .multilineTextAlignment(.leading)
+        .frame(width: readableLineWidth, alignment: .leading)
+        .fixedSize(horizontal: false, vertical: true)
         .offset(x: CGFloat(agentPresentationMap.horizontalOffset(for: line.performerID)))
         .opacity(rowOpacity)
         .blur(radius: reduceMotion ? 0 : rowBlur)
