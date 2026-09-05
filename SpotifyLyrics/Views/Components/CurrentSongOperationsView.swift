@@ -118,6 +118,11 @@ struct CurrentSongOperationsView: View {
                 message: lyricsVersionMessage,
                 adoptingVersionID: adoptingLyricsVersionID,
                 onAdopt: adoptLyricsVersion,
+                canEdit: state.canOpenLyricsEditor,
+                onEdit: {
+                    showLyricsVersionPicker = false
+                    openEditor()
+                },
                 onSearch: {
                     showLyricsVersionPicker = false
                     state.retryLyrics()
@@ -955,6 +960,8 @@ private struct LyricsVersionPickerView: View {
     let message: String
     let adoptingVersionID: UUID?
     let onAdopt: (UUID) -> Void
+    let canEdit: Bool
+    let onEdit: () -> Void
     let onSearch: () -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -992,8 +999,13 @@ private struct LyricsVersionPickerView: View {
                 }
             }
 
-            Button("查找更多歌词版本", systemImage: "magnifyingglass", action: onSearch)
-                .disabled(adoptingVersionID != nil)
+            HStack {
+                Button("编辑当前歌词", systemImage: "square.and.pencil", action: onEdit)
+                    .disabled(!canEdit || adoptingVersionID != nil)
+                Spacer()
+                Button("查找更多歌词版本", systemImage: "magnifyingglass", action: onSearch)
+                    .disabled(adoptingVersionID != nil)
+            }
 
             if !message.isEmpty, !isLoading, !versions.isEmpty {
                 Text(message)

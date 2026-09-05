@@ -465,6 +465,7 @@ private struct KanaReplacementTokenBlockLayout: Layout {
 /// A line-level ruby fallback that keeps the confirmed kana together with
 /// the whole original line when no per-token mapping is available.
 struct RubyLineView: View {
+    @Environment(\.rubyCorrectionAction) private var correctRuby
     let originalText: String
     let kanaText: String
     let tokens: [LyricRubyToken]?
@@ -551,7 +552,7 @@ struct RubyLineView: View {
             }
         }
         .frame(maxWidth: maxWidth ?? .infinity, alignment: .leading)
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: correctRuby == nil ? .combine : .contain)
         .accessibilityLabel(originalText)
         #if DEBUG
         .onAppear {
@@ -618,6 +619,7 @@ private func rubyTimedTokenGroups(_ tokens: [TimedRubyToken]) -> [[TimedRubyToke
 }
 
 private struct RubyTokenBlock: View {
+    @Environment(\.rubyCorrectionAction) private var correctRuby
     let token: LyricRubyToken?
     let timedToken: TimedRubyToken?
     let currentTime: TimeInterval?
@@ -648,6 +650,15 @@ private struct RubyTokenBlock: View {
         }
     }
 
+    @ViewBuilder private func annotation(_ ruby: String) -> some View {
+        if let correctRuby {
+            Button { correctRuby(surface, ruby) } label: { Text(ruby) }
+                .buttonStyle(.plain)
+                .help("点击修改「\(surface)」的读音")
+                .accessibilityLabel("修改\(surface)的读音：\(ruby)")
+        } else { Text(ruby) }
+    }
+
     var body: some View {
         let fillFraction: Double = {
             if let timedToken, let currentTime {
@@ -661,7 +672,7 @@ private struct RubyTokenBlock: View {
             annotationOverhang: annotationOverhang
         ) {
             if let ruby = displayRuby {
-                Text(ruby)
+                annotation(ruby)
                     .font(rubyFont)
                     .tracking(isKatakanaAnnotation ? katakanaAnnotationTracking : 0)
                     .foregroundStyle(rubyColor)

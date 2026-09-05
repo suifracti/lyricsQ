@@ -224,7 +224,7 @@ public struct ReadingDictionaryEntry: Codable, Hashable, Sendable, Equatable, Id
     }
 }
 
-private enum JapaneseReadingSupport {
+enum JapaneseReadingSupport {
     static func analyze(
         text: String,
         userEntries: [ReadingDictionaryEntry],
@@ -284,17 +284,26 @@ private enum JapaneseReadingSupport {
         )
     }
 
-    private static func applyingExactTokenCorrections(
+    static func applyingExactTokenCorrections(
         _ entries: [ReadingDictionaryEntry],
         to result: JapaneseReadingResult
     ) -> JapaneseReadingResult {
         var didCorrect = false
         let tokens = result.tokens.map { token in
-            guard let entry = entries.first(where: { $0.surface == token.originalText }) else {
-                return token
+            let kana: String
+            if let entry = entries.first(where: { $0.surface == token.originalText }) {
+                kana = JapaneseRomanizer.toHiraganaPreservingLatin(entry.reading)
+            } else {
+                // Ruby may split off okurigana from a morphology token. Preserve
+                // the other segments while correcting only the clicked surface.
+                let segments = JapaneseReadingPipeline.rubyTokens(for: token)
+                guard segments.contains(where: { segment in entries.contains { $0.surface == segment.surface } }) else { return token }
+                kana = segments.map { segment in
+                    entries.first(where: { $0.surface == segment.surface })?.reading
+                        ?? segment.kanaSurface ?? segment.ruby ?? segment.surface
+                }.joined()
             }
             didCorrect = true
-            let kana = JapaneseRomanizer.toHiraganaPreservingLatin(entry.reading)
             return JapaneseReadingToken(
                 id: token.id,
                 originalText: token.originalText,
@@ -333,6 +342,36 @@ private enum JapaneseReadingSupport {
 }
 
 public enum ReadingEngineSupport {
+    /// Stable keys include rounded duration, which can differ by one second
+    /// between integer playback snapshots and fractional metadata snapshots.
+    /// Keep a song correction across that drift only with a shared Spotify ID
+    /// and matching title, artist and album. Other identity forms stay exact.
+    public static func matchesSongScope(_ scope: String, trackStableKey: String?) -> Bool {
+        guard let trackStableKey else { return false }
+        if scope == trackStableKey { return true }
+        func recording(_ key: String) -> (id: String, metadata: [String], duration: Double)? {
+            let sections = key.components(separatedBy: "|metadata:")
+            guard sections.count == 2 else { return nil }
+            let primary = sections[0]
+            let identifier: String
+            if primary.hasPrefix("spotify-id:") {
+                identifier = String(primary.dropFirst("spotify-id:".count))
+            } else if primary.hasPrefix("spotify-uri:") {
+                identifier = String(primary.dropFirst("spotify-uri:".count))
+            } else { return nil }
+            let fields = sections[1].components(separatedBy: "|")
+            guard fields.count == 4,
+                  let id = TrackIdentity.canonicalSpotifyTrackID(identifier),
+                  let duration = Double(fields[3]), duration.isFinite, duration > 0,
+                  duration.rounded() == duration else { return nil }
+            let metadata = fields.prefix(3).map(TrackIdentity.normalizedComponent)
+            guard !metadata[0].isEmpty, !metadata[1].isEmpty else { return nil }
+            return (id, metadata, duration)
+        }
+        guard let lhs = recording(scope), let rhs = recording(trackStableKey) else { return false }
+        return lhs.id == rhs.id && lhs.metadata == rhs.metadata && abs(lhs.duration - rhs.duration) <= 1
+    }
+
     public static func applicableUserEntries(
         _ entries: [ReadingDictionaryEntry],
         trackStableKey: String?,
@@ -343,7 +382,7 @@ public enum ReadingEngineSupport {
             guard !entry.isArchived, entry.isEnabled else { return false }
             if let scope = entry.trackStableKey,
                !scope.isEmpty,
-               scope != trackStableKey {
+               !matchesSongScope(scope, trackStableKey: trackStableKey) {
                 return false
             }
             if let artistScope = entry.artistScope,

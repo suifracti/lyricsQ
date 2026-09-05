@@ -24,11 +24,9 @@ struct AppleMusicImmersiveV3WindowView: View {
 
     @State private var isSearchPresented = false
     @State private var isWindowMenuPresented = false
-    @State private var isMorePresented = false
     @State private var isDisplayPresented = false
     @State private var isVersionPickerPresented = false
     @State private var isAppearancePresented = false
-    @State private var morePage = "root"
     // The canvas starts clean. Controls reveal only when the pointer reaches
     // the top edge, so playback remains content-first without sacrificing
     // access to search, layout, and settings.
@@ -558,7 +556,7 @@ struct AppleMusicImmersiveV3WindowView: View {
     }
 
     private var toolbarPanelIsPresented: Bool {
-        isWindowMenuPresented || isMorePresented || isSearchPresented || isDisplayPresented || isVersionPickerPresented || isAppearancePresented
+        isWindowMenuPresented || isSearchPresented || isDisplayPresented || isVersionPickerPresented || isAppearancePresented
     }
 
     private func toolBar(for size: CGSize) -> some View {
@@ -609,12 +607,10 @@ struct AppleMusicImmersiveV3WindowView: View {
                     }
                 }.padding(18).frame(width: 260)
             }
-            Button { isMorePresented.toggle() } label: {
-                iconLabel("ellipsis", description: "更多操作")
+            SettingsLink {
+                iconLabel("ellipsis", description: "打开设置")
             }
-            .popover(isPresented: $isMorePresented, arrowEdge: .top) {
-                morePanel
-            }
+
         }
         .buttonStyle(QuietToolbarButtonStyle())
         .padding(5)
@@ -622,9 +618,7 @@ struct AppleMusicImmersiveV3WindowView: View {
         .overlay(Capsule().strokeBorder(.white.opacity(0.16), lineWidth: 0.7))
         .shadow(color: .black.opacity(0.12), radius: 12, x: 0, y: 4)
         .foregroundStyle(.white.opacity(0.92))
-        .onChange(of: isMorePresented) { _, presented in
-            if !presented { morePage = "root" }
-        }
+
     }
 
     private func displayBinding<Value>(_ keyPath: WritableKeyPath<DisplayPreferences, Value>) -> Binding<Value> {
@@ -669,55 +663,6 @@ struct AppleMusicImmersiveV3WindowView: View {
         }
         .padding(8)
         .frame(width: 224)
-    }
-
-    private var morePanel: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            if morePage != "root" {
-                Button { morePage = "root" } label: {
-                    Label("返回更多", systemImage: "chevron.left")
-                        .font(.system(size: 12, weight: .medium))
-                        .padding(12)
-                }
-                .buttonStyle(.plain)
-                Divider()
-            }
-            if morePage == "lyrics" {
-                CurrentSongOperationsView(state: state).environmentObject(settings)
-            } else {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("更多")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                    toolbarAction("当前歌曲与歌词", symbol: "music.note.list") { morePage = "lyrics" }
-                    SettingsLink {
-                        Label("设置", systemImage: "gearshape")
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(10)
-                    }
-                    .buttonStyle(QuietToolbarButtonStyle())
-                    Divider().padding(.vertical, 6)
-                    HStack(spacing: 7) {
-                        Circle().fill(state.canControlSpotify ? Color.green : Color.orange).frame(width: 6, height: 6)
-                        Text(state.providerStatusMessage).font(.system(size: 11)).foregroundStyle(.secondary)
-                    }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    if state.isUsingMockPreview {
-                        toolbarAction("退出 Mock Preview", symbol: "arrow.uturn.backward") { state.exitMockPreview() }
-                    } else if !state.canControlSpotify {
-                        toolbarAction("重试 Spotify", symbol: "arrow.clockwise") { state.reconnectSpotify() }
-                        toolbarAction("进入 Mock Preview", symbol: "play.rectangle") { state.enterMockPreview() }
-                    } else {
-                        toolbarAction("自动补全歌词", symbol: "text.badge.plus") { state.autoCompleteLyrics() }
-                    }
-                }
-                .padding(8)
-                .frame(width: 244)
-            }
-        }
     }
 
     private func toolbarAction(_ title: String, symbol: String, action: @escaping () -> Void) -> some View {
@@ -1216,6 +1161,7 @@ private struct AppleMusicImmersiveV3LyricProgressStatus: View {
 
 private struct AppleMusicImmersiveV3LyricsViewport: View {
     @ObservedObject var state: PlaybackState
+    @State private var rubyCorrection: RubyCorrectionRequest?
     let availableWidth: CGFloat
     let compact: Bool
     let lyricsFocus: Bool
@@ -1258,6 +1204,12 @@ private struct AppleMusicImmersiveV3LyricsViewport: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .sheet(item: $rubyCorrection) { request in
+            RubyCorrectionEditorView(state: state, request: request)
+        }
+        .onChange(of: state.currentTrackIdentity) { _, _ in rubyCorrection = nil }
+        .onChange(of: state.liveLyricsVersionID) { _, _ in rubyCorrection = nil }
+
     }
 
     private var focusEmptyState: some View {
@@ -1448,20 +1400,27 @@ private struct AppleMusicImmersiveV3LyricsViewport: View {
             presentationClock: state.presentationClock
         )
         .environmentObject(settings)
+        .environment(\.rubyCorrectionAction, state.isShowingSearchPreview ? nil : { surface, reading in
+            guard let trackKey = state.currentTrackIdentity?.stableKey,
+                  let versionID = state.liveLyricsVersionID else { return }
+            rubyCorrection = RubyCorrectionRequest(surface: surface, reading: reading,
+                trackKey: trackKey, lyricsVersionID: versionID,
+                readingVersionID: state.selectedReadingVersion?.record.id, lines: state.liveLyrics)
+        })
         if let timestamp = LyricsTimeline.validSeekTimestamp(
             for: line,
             isSynchronized: synchronized,
             duration: state.displayedTrack.duration
         ) {
-            Button {
-                state.seek(to: timestamp, source: "v3-lyric-line")
-            } label: {
-                content
-            }
-            .buttonStyle(.plain)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .accessibilityLabel(line.originalText)
-            .accessibilityHint("跳转到歌词时间")
+            content
+                .contentShape(Rectangle())
+                .onTapGesture { state.seek(to: timestamp, source: "v3-lyric-line") }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityElement(children: .contain)
+                .accessibilityLabel(line.originalText)
+                .accessibilityAction(named: "跳转到歌词时间") {
+                    state.seek(to: timestamp, source: "v3-lyric-line")
+                }
         } else {
             content
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -1789,7 +1748,10 @@ private struct AppleMusicImmersiveV3LyricRow: View {
         // reading while the lyric source provides the phrase reading まん.
         // Unprojectable provider and automatic line readings return nil above;
         // they remain available only as independent line-level kana.
-        providerRubyTokens ?? automaticRubyTokens ?? reliableRubyTokens
+        if line.readingRepresentationID == ReadingRepresentationID.kana.rawValue,
+           let tokens = line.rubyTokens, tokens.map(\.surface).joined() == effectiveOriginalText,
+           tokens.contains(where: \.hasDisplayRuby) { return tokens }
+        return providerRubyTokens ?? automaticRubyTokens ?? reliableRubyTokens
     }
 
     private var shouldRenderInlineRuby: Bool {

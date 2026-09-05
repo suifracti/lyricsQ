@@ -91,7 +91,7 @@ public struct PersonalLyricsLibraryView: View {
             HStack {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(.secondary)
-                TextField("搜索歌名、歌手或专辑...", text: $service.searchQuery)
+                TextField("搜索歌曲、歌词、读音或译文...", text: $service.searchQuery)
                     .textFieldStyle(.plain)
                     .onSubmit {
                         service.refresh()

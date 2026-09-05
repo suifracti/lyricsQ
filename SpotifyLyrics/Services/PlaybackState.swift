@@ -857,9 +857,6 @@ public final class PlaybackState: ObservableObject {
             entriesByID[entry.sessionID] = enriched
         }
         return entriesByID.values.sorted { lhs, rhs in
-            if lhs.lastObservedAt != rhs.lastObservedAt {
-                return lhs.lastObservedAt > rhs.lastObservedAt
-            }
             if lhs.startedAt != rhs.startedAt {
                 return lhs.startedAt > rhs.startedAt
             }
@@ -2193,6 +2190,8 @@ public final class PlaybackState: ObservableObject {
         position: TimeInterval,
         isPlaying: Bool
     ) {
+        // A selected but paused song has not started a playback occurrence.
+        guard isPlaying else { return }
         var session = ListeningHistorySession(track: track, identity: identity, startedAt: date)
         if let completed = session.observe(at: date, position: position, isPlaying: isPlaying) {
             publishListeningHistory(completed)

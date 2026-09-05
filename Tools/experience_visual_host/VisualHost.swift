@@ -56,6 +56,10 @@ private struct ExperienceLyricsProvider: LyricsProvider {
             lines[2].kanaText = "このよるをこえて、まだみぬあさへ"
             lines[2].romajiText = "Kono yoru o koete, mada minu asa e"
         }
+        if ProcessInfo.processInfo.arguments.contains("--ruby-correction") {
+            lines[2].originalText = "身体にしてあげよう"
+            lines[2].kanaText = "しんたいにしてあげよう"
+        }
         if ProcessInfo.processInfo.arguments.contains("--timed") {
             var offset = 0
             lines[2].timedSpans = lines[2].originalText.enumerated().map { index, character in
@@ -124,6 +128,13 @@ struct ExperienceVisualHostApp: App {
         if let font = Double(ExperienceArguments.value("--desktop-font", fallback: "")) { defaults.set(font, forKey: "desktopLyrics.fontSize") }
         let settings=AppSettingsStore(defaults:defaults)
         settings.floatingWindowAlwaysOnTop = true
+        if ProcessInfo.processInfo.arguments.contains("--ruby-correction") {
+            var display = settings.displayPreferences
+            display.showKana = true
+            display.showRomaji = true
+            display.kanaDisplayMode = .inlineRuby
+            settings.displayPreferences = display
+        }
         settings.v3ArtworkPresentation = V3ArtworkPresentation.allCases.first { $0.title == ExperienceArguments.value("--style-title",fallback:"") } ?? (ExperienceArguments.value("--style",fallback:"ambient") == "stage" ? .stage : ExperienceArguments.value("--style",fallback:"ambient") == "classic" ? .classic : .ambient)
         settings.v3ArtworkPosition=ExperienceArguments.value("--position",fallback:"left")
         if let scale=Double(ExperienceArguments.value("--scale",fallback:"")) { settings.v3ArtworkSizeScale=scale }
@@ -181,6 +192,45 @@ private struct ExperienceFixtureRoot: View {
                     if ExperienceArguments.value("--capsule-state", fallback: "collapsed") == "expanded" { capsuleController.expand() }
                 }
                 try? await Task.sleep(for:.seconds(2))
+                if ProcessInfo.processInfo.arguments.contains("--ruby-save-contract") {
+                    do {
+                        guard let versionID = playback.liveLyricsVersionID,
+                              let trackKey = playback.currentTrackIdentity?.stableKey else { fatalError("Missing persisted fixture") }
+                        let before = playback.liveLyrics
+                        try await playback.readingSession.correctRuby(surface: "身体", reading: "からだ", trackKey: trackKey,
+                            lyricsVersionID: versionID, visibleLines: before, expectedReadingVersionID: playback.readingSession.selectedVersion?.record.id)
+                        guard let saved = playback.readingSession.selectedVersion else { fatalError("No saved manual version") }
+                        precondition(saved.record.isManuallyEdited)
+                        precondition(saved.lines[2].readingText == "からだにしてあげよう")
+                        precondition(playback.liveLyrics[2].kanaText == "からだにしてあげよう", "Playback projection cache did not update")
+                        let projected = playback.readingSession.project(onto: before)
+                        precondition(projected[2].romajiText?.contains("karada") == true)
+                        precondition(projected[2].originalText == before[2].originalText && projected[2].timestamp == before[2].timestamp)
+                        precondition(settings.readingUserDictionary.load().contains { $0.trackStableKey == trackKey && $0.reading == "からだ" })
+                        do {
+                            try await playback.readingSession.correctRuby(surface: "身体", reading: "からだ", trackKey: "wrong-song",
+                                lyricsVersionID: versionID, visibleLines: before, expectedReadingVersionID: playback.readingSession.selectedVersion?.record.id)
+                            fatalError("Stale song accepted")
+                        } catch ReadingRepositoryError.sourceContentMismatch {}
+                        playback.readingSession.reload()
+                        try? await Task.sleep(for: .seconds(1))
+                        precondition(playback.readingSession.selectedVersion?.record.id == saved.record.id)
+                        try await playback.readingSession.correctRuby(surface: "身体", reading: "カラダ", trackKey: trackKey,
+                            lyricsVersionID: versionID, visibleLines: playback.liveLyrics, expectedReadingVersionID: saved.record.id)
+                        let secondID = playback.readingSession.selectedVersion!.record.id
+                        precondition(secondID != saved.record.id)
+                        playback.readingSession.restoreRecommended()
+                        precondition(playback.readingSession.selectedVersion?.record.id == secondID)
+                        precondition(playback.readingSession.availableVersions.first(where: { $0.record.id == saved.record.id })?.lines == saved.lines)
+                        do {
+                            try await playback.readingSession.correctRuby(surface: "身体", reading: "からだ", trackKey: trackKey,
+                                lyricsVersionID: versionID, visibleLines: before, expectedReadingVersionID: saved.record.id)
+                            fatalError("Stale reading accepted")
+                        } catch ReadingRepositoryError.invalidLines(_) {}
+                        print("RUBY_SAVE_CONTRACT_PASS")
+                        fflush(stdout)
+                    } catch { fatalError("Ruby save failed: \(error)") }
+                }
                 for window in NSApp.windows where window.title == "Experience visual fixture" {
                     window.setContentSize(ExperienceArguments.size)
                     window.center()

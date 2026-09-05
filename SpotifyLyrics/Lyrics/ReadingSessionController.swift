@@ -56,7 +56,7 @@ public struct ReadingProjection: Equatable, Sendable {
             } else if let reading = byIndex[index], reading.originalText == source.originalText {
                 switch representationID.flatMap(ReadingRepresentationID.init(rawValue:)) {
                 case .kana:
-                    line.kanaText = reading.readingText
+                    line = ReadingRubyCorrection.project(reading, onto: line)
                     line.readingRepresentationID = ReadingRepresentationID.kana.rawValue
                 case .romaji:
                     line.romajiText = reading.readingText
@@ -87,7 +87,10 @@ public struct ReadingProjection: Equatable, Sendable {
 /// cancellable generation task, not a timer or a second lyrics session.
 @MainActor
 public final class ReadingSessionController: ObservableObject {
-    @Published public private(set) var projection: ReadingProjection = .empty
+    @Published public private(set) var projection: ReadingProjection = .empty {
+        didSet { projectionRevision &+= 1 }
+    }
+    private var projectionRevision: UInt64 = 0
     @Published public private(set) var availableVersions: [StoredReadingVersion] = []
     @Published public private(set) var selectedVersion: StoredReadingVersion?
     @Published public private(set) var isGenerating = false
@@ -122,7 +125,7 @@ public final class ReadingSessionController: ObservableObject {
         generationTask?.cancel()
     }
 
-    public var currentRevision: UInt64 { revision }
+    public var currentRevision: UInt64 { projectionRevision }
     public var hasSource: Bool { sourceLyricsVersionID != nil && sourceContentHash != nil }
     public var preferredRepresentation: ReadingRepresentationID { settings.readingPreferences.japaneseRepresentation }
 
@@ -430,6 +433,53 @@ public final class ReadingSessionController: ObservableObject {
         }
     }
 
+    public func correctRuby(surface: String, reading: String, trackKey: String,
+                            lyricsVersionID: UUID, visibleLines: [LyricLine], expectedReadingVersionID: UUID? = nil) async throws {
+        guard sourceTrackStableKey == trackKey, sourceLyricsVersionID == lyricsVersionID,
+              let hash = sourceContentHash,
+              sourceLines.map(\.originalText) == visibleLines.map(\.originalText) else {
+            throw ReadingRepositoryError.sourceContentMismatch
+        }
+        guard selectedVersion?.record.id == expectedReadingVersionID else {
+            throw ReadingRepositoryError.invalidLines("读音版本已变化，请重新点击假名后修改")
+        }
+        let entry = try ReadingRubyCorrection.entry(surface: surface, reading: reading, trackStableKey: trackKey)
+        revision &+= 1
+        let token = revision
+        generationTask?.cancel()
+        loadTask?.cancel()
+        isGenerating = false
+        let parentID = selectedVersion?.record.id
+        let edited = try await Task.detached(priority: .userInitiated) {
+            try ReadingRubyCorrection.lines(visibleLines, entry: entry)
+        }.value
+        guard revision == token, sourceLyricsVersionID == lyricsVersionID else { throw ReadingRepositoryError.sourceContentMismatch }
+        let now = Date()
+        let record = ReadingVersionRecord(id: UUID(), lyricsVersionID: lyricsVersionID,
+            sourceContentHash: hash, engineID: ReadingEngineID.japaneseContextual.rawValue,
+            representationID: ReadingRepresentationID.kana.rawValue, sourceKind: .manualEdit,
+            language: .japanese, createdAt: now, updatedAt: now, isMachineGenerated: false,
+            isManuallyEdited: true, isCurrent: false, isLocked: false, isArchived: false,
+            parentVersionID: parentID, confidence: edited.map(\.confidence).min() ?? 0,
+            warningMetadata: [], contextHash: ReadingEngineSupport.hashContext([trackKey, surface, entry.reading]))
+        let saved = try await repository.saveReadingVersion(ReadingVersionSaveRequest(record: record, lines: edited))
+        guard revision == token, sourceLyricsVersionID == lyricsVersionID else { throw ReadingRepositoryError.sourceContentMismatch }
+        try await repository.adoptReadingVersion(versionID: saved.record.id)
+        // Commit the remembered rule only after the new version was saved and adopted.
+        settings.readingUserDictionary.rememberSongCorrection(entry)
+        guard revision == token else { return }
+        noSelectionSource = nil
+        let adopted = StoredReadingVersion(record: saved.record.with(isCurrent: true), lines: saved.lines)
+        availableVersions = availableVersions.map { version in
+            guard version.record.representationID == saved.record.representationID else { return version }
+            return StoredReadingVersion(record: version.record.with(isCurrent: false), lines: version.lines)
+        }
+        availableVersions.insert(adopted, at: 0)
+        selectedVersion = adopted
+        rebuildProjection()
+        message = "已保存这首歌的人工读音版本"
+    }
+
     public func saveManualEdit(_ version: StoredReadingVersion, readingLines: [ReadingLineResult]) {
         let now = Date()
         let record = ReadingVersionRecord(
@@ -514,7 +564,9 @@ public final class ReadingSessionController: ObservableObject {
         let preferred = isChineseSource ? settings.readingPreferences.pinyinRepresentationID : settings.readingPreferences.japaneseRepresentationID
         let locked = active.filter(\.record.isLocked)
         let eligible = active.filter { !requiresConfirmation($0) }
-        return locked.first(where: { $0.record.representationID == preferred })
+        return active.filter { $0.record.isCurrent && $0.record.isManuallyEdited }
+            .max(by: { $0.record.updatedAt < $1.record.updatedAt })
+            ?? locked.first(where: { $0.record.representationID == preferred })
             ?? eligible.first(where: { $0.record.representationID == preferred && $0.record.isCurrent })
             ?? eligible.first(where: { $0.record.representationID == preferred })
             ?? locked.first

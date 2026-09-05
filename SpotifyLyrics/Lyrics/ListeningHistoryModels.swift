@@ -95,6 +95,9 @@ public struct ListeningHistorySession: Sendable {
     @discardableResult
     public mutating func observe(at date: Date, position: TimeInterval, isPlaying: Bool) -> ListeningHistoryEntry? {
         let elapsed = date.timeIntervalSince(lastObservationAt)
+        // Ignore stale snapshots without rewinding the clock or playback state.
+        // Same-time pause/resume observations still update the state below.
+        guard elapsed.isFinite, elapsed >= 0 else { return nil }
         var completed: ListeningHistoryEntry?
         if wasPlaying, isPlaying, let previous = lastPosition, let duration = trackDuration,
            elapsed > 0, elapsed <= Self.maximumObservationGap,

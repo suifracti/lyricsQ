@@ -66,10 +66,18 @@ public struct ListeningHistoryView: View {
 
                         Spacer(minLength: 12)
 
-                        Text(entry.lastObservedAt, style: .relative)
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
-                            .multilineTextAlignment(.trailing)
+                        VStack(alignment: .trailing, spacing: 4) {
+                            Text(entry.startedAt, format: .dateTime
+                                .year().month(.twoDigits).day(.twoDigits)
+                                .hour(.twoDigits(amPM: .omitted)).minute(.twoDigits).second(.twoDigits))
+                                .font(.system(size: 11))
+                            Text("本次已听 \(formattedDuration(entry.observedPlaybackDuration))")
+                                .font(.system(size: 11))
+                        }
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.trailing)
+                        .fixedSize(horizontal: true, vertical: false)
                     }
                     .padding(.vertical, 4)
                 }
@@ -91,6 +99,16 @@ public struct ListeningHistoryView: View {
             playback.refreshListeningHistory()
         }
     }
+
+    private func formattedDuration(_ duration: TimeInterval) -> String {
+        let seconds = max(0, Int(duration.rounded(.down)))
+        let hours = seconds / 3_600
+        let minutes = (seconds % 3_600) / 60
+        if hours > 0 { return "\(hours)小时 \(minutes)分 \(seconds % 60)秒" }
+        if minutes > 0 { return "\(minutes)分 \(seconds % 60)秒" }
+        return "\(seconds)秒"
+    }
+
 }
 
 /// Shared cached cover for observed playback, with a neutral missing-art fallback.
