@@ -4,9 +4,11 @@ Status snapshot: 2026-09-05.
 
 This file describes what is present in the repository and how mature it is. It is not a release promise. The authoritative hierarchy is: (1) 用户明确指令, (2) Obsidian Current 的 Spotify Lyrics `README.md`、`Decisions.md`、活动 `Handoff.md`, (3) Git `HEAD` 与真实运行证据. Craft 已弃用，不得用于当前方向、优先级、阶段或项目状态判断. Git identifies the exact source.
 
-## Canonical main baseline
+## Canonical engineering SOT baseline
 
-- Canonical `origin/main`: `b16caee38eb4bb1d02d30c2971437d39ed59eb93`
+- **Canonical engineering SOT**: fresh remote `origin/main`
+- **Latest product-code-changing merge**: `b16caee38eb4bb1d02d30c2971437d39ed59eb93` (C5)
+- **Status-convergence docs-only merge**: `54ab96226fb62064e6dad7f6d888dc47cdbd28b9` (PR #20)
 - Other Windows C1–C5 全部完成并合入主线，状态均为 `CLOSED / FROZEN / MERGED`:
   - **C1**: 独立歌词库窗口（PR #15）
   - **C2**: 独立最近播放窗口（PR #16）

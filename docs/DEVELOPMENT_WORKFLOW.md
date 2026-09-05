@@ -83,7 +83,10 @@ Run additional focused scripts from `Tests/` when the changed area requires them
 
 ## Branches, commits, and releases
 
-- `main` is the confirmed baseline and default starting point. Current canonical `origin/main`: `b16caee38eb4bb1d02d30c2971437d39ed59eb93`.
+- **Canonical engineering SOT**: fresh remote `origin/main`.
+- **Historical anchors**:
+  - Latest product-code-changing merge: `b16caee38eb4bb1d02d30c2971437d39ed59eb93` (C5)
+  - Status-convergence docs-only merge: `54ab96226fb62064e6dad7f6d888dc47cdbd28b9` (PR #20)
 - Other Windows C1–C5 are `CLOSED / FROZEN / MERGED`.
 - `codex/<topic>` is for Codex work.
 - `antigravity/<topic>` is for Antigravity/Gemini work.
