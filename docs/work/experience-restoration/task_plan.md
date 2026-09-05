@@ -9,4 +9,4 @@ Full goal is docs/superpowers/specs/2026-09-05-experience-restoration-design.md;
 - [x] Dynamic Island production restoration.
 - [x] Desktop lyrics quality.
 - [x] All three V3 styles, complete cover stage.
-- [ ] Integrated native visual/runtime verification and runnable delivery.
+- [x] Integrated native visual/runtime verification and runnable delivery (preview; hardware/multiscreen/long-playback limits recorded).
