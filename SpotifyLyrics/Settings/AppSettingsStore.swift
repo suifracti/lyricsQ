@@ -47,7 +47,7 @@ public enum V3ArtworkPresentation: String, CaseIterable, Codable, Identifiable, 
     public var detail: String {
         switch self {
         case .ambient: return "抽取封面的低频色彩，前景保留完整封面"
-        case .stage: return "以单张完整专辑封面为舞台主体，底部融入歌词与播放信息"
+        case .stage: return "封面铺满整个舞台，歌词与播放信息叠在封面上"
         case .classic: return "保留原来的局部放大封面背景"
         }
     }
@@ -55,7 +55,7 @@ public enum V3ArtworkPresentation: String, CaseIterable, Codable, Identifiable, 
     public var blurControlTitle: String {
         switch self {
         case .ambient: return "环境扩散程度"
-        case .stage: return "舞台光晕扩散"
+        case .stage: return "封面背景柔化"
         case .classic: return "背景高斯模糊度"
         }
     }
@@ -63,7 +63,7 @@ public enum V3ArtworkPresentation: String, CaseIterable, Codable, Identifiable, 
     public var artworkSizeControlTitle: String {
         switch self {
         case .ambient: return "前景封面尺寸"
-        case .stage: return "舞台封面尺寸"
+        case .stage: return "封面背景缩放"
         case .classic: return "封面与背景倍率"
         }
     }
@@ -71,7 +71,7 @@ public enum V3ArtworkPresentation: String, CaseIterable, Codable, Identifiable, 
     public var artworkPositionControlTitle: String {
         switch self {
         case .ambient: return "封面与光源位置"
-        case .stage: return "舞台封面位置"
+        case .stage: return "封面背景取景"
         case .classic: return "封面与裁切位置"
         }
     }

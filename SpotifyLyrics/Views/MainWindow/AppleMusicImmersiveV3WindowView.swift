@@ -22,7 +22,6 @@ struct AppleMusicImmersiveV3WindowView: View {
     @Environment(\.openWindow) private var openWindow
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    @State private var stageArtworkAspectRatio: CGFloat = 1
     @State private var isSearchPresented = false
     @State private var isVisualTuningPresented = false
     // The canvas starts clean. Controls reveal only when the pointer reaches
@@ -55,8 +54,7 @@ struct AppleMusicImmersiveV3WindowView: View {
                     track: state.currentTrack,
                     identity: state.currentTrackIdentity,
                     isInstrumental: isInst,
-                    settings: settings,
-                    onArtworkAspectRatioChange: { stageArtworkAspectRatio = $0 }
+                    settings: settings
                 )
 
                 layout(for: geometry)
@@ -368,14 +366,14 @@ struct AppleMusicImmersiveV3WindowView: View {
         let compact = V3ResponsiveGeometry.layoutRegime(canvasSize: geometry.size) == .compact
         let reading = V3ResponsiveGeometry.stageReadingRect(
             canvasSize: geometry.size,
-            artworkAspectRatio: stageArtworkAspectRatio,
+            artworkAspectRatio: 1,
             position: settings.v3ArtworkPosition
         )
         let hudWidth = max(1, min(960, canvasWidth - (compact ? 40 : 80)))
 
         return ZStack(alignment: .topLeading) {
-            lyricsColumn(width: reading.width, compact: compact,
-                         currentVerseOnly: reading.width >= canvasWidth - 48)
+            lyricsColumn(width: reading.width, compact: compact)
+                .shadow(color: .black.opacity(0.55), radius: 5, y: 2)
                 .frame(width: reading.width, height: reading.height)
                 .position(x: reading.midX, y: reading.midY)
             StageHUDView(state: state, width: hudWidth)
@@ -553,7 +551,6 @@ struct AppleMusicImmersiveV3WindowView: View {
         width: CGFloat,
         compact: Bool,
         lyricsFocus: Bool = false,
-        currentVerseOnly: Bool = false,
         onSearch: (() -> Void)? = nil
     ) -> some View {
         AppleMusicImmersiveV3LyricsViewport(
@@ -561,8 +558,7 @@ struct AppleMusicImmersiveV3WindowView: View {
             availableWidth: max(1, width - (compact ? 22 : 34)),
             compact: compact,
             lyricsFocus: lyricsFocus,
-            onSearch: onSearch,
-            currentVerseOnly: currentVerseOnly
+            onSearch: onSearch
         )
         .environmentObject(settings)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -1217,7 +1213,6 @@ private struct AppleMusicImmersiveV3LyricsViewport: View {
     let compact: Bool
     let lyricsFocus: Bool
     let onSearch: (() -> Void)?
-    var currentVerseOnly: Bool = false
     @EnvironmentObject private var settings: AppSettingsStore
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -1244,21 +1239,6 @@ private struct AppleMusicImmersiveV3LyricsViewport: View {
                 } else {
                     emptyState
                 }
-            } else if currentVerseOnly, synchronized, !state.isShowingSearchPreview {
-                // A short stage band cannot safely center a multi-layer verse
-                // between faded neighbours. Preserve the complete current row,
-                // start at its original text, and allow long verses to scroll.
-                let index = currentIndex.flatMap { lines.indices.contains($0) ? $0 : nil } ?? 0
-                ScrollView(.vertical) {
-                    row(for: lines[index], index: index, currentIndex: currentIndex,
-                        synchronized: synchronized, language: language,
-                        trackStableKey: trackStableKey, artistDisplay: artistDisplay)
-                        .frame(maxWidth: .infinity, alignment: .topLeading)
-                        .padding(.top, 4)
-                        .padding(.bottom, 8)
-                }
-                .scrollIndicators(.automatic)
-                .id("stage-verse-\(state.lyricsSessionRevision)-\(lines[index].id)")
             } else {
                 lyricsScroll(
                     lines: lines,

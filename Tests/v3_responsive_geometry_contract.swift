@@ -110,37 +110,23 @@ struct V3ResponsiveGeometryContract {
             )
         }
 
-        let portrait = V3ResponsiveGeometry.stageArtworkRect(
-            canvasSize: CGSize(width: 800, height: 500),
-            artworkAspectRatio: 0.65,
-            requestedScale: 1.4,
-            position: "left"
-        )
-        precondition(portrait.minX >= 18 - 0.001 && portrait.maxX <= 782 + 0.001, "stage artwork must stay inside the horizontal canvas")
-        precondition(portrait.minY >= 16 - 0.001 && portrait.maxY <= 484 + 0.001, "stage artwork must stay inside the vertical safe area")
-        precondition(abs(portrait.width / portrait.height - 0.65) < 0.001, "stage artwork must preserve its source aspect ratio")
-
-        for canvas in [CGSize(width: 760, height: 520), CGSize(width: 1040, height: 680), CGSize(width: 1440, height: 900)] {
+        for canvas in [CGSize(width: 760, height: 520), CGSize(width: 1040, height: 680), CGSize(width: 1440, height: 900), CGSize(width: 760, height: 1000)] {
+            let bounds = CGRect(origin: .zero, size: canvas)
             for aspect: CGFloat in [0.2, 0.65, 1, 1.8, 5] {
                 let small = V3ResponsiveGeometry.stageArtworkRect(canvasSize: canvas, artworkAspectRatio: aspect, requestedScale: 0.8)
                 let large = V3ResponsiveGeometry.stageArtworkRect(canvasSize: canvas, artworkAspectRatio: aspect, requestedScale: 1.4)
-                precondition(small.width < large.width, "stage size setting must change actual cover occupancy")
-                precondition(abs(large.width / large.height - aspect) < 0.001, "even unusual aspect ratios must remain complete")
-
+                precondition(small.width < large.width, "stage zoom must adjust the background crop")
                 for position in ["left", "center", "right"] {
-                    let cover = V3ResponsiveGeometry.stageArtworkRect(canvasSize: canvas, artworkAspectRatio: aspect, requestedScale: 1.4, position: position)
+                    let cover = V3ResponsiveGeometry.stageArtworkRect(canvasSize: canvas, artworkAspectRatio: aspect, requestedScale: 0.8, position: position)
                     let reading = V3ResponsiveGeometry.stageReadingRect(canvasSize: canvas, artworkAspectRatio: aspect, position: position)
-                    precondition(!cover.intersects(reading), "stage artwork must not overlap its reading region")
+                    precondition(cover.insetBy(dx: -0.001, dy: -0.001).contains(bounds), "cover must fill the entire stage, including behind lyrics")
+                    precondition(abs(cover.width / cover.height - aspect) < 0.001, "background preserves source proportions")
+                    precondition(bounds.contains(reading) && reading.height > canvas.height * 0.5, "lyrics overlay gets the central stage, not a lower band")
+                    precondition(reading == V3ResponsiveGeometry.stageReadingRect(canvasSize: canvas, artworkAspectRatio: 1, position: "center"), "lyrics position must not depend on cover orientation")
                 }
-                let right = V3ResponsiveGeometry.stageArtworkRect(canvasSize: canvas, artworkAspectRatio: aspect, requestedScale: 0.8, position: "right")
-                let center = V3ResponsiveGeometry.stageArtworkRect(canvasSize: canvas, artworkAspectRatio: aspect, requestedScale: 0.8, position: "center")
-                precondition(small.midX < center.midX && center.midX < right.midX, "stage alignment setting must move the whole cover")
-                precondition(CGRect(origin: .zero, size: canvas).contains(right), "complete cover must stay contained")
             }
         }
 
-        let dominantPortrait = V3ResponsiveGeometry.stageArtworkRect(canvasSize: CGSize(width: 1152, height: 720), artworkAspectRatio: 2.0 / 3.0)
-        precondition(dominantPortrait.height >= 480, "portrait stage must use available height rather than remain a small upper card")
         print("V3 responsive geometry contract: PASS")
     }
 }

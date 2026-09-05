@@ -1,5 +1,7 @@
 # Three-style restoration evidence
 
+> Stage definition superseded by the user on 2026-09-05: cover fills the whole background and lyrics overlay it. The separate cover-plane/read-zone results below are historical, not the current accepted definition. See stage-background-correction-report.md.
+
 Base: `b971c7fe181315f8f8ad5a784a7b8ba14bce24fe`, branch `codex/experience-restoration`; changes remain uncommitted pending integration review. No real Spotify session or user database used by these checks.
 
 ## Reproduced causes

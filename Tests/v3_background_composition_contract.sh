@@ -2,9 +2,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-# The former source-string test both accepted the obscured cover and required
-# its dark overlay. Run production geometry instead; native render evidence
-# separately verifies sharpness, all four image edges and style distinction.
+# User-confirmed stage: full-canvas background coverage and overlay lyrics.
+# Native renders separately verify actual composition and readability.
 bash "$ROOT/Tests/v3_responsive_geometry_contract.sh"
 
 # Retain the pre-existing persistence compatibility checks independently of

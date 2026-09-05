@@ -175,56 +175,36 @@ enum V3ResponsiveGeometry {
         )
     }
 
-    /// The lower reading band is shared by the cover and foreground so lyrics
-    /// and transport never hide a cover edge, even at the technical minimum.
-    static func stageReadingHeight(canvasSize: CGSize) -> CGFloat {
-        min(280, max(220, finitePositive(canvasSize.height) * 0.34))
-    }
-
+    /// Lyrics occupy an overlay viewport; cover orientation never divides the stage.
     static func stageReadingRect(canvasSize: CGSize, artworkAspectRatio: CGFloat, position: String) -> CGRect {
         let width = finitePositive(canvasSize.width)
         let height = finitePositive(canvasSize.height)
-        let aspect = artworkAspectRatio.isFinite && artworkAspectRatio > 0 ? artworkAspectRatio : 1
-        let fullHeight = max(1, height - 64 - 100)
-        let artworkWidth = fullHeight * aspect
-        let remaining = width - artworkWidth - 80
-        if position != "center", remaining >= min(360, width * 0.38) {
-            return CGRect(x: position == "right" ? 24 : artworkWidth + 56,
-                          y: 80, width: max(1, remaining), height: max(1, height - 196))
-        }
-        return CGRect(x: 24, y: height - stageReadingHeight(canvasSize: canvasSize),
-                      width: max(1, width - 48), height: max(1, stageReadingHeight(canvasSize: canvasSize) - 100))
+        let readingWidth = min(860, max(1, width - 80))
+        return CGRect(x: (width - readingWidth) / 2, y: 76,
+                      width: readingWidth, height: max(1, height - 180))
     }
 
+    /// Aspect-fill cover geometry. The smallest zoom still covers the whole canvas.
     static func stageArtworkRect(
         canvasSize: CGSize,
         artworkAspectRatio: CGFloat,
         requestedScale: CGFloat = 1.0,
-        position: String = "left",
-        horizontalMargin: CGFloat = 24,
-        topInset: CGFloat = 64,
-        bottomInset: CGFloat = 16
+        position: String = "left"
     ) -> CGRect {
         let width = finitePositive(canvasSize.width)
         let height = finitePositive(canvasSize.height)
         let aspect = artworkAspectRatio.isFinite && artworkAspectRatio > 0 ? artworkAspectRatio : 1
-        let margin = min(width / 3, finiteNonNegative(horizontalMargin))
-        let top = min(height * 0.2, finiteNonNegative(topInset))
-        let reading = stageReadingRect(canvasSize: canvasSize, artworkAspectRatio: aspect, position: position)
-        let usesSideReading = reading.minY == 80
-        let availableWidth = max(1, width - margin * 2)
-        let availableHeight = max(1, (usesSideReading ? height - 100 : reading.minY - finiteNonNegative(bottomInset)) - top)
-        let scale = min(1.4, max(0.8, finiteValue(requestedScale)))
-        let occupancy = scale <= 1 ? 0.80 + (scale - 0.8) * 0.5 : 0.90 + (scale - 1) * 0.25
-        let fittedHeight = min(availableHeight, availableWidth / aspect) * occupancy
-        let fittedWidth = fittedHeight * aspect
+        let zoom = min(1.4, max(0.8, finiteValue(requestedScale))) / 0.8
+        let imageHeight = max(height, width / aspect) * zoom
+        let imageWidth = imageHeight * aspect
         let x: CGFloat
         switch position {
-        case "right": x = width - margin - fittedWidth
-        case "center": x = (width - fittedWidth) / 2
-        default: x = margin
+        case "right": x = width - imageWidth
+        case "center": x = (width - imageWidth) / 2
+        default: x = 0
         }
-        return CGRect(x: x, y: top + (availableHeight - fittedHeight) / 2, width: fittedWidth, height: fittedHeight)
+        return CGRect(x: x, y: (height - imageHeight) / 2,
+                      width: imageWidth, height: imageHeight)
     }
 
     private static func finitePositive(_ value: CGFloat) -> CGFloat {

@@ -25,7 +25,6 @@ struct AppleMusicImmersiveV3BackdropView: View {
     let identity: TrackIdentity?
     var isInstrumental: Bool = false
     @ObservedObject var settings: AppSettingsStore
-    var onArtworkAspectRatioChange: ((CGFloat) -> Void)? = nil
 
     @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
     @State private var artworkImage: NSImage?
@@ -217,37 +216,23 @@ struct AppleMusicImmersiveV3BackdropView: View {
 
     @ViewBuilder
     private func stageArtworkLayers(image: NSImage, ambientImage: NSImage?) -> some View {
-        // Album-derived light fills the surrounding stage without introducing
-        // a second enlarged/cropped copy of the artwork.
-        LinearGradient(
-            colors: [ambientColor(palette.primary, saturation: 1.1, maximumLuminance: 0.30),
-                     ambientColor(palette.secondary, saturation: 1, maximumLuminance: 0.16)],
-            startPoint: coverLightCenter,
-            endPoint: .bottomTrailing
-        )
-        RadialGradient(colors: [color(palette.glow).opacity(0.16 + normalizedBlur * 0.20), .clear],
-                       center: coverLightCenter, startRadius: 12, endRadius: 320 + normalizedBlur * 600)
-
         GeometryReader { geometry in
-            let artworkAspectRatio = image.size.width > 0 && image.size.height > 0
-                ? image.size.width / image.size.height
-                : 1.0
-            let artworkRect = stageArtworkPlaneSize(
-                canvas: geometry.size,
-                artworkAspectRatio: artworkAspectRatio
-            )
-            let cornerRadius: CGFloat = 2
-
+            let aspect = image.size.width > 0 && image.size.height > 0
+                ? image.size.width / image.size.height : 1.0
+            let artworkRect = stageArtworkPlaneSize(canvas: geometry.size, artworkAspectRatio: aspect)
             Image(nsImage: image)
                 .resizable()
                 .interpolation(.high)
-                .scaledToFit()
+                .scaledToFill()
                 .frame(width: artworkRect.width, height: artworkRect.height)
-                .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-                .shadow(color: Color.black.opacity(0.35), radius: 24, x: 0, y: 8)
+                .blur(radius: normalizedBlur * 4)
                 .position(x: artworkRect.midX, y: artworkRect.midY)
         }
-
+        .clipped()
+        // A cover-backed stage, with no separate cover card or reading band.
+        Color.black.opacity(increaseContrast ? 0.40 : 0.24)
+        LinearGradient(colors: [.black.opacity(0.08), .clear, .black.opacity(0.30)],
+                       startPoint: .top, endPoint: .bottom)
     }
 
     /// Stage presentation sizing helper for geometry contracts.
@@ -517,7 +502,6 @@ struct AppleMusicImmersiveV3BackdropView: View {
         // A track without artwork must not inherit the previous track's
         // palette while its new snapshot is being resolved.
         palette = .neutral
-        onArtworkAspectRatioChange?(1)
 
         if debugForceNoArtwork {
             outgoingArtworkImage = nil
@@ -539,11 +523,6 @@ struct AppleMusicImmersiveV3BackdropView: View {
         guard key == requestKey, !Task.isCancelled else { return }
 
         let nextArtwork = NSImage(data: snapshot.artworkData)
-        if let nextArtwork, nextArtwork.size.width > 0, nextArtwork.size.height > 0 {
-            // Publish with the loaded snapshot rather than a preference inside
-            // GeometryReader, whose layout may not be evaluated by its parent.
-            onArtworkAspectRatioChange?(nextArtwork.size.width / nextArtwork.size.height)
-        }
         let nextAmbientArtwork = NSImage(data: snapshot.ambientArtworkData)
         let nextNoise = NSImage(data: snapshot.noiseData)
         withAnimation(.easeInOut(duration: artworkTransitionDuration)) {
