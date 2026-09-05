@@ -2,6 +2,8 @@
 
 Status snapshot: 2026-09-05.
 
+Library preview: per-version local names and notes can be edited for lyrics, translations, readings and timing. Original labels remain visible; Restore Default clears only local presentation metadata. Metadata does not travel in asset exports.
+
 Production database upgrade repaired: existing v5 databases now advance to v8 after a consistent backup; library/history/statistics verified against the real database and after restart. See [upgrade audit](work/experience-restoration/production-database-upgrade-report.md).
 
 Main V3 utility shortcuts: 我的歌词库、最近播放、听歌统计 now have direct toolbar buttons, using the existing shared library window and selecting its matching tab. Existing Settings entries remain available.
