@@ -2,6 +2,8 @@
 
 Status snapshot: 2026-09-05.
 
+Main V3 utility shortcuts: 我的歌词库、最近播放、听歌统计 now have direct toolbar buttons, using the existing shared library window and selecting its matching tab. Existing Settings entries remain available.
+
 Main V3 preview update: long original lyrics now use measured balanced wrapping, replacing the earlier approximate character-count breaker. Screenshot phrases pass five width checks; plain/timed ranges agree. Inline ruby remains separate. See [balanced lyric breaks report](work/experience-restoration/balanced-lyric-breaks-report.md).
 
 This file describes what is present in the repository and how mature it is. It is not a release promise. The authoritative hierarchy is: (1) 用户明确指令, (2) Obsidian Current 的 Spotify Lyrics `README.md`、`Decisions.md`、活动 `Handoff.md`, (3) Git `HEAD` 与真实运行证据. Craft 已弃用，不得用于当前方向、优先级、阶段或项目状态判断. Git identifies the exact source.

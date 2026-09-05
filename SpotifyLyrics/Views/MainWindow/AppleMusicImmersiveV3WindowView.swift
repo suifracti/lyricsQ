@@ -586,6 +586,14 @@ struct AppleMusicImmersiveV3WindowView: View {
                 windowModePanel
             }
             searchButton
+            Rectangle()
+                .fill(.white.opacity(0.18))
+                .frame(width: 1, height: 18)
+                .padding(.horizontal, 3)
+                .accessibilityHidden(true)
+            libraryToolButton(.library, symbol: "music.note.list", title: "我的歌词库")
+            libraryToolButton(.history, symbol: "clock.arrow.circlepath", title: "最近播放")
+            libraryToolButton(.statistics, symbol: "chart.bar", title: "听歌统计")
             Button { isMorePresented.toggle() } label: {
                 iconLabel("ellipsis", description: "更多操作")
             }
@@ -601,6 +609,15 @@ struct AppleMusicImmersiveV3WindowView: View {
         .foregroundStyle(.white.opacity(0.92))
         .onChange(of: isMorePresented) { _, presented in
             if !presented { morePage = "root" }
+        }
+    }
+
+    private func libraryToolButton(_ tab: LibraryToolTab, symbol: String, title: String) -> some View {
+        Button {
+            state.selectedLibraryToolTab = tab
+            openWindow(id: "personal-library-activity")
+        } label: {
+            iconLabel(symbol, description: title)
         }
     }
 
