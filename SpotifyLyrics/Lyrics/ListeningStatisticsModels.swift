@@ -29,6 +29,20 @@ public enum ListeningStatisticsTimeRange: String, CaseIterable, Identifiable, Eq
     }
 }
 
+public struct ListeningStatisticsDailyCount: Identifiable, Equatable, Sendable {
+    public let date: Date
+    public let dayLabel: String
+    public let count: Int
+
+    public var id: String { dayLabel }
+
+    public init(date: Date, dayLabel: String, count: Int) {
+        self.date = date
+        self.dayLabel = dayLabel
+        self.count = count
+    }
+}
+
 public struct ListeningStatisticsSong: Identifiable, Equatable, Sendable {
     public let stableKey: String
     public let title: String
@@ -37,6 +51,14 @@ public struct ListeningStatisticsSong: Identifiable, Equatable, Sendable {
     public let sessionCount: Int
 
     public var id: String { stableKey }
+
+    public init(stableKey: String, title: String, artist: String, observedListeningTime: TimeInterval, sessionCount: Int) {
+        self.stableKey = stableKey
+        self.title = title
+        self.artist = artist
+        self.observedListeningTime = observedListeningTime
+        self.sessionCount = sessionCount
+    }
 }
 
 public struct ListeningStatisticsArtist: Identifiable, Equatable, Sendable {
@@ -45,24 +67,52 @@ public struct ListeningStatisticsArtist: Identifiable, Equatable, Sendable {
     public let sessionCount: Int
 
     public var id: String { artist }
+
+    public init(artist: String, observedListeningTime: TimeInterval, sessionCount: Int) {
+        self.artist = artist
+        self.observedListeningTime = observedListeningTime
+        self.sessionCount = sessionCount
+    }
 }
 
 public struct ListeningStatistics: Equatable, Sendable {
     public let timeRange: ListeningStatisticsTimeRange
     public let totalListeningTime: TimeInterval
     public let sessionCount: Int
+    public let uniqueSongCount: Int
     public let topSongs: [ListeningStatisticsSong]
     public let topArtists: [ListeningStatisticsArtist]
+    public let dailyPlayCounts: [ListeningStatisticsDailyCount]
 
     public var isEmpty: Bool { sessionCount == 0 }
+
+    public init(
+        timeRange: ListeningStatisticsTimeRange,
+        totalListeningTime: TimeInterval,
+        sessionCount: Int,
+        uniqueSongCount: Int,
+        topSongs: [ListeningStatisticsSong],
+        topArtists: [ListeningStatisticsArtist],
+        dailyPlayCounts: [ListeningStatisticsDailyCount]
+    ) {
+        self.timeRange = timeRange
+        self.totalListeningTime = totalListeningTime
+        self.sessionCount = sessionCount
+        self.uniqueSongCount = uniqueSongCount
+        self.topSongs = topSongs
+        self.topArtists = topArtists
+        self.dailyPlayCounts = dailyPlayCounts
+    }
 
     public static func empty(for timeRange: ListeningStatisticsTimeRange) -> ListeningStatistics {
         ListeningStatistics(
             timeRange: timeRange,
             totalListeningTime: 0,
             sessionCount: 0,
+            uniqueSongCount: 0,
             topSongs: [],
-            topArtists: []
+            topArtists: [],
+            dailyPlayCounts: []
         )
     }
 }
