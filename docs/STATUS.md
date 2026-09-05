@@ -1,55 +1,57 @@
 # Project Status
 
-Status snapshot: 2026-08-13.
+Status snapshot: 2026-09-05.
 
-This file describes what is present in the repository and how mature it is. It is not a release promise. The current authoritative hierarchy is: (1) 用户明确指令, (2) Obsidian Current 的 Spotify Lyrics `README.md`、`Decisions.md`、活动 `Handoff.md`, (3) Git `HEAD` 与真实运行证据. Craft 已弃用，不得用于当前方向、优先级、阶段或项目状态判断. Git identifies the exact source.
+This file describes what is present in the repository and how mature it is. It is not a release promise. The authoritative hierarchy is: (1) 用户明确指令, (2) Obsidian Current 的 Spotify Lyrics `README.md`、`Decisions.md`、活动 `Handoff.md`, (3) Git `HEAD` 与真实运行证据. Craft 已弃用，不得用于当前方向、优先级、阶段或项目状态判断. Git identifies the exact source.
 
-## Source baseline
+## Canonical main baseline
 
-- `main` is the confirmed default baseline.
-- The current V3, lyrics-source, reading, and responsive-layout work is included in the baseline after explicit build/test verification.
-- Task branches may still contain newer or experimental work; they are not the source of truth unless explicitly selected for a task.
-- Always verify the current branch, `HEAD`, upstream, and worktree status instead of treating this date or a document as the exact version.
+- Canonical `origin/main`: `b16caee38eb4bb1d02d30c2971437d39ed59eb93`
+- Other Windows C1–C5 全部完成并合入主线，状态均为 `CLOSED / FROZEN / MERGED`:
+  - **C1**: 独立歌词库窗口（PR #15）
+  - **C2**: 独立最近播放窗口（PR #16）
+  - **C3**: 统一“歌词库与收听记录”工具窗口与路由（PR #17）
+  - **C4**: 听歌统计完善（PR #18：3张统计卡片、7天每日观察播放趋势柱状图、Top 5 歌曲/歌手收敛）
+  - **C5**: MenuBar Quick Glance / Transport 补齐（PR #19：封面、原生三键、主窗口/歌词库/设置/退出4项入口）
+
+## Released internal builds
+
+- `v0.1.0`: 源提交 `910df5dc55e44a19144be0b6ccf79a3145a67943`
+- `v0.1.1`: 源提交 `9e65fbbe13b82626bfb5d9bc36f2620a44dd2762`
+- **版本边界明确**:
+  - `v0.1.1` 属于 internal/test prerelease，包含 C3。
+  - **不包含后续完成的 C4 与 C5**。
+  - 不是当前 `main` 的完整体验包。
+  - 已发布的 `v0.1.1` 保持冻结，不覆盖、不重新打 tag 或重新发布。
+
+## Dirty checkout warning
+
+- 本地主目录 `/Users/apple/backup/sptifylyrics` **不是 canonical main**。
+- 该目录包含用户未提交的资产与本地工具脚本。
+- **严禁**执行 `git reset --hard`、`git clean`、`git restore`、`git pull` 或分支检出覆盖。
+- 所有后续新任务必须从 fresh `origin/main` 建立全新的 isolated worktree。
+
+## Current phase & next steps
+
+- 当前阶段为: `Concentrated user experience / reliability triage`（明确不是 C6）。
+- **下一步原则**: 只有真实确认的 **Blocker** 或必须解决的 **Relevant** 缺陷，才允许触发代码工作。
+- **Reliability 候选项（仅列为 Deferred，非已发生运行时 bug）**:
+  - statistics read failure 可能被表现为空状态
+  - listening history read failure 缺独立 failed state
+  - statistics contract 有午夜日期边界稳定性问题
 
 ## Implemented in the repository
 
 - Spotify Desktop current-track observation and basic playback commands.
 - Main, floating, fullscreen, and capsule lyrics presentations.
+- MenuBar Quick Glance / Transport popover (AppKit `NSStatusItem` + `NSPopover`).
+- Unified "歌词库与收听记录" window with tabs for 我的歌词库, 最近播放, and 听歌统计.
 - Synchronized lyrics rendering, progress tracking, search/recovery states, and presentation settings.
 - Local LRC/TXT import and paste, a lyrics editor, versioned SQLite persistence, and local-file lookup.
 - LRCLIB lookup plus experimental NetEase and QQ provider implementations.
 - Japanese reading/ruby generation, romanization and translation companion-layer infrastructure, including local correction data.
 - Optional Spotify Web Catalog integration with credentials stored outside the repository.
 - Focused shell/Swift contract tests for major UI, persistence, provider, reading, and alignment boundaries.
-
-## Current implementation
-
-- Distinct ambient, artwork-stage, and classic enlarged-artwork backdrop treatments, including honest zero-blur behavior.
-- Consolidated user-facing main-window layout families: Classic Companion V1, Album Immersion V2, and Experimental Workbench V0.
-- AMLL lookup and broader personal-source defaults.
-- Concurrent network-provider execution with bounded timeouts and result deduplication.
-- Improved translation/romanization preservation, long-line wrapping, lyric transitions, and scoped Japanese reading corrections.
-- V3 lower-boundary resizing now keeps one bounded split composition when automatic Lyrics Focus is disabled; metadata, playback seeking, and the current-song operation surface also have adaptive UI fallbacks.
-
-These items have code and contracts, but remain development work until accepted in real playback.
-
-## Partial, experimental, or unreliable
-
-- Online coverage varies by catalog, metadata quality, region, and provider availability. A provider existing in code does not mean a track will match.
-- NetEase and QQ integrations use unofficial endpoints and may stop working; they are unsuitable as a release guarantee.
-- Japanese readings use contextual rules and corrections but can still choose the wrong reading for names, rare words, or ambiguous phrases.
-- Translation UI and persistence exist, but Apple/system and AI-backed translation paths still need broader real-machine acceptance.
-- Automatic alignment has models, controls, experiments, and contracts, but is not a dependable zero-operation product feature.
-- Direction D / Experimental Workbench is a development surface, not the recommended stable interface.
-- UI polish, performance soak testing, and app-hang investigation remain ongoing; the latest responsive V3 checkpoint has passed a Debug build and a live resize smoke check but still needs longer real-playback soak testing.
-
-## Planned or not implemented
-
-- Reliable near-universal lyrics coverage.
-- Production-quality automatic timing for unsynchronized text.
-- Subject-aware artwork cropping and mature per-artwork background selection.
-- MV or other dynamic-video backgrounds.
-- Final packaging, signing, distribution, release notes, and a SemVer release.
 
 ## How to verify the current truth
 
