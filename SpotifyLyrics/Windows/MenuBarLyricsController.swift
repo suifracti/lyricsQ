@@ -20,6 +20,7 @@ public struct MenuBarLyricsSnapshot: Equatable, Sendable {
     public let nextLineText: String?
     public let isPlaying: Bool
     public let hasLiveTrack: Bool
+    public let artworkURL: URL?
 }
 
 public enum MenuBarTextFormatter {
@@ -66,6 +67,7 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
     private weak var playbackState: PlaybackState?
     private var cancellables = Set<AnyCancellable>()
     private var openMainWindowHandler: (@MainActor () -> Void)?
+    private var openLibraryHandler: (@MainActor () -> Void)?
 
     private override init() {
         self.currentSnapshot = MenuBarLyricsSnapshot(
@@ -76,7 +78,8 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
             currentLineText: nil,
             nextLineText: nil,
             isPlaying: false,
-            hasLiveTrack: false
+            hasLiveTrack: false,
+            artworkURL: nil
         )
         super.init()
     }
@@ -102,6 +105,10 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
         self.openMainWindowHandler = handler
     }
 
+    public func setOpenLibraryHandler(_ handler: @escaping @MainActor () -> Void) {
+        self.openLibraryHandler = handler
+    }
+
     public func openMainWindow() {
         popover?.performClose(nil)
 
@@ -116,6 +123,34 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
                 }
             }
         }
+    }
+
+    public func openLibrary() {
+        popover?.performClose(nil)
+
+        playbackState?.selectedLibraryToolTab = .library
+        openLibraryHandler?()
+
+        NSApp.activate(ignoringOtherApps: true)
+        for window in NSApp.windows {
+            if window.identifier?.rawValue == "personal-library-activity" || window.title == "歌词库与收听记录" {
+                if !window.isKind(of: NSPanel.self) {
+                    window.makeKeyAndOrderFront(nil)
+                    break
+                }
+            }
+        }
+    }
+
+    public func openSettings() {
+        popover?.performClose(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+    }
+
+    public func quit() {
+        popover?.performClose(nil)
+        NSApp.terminate(nil)
     }
 
     public func togglePlayPause() {
@@ -203,7 +238,8 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
                 currentLineText: nil,
                 nextLineText: nil,
                 isPlaying: false,
-                hasLiveTrack: false
+                hasLiveTrack: false,
+                artworkURL: nil
             )
         }
 
@@ -211,6 +247,7 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
         let title = track.title.trimmingCharacters(in: .whitespacesAndNewlines)
         let artist = track.artist.trimmingCharacters(in: .whitespacesAndNewlines)
         let isPlaying = state.isPlaying
+        let artworkURL = track.artworkURL
 
         guard state.liveLyricsDocumentMatchesCurrentTrack else {
             let displayTitle = title.isEmpty ? "Lyric Island" : title
@@ -222,7 +259,8 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
                 currentLineText: nil,
                 nextLineText: nil,
                 isPlaying: isPlaying,
-                hasLiveTrack: true
+                hasLiveTrack: true,
+                artworkURL: artworkURL
             )
         }
 
@@ -238,7 +276,8 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
                 currentLineText: nil,
                 nextLineText: nil,
                 isPlaying: isPlaying,
-                hasLiveTrack: true
+                hasLiveTrack: true,
+                artworkURL: artworkURL
             )
 
         case .noLyrics, .noSelection, .noMatch:
@@ -251,7 +290,8 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
                 currentLineText: nil,
                 nextLineText: nil,
                 isPlaying: isPlaying,
-                hasLiveTrack: true
+                hasLiveTrack: true,
+                artworkURL: artworkURL
             )
 
         case .failed:
@@ -264,7 +304,8 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
                 currentLineText: nil,
                 nextLineText: nil,
                 isPlaying: isPlaying,
-                hasLiveTrack: true
+                hasLiveTrack: true,
+                artworkURL: artworkURL
             )
 
         case .loaded, .alignmentQueued, .alignmentRunning, .alignmentPreview:
@@ -286,7 +327,8 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
                     currentLineText: currentLine,
                     nextLineText: nextLine,
                     isPlaying: isPlaying,
-                    hasLiveTrack: true
+                    hasLiveTrack: true,
+                    artworkURL: artworkURL
                 )
             } else if !isSync {
                 let displayTitle = title.isEmpty ? "Lyric Island" : title
@@ -298,7 +340,8 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
                     currentLineText: nil,
                     nextLineText: nil,
                     isPlaying: isPlaying,
-                    hasLiveTrack: true
+                    hasLiveTrack: true,
+                    artworkURL: artworkURL
                 )
             } else {
                 let displayTitle = title.isEmpty ? "Lyric Island" : title
@@ -311,7 +354,8 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
                     currentLineText: nil,
                     nextLineText: nextLine,
                     isPlaying: isPlaying,
-                    hasLiveTrack: true
+                    hasLiveTrack: true,
+                    artworkURL: artworkURL
                 )
             }
 
@@ -325,7 +369,8 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
                 currentLineText: nil,
                 nextLineText: nil,
                 isPlaying: isPlaying,
-                hasLiveTrack: true
+                hasLiveTrack: true,
+                artworkURL: artworkURL
             )
         }
     }
