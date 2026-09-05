@@ -75,22 +75,17 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
                 throw LyricsRepositoryError.sqlite("foreign_keys 未启用")
             }
             let existingVersion = try scalarInt("PRAGMA user_version;")
-            let allowV4Migration = permitsV4Migration(databaseAlreadyExisted: databaseAlreadyExisted)
-            let allowV6Migration = allowV4Migration && permitsReadingSchemaMigration()
-            if databaseAlreadyExisted, existingVersion > 0, existingVersion < 3 {
-                try createMigrationBackup(label: "pre-v3")
+            // Existing user databases follow the same forward migration path as
+            // fresh installs. A consistent snapshot is required before any upgrade.
+            if databaseAlreadyExisted, existingVersion < DatabaseMigrator.currentVersion {
+                try createMigrationBackup(label: "pre-v\(DatabaseMigrator.currentVersion)")
             }
-            if databaseAlreadyExisted,
-               existingVersion >= 3,
-               existingVersion < DatabaseMigrator.currentVersion,
-               allowV4Migration {
-                try createMigrationBackup(label: "pre-v4")
+            try DatabaseMigrator.migrate(handle)
+            guard try scalarInt("PRAGMA user_version;") == DatabaseMigrator.currentVersion else {
+                throw LyricsRepositoryError.migrationFailed(
+                    DatabaseMigrator.currentVersion, "数据库升级未完成，原有数据已保留。"
+                )
             }
-            try DatabaseMigrator.migrate(
-                handle,
-                allowV4Migration: allowV4Migration,
-                allowV6Migration: allowV6Migration
-            )
             try reloadRedirectResolver()
             prepared = true
         } catch let error as LyricsRepositoryError {
@@ -1969,7 +1964,6 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
 
     private func createMigrationBackup(label: String) throws {
         guard let database else { throw LyricsRepositoryError.unavailable("SQLite handle 已关闭") }
-        _ = sqlite3_wal_checkpoint_v2(database, nil, SQLITE_CHECKPOINT_FULL, nil, nil)
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyyMMdd-HHmmss"
@@ -1979,11 +1973,39 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         if FileManager.default.fileExists(atPath: destination.path) {
             destination = directory.appendingPathComponent("\(base).\(label)-\(UUID().uuidString.prefix(8)).sqlite3")
         }
-        do {
-            try FileManager.default.copyItem(at: databaseURL, to: destination)
-        } catch {
-            throw LyricsRepositoryError.unavailable("migration \(label) 备份失败：\(error.localizedDescription)")
+        // SQLite's online backup includes committed WAL pages even while a
+        // reader holds a snapshot. Copying only the main file can lose them.
+        let temporary = destination.appendingPathExtension("\(UUID().uuidString).partial")
+        defer {
+            for suffix in ["", "-wal", "-shm", "-journal"] {
+                try? FileManager.default.removeItem(atPath: temporary.path + suffix)
+            }
         }
+        do {
+            var backupDatabase: OpaquePointer?
+            guard sqlite3_open_v2(temporary.path, &backupDatabase, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, nil) == SQLITE_OK,
+                  let backupDatabase else {
+                if let backupDatabase { sqlite3_close(backupDatabase) }
+                throw LyricsRepositoryError.unavailable("migration \(label) 备份无法创建")
+            }
+            defer { sqlite3_close(backupDatabase) }
+            guard let backup = sqlite3_backup_init(backupDatabase, "main", database, "main") else {
+                throw LyricsRepositoryError.unavailable("migration \(label) 备份初始化失败")
+            }
+            let step = sqlite3_backup_step(backup, -1)
+            let finish = sqlite3_backup_finish(backup)
+            guard step == SQLITE_DONE, finish == SQLITE_OK else {
+                // Preserve the source and abort; never migrate after a failed backup.
+                throw LyricsRepositoryError.unavailable("migration \(label) 备份失败 (\(step)/\(finish))")
+            }
+            // Make the snapshot a standalone read-only recovery file, even
+            // when the source database uses WAL journaling.
+            guard sqlite3_exec(backupDatabase, "PRAGMA journal_mode=DELETE;", nil, nil, nil) == SQLITE_OK else {
+                throw LyricsRepositoryError.unavailable("migration \(label) 备份日志整理失败")
+            }
+        }
+        // Only a completed, closed snapshot receives the recovery filename.
+        try FileManager.default.moveItem(at: temporary, to: destination)
     }
 
     private func ensurePrepared() throws {
@@ -2056,36 +2078,6 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         defer { sqlite3_finalize(statement) }
         try bindText(name, at: 1, to: statement)
         return sqlite3_step(statement) == SQLITE_ROW
-    }
-
-    private func permitsV4Migration(databaseAlreadyExisted: Bool) -> Bool {
-        if ProcessInfo.processInfo.environment["SPOTIFYLYRICS_ALLOW_V4_MIGRATION"] == "1" {
-            return true
-        }
-        // Explicit Debug/test database overrides are intentionally treated as
-        // disposable copies. The formal Application Support database remains
-        // v3 and read-only until migration is explicitly enabled.
-        if let override = ProcessInfo.processInfo.environment["SPOTIFYLYRICS_DATABASE_PATH"],
-           !override.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return true
-        }
-        let productionURL = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Application Support/SpotifyLyrics/SpotifyLyrics.sqlite3")
-            .standardizedFileURL
-        if databaseAlreadyExisted, databaseURL.standardizedFileURL == productionURL {
-            return false
-        }
-        return true
-    }
-
-    private func permitsReadingSchemaMigration() -> Bool {
-        // Reading v6 is deliberately a disposable validation schema. The
-        // formal Application Support database remains on its accepted v4
-        // schema until a separately authorized migration task exists.
-        let productionURL = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Application Support/SpotifyLyrics/SpotifyLyrics.sqlite3")
-            .standardizedFileURL
-        return databaseURL.standardizedFileURL != productionURL
     }
 
     private func resolvedCanonicalStableKey(_ stableKey: String) throws -> String {

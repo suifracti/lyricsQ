@@ -2,6 +2,8 @@
 
 Status snapshot: 2026-09-05.
 
+Production database upgrade repaired: existing v5 databases now advance to v8 after a consistent backup; library/history/statistics verified against the real database and after restart. See [upgrade audit](work/experience-restoration/production-database-upgrade-report.md).
+
 Main V3 utility shortcuts: 我的歌词库、最近播放、听歌统计 now have direct toolbar buttons, using the existing shared library window and selecting its matching tab. Existing Settings entries remain available.
 
 Main V3 preview update: long original lyrics now use measured balanced wrapping, replacing the earlier approximate character-count breaker. Screenshot phrases pass five width checks; plain/timed ranges agree. Inline ruby remains separate. See [balanced lyric breaks report](work/experience-restoration/balanced-lyric-breaks-report.md).
