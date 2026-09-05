@@ -7,7 +7,7 @@ V3="$ROOT/SpotifyLyrics/Views/MainWindow/AppleMusicImmersiveV3WindowView.swift"
 test -f "$V3" || { echo "FAIL: missing V3 window" >&2; exit 1; }
 
 viewport="$({
-  sed -n '/private struct AppleMusicImmersiveV3LyricsViewport/,/private enum V3JapaneseReadingCache/p' "$V3"
+  sed -n '/private struct AppleMusicImmersiveV3LyricsViewport/,/enum V3JapaneseReadingCache/p' "$V3"
 } || true)"
 
 # The V3 rows change height when the active line and auxiliary layers change.

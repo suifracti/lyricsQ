@@ -32,13 +32,13 @@ enum V3ResponsiveGeometry {
 
     enum ForegroundLayout: Equatable {
         case adaptiveSplit
+        case portrait
         case lyricsFocus
     }
 
-    /// Resolves the foreground composition without an implicit poster mode.
-    /// A compact lyrics focus is an explicit preference; otherwise the split
-    /// canvas remains the same composition all the way down to the technical
-    /// window minimum and only its metrics shrink continuously.
+    /// Preserve the continuous split in landscape and near-square windows.
+    /// Tall windows gain a player header and a full-width reading viewport;
+    /// the explicit compact focus preference always takes priority.
     static func foregroundLayout(
         canvasSize: CGSize,
         automaticLyricsFocus: Bool,
@@ -51,7 +51,46 @@ enum V3ResponsiveGeometry {
            width <= compactFocusWidth || height <= compactFocusHeight {
             return .lyricsFocus
         }
+        if height >= 800, height >= width * 1.10 { return .portrait }
         return .adaptiveSplit
+    }
+
+    struct PortraitMetrics: Equatable {
+        let horizontalPadding: CGFloat
+        let topPadding: CGFloat
+        let bottomPadding: CGFloat
+        let contentWidth: CGFloat
+        let headerHeight: CGFloat
+        let headerInset: CGFloat
+        let headerGap: CGFloat
+        let coverColumnWidth: CGFloat
+        let coverSize: CGFloat
+        let metadataWidth: CGFloat
+        let gap: CGFloat
+        let lyricsHeight: CGFloat
+    }
+
+    static func portraitMetrics(canvasSize: CGSize, artworkScale: CGFloat) -> PortraitMetrics {
+        let width = finitePositive(canvasSize.width)
+        let height = finitePositive(canvasSize.height)
+        let horizontalPadding = min(40, max(32, width * 0.04))
+        let contentWidth = max(1, width - horizontalPadding * 2)
+        let topPadding: CGFloat = 72
+        let bottomPadding: CGFloat = 28
+        let gap: CGFloat = 24
+        let headerInset: CGFloat = 16
+        let headerGap: CGFloat = 24
+        let headerHeight = min(312, max(248, contentWidth * 0.34 + headerInset * 2))
+        let coverColumnWidth = min(headerHeight - headerInset * 2, contentWidth * 0.36)
+        let normalizedScale = min(1, max(0, (finiteValue(artworkScale) - 0.8) / 0.6))
+        let coverSize = coverColumnWidth * (0.70 + normalizedScale * 0.30)
+        return PortraitMetrics(
+            horizontalPadding: horizontalPadding, topPadding: topPadding, bottomPadding: bottomPadding,
+            contentWidth: contentWidth, headerHeight: headerHeight, headerInset: headerInset,
+            headerGap: headerGap, coverColumnWidth: coverColumnWidth, coverSize: coverSize,
+            metadataWidth: max(1, contentWidth - headerInset * 2 - headerGap - coverColumnWidth),
+            gap: gap, lyricsHeight: max(1, height - topPadding - bottomPadding - gap - headerHeight)
+        )
     }
 
     struct ColumnSplit: Equatable {
@@ -101,7 +140,8 @@ enum V3ResponsiveGeometry {
         // Metadata, progress, time labels, playback buttons and their spacing
         // keep a fixed vertical budget. This is what prevents a 140% cover
         // from pushing transport controls below a short wide window.
-        let reservedTrackChromeHeight = min(196, max(0, availableHeight - 1))
+        let chromeBudget = interpolate(from: 248, to: 280, progress: interpolation)
+        let reservedTrackChromeHeight = min(chromeBudget, max(0, availableHeight - 1))
         let maximumCover = min(
             max(1, split.artwork - 12),
             max(1, availableHeight - reservedTrackChromeHeight),
@@ -181,7 +221,7 @@ enum V3ResponsiveGeometry {
         let height = finitePositive(canvasSize.height)
         let readingWidth = min(860, max(1, width - 80))
         return CGRect(x: (width - readingWidth) / 2, y: 76,
-                      width: readingWidth, height: max(1, height - 180))
+                      width: readingWidth, height: max(1, height - 192))
     }
 
     /// Largest centered aspect-fit image. Legacy zoom/position never crop the stage.

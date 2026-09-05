@@ -46,6 +46,25 @@ struct V3ResponsiveGeometryContract {
             "automatic lyrics focus remains an explicit compact-window behavior"
         )
 
+        for size in [CGSize(width: 760, height: 1000), CGSize(width: 800, height: 1200), CGSize(width: 900, height: 1400)] {
+            precondition(V3ResponsiveGeometry.foregroundLayout(canvasSize: size, automaticLyricsFocus: false) == .portrait,
+                         "Tall windows must give lyrics their own full-width region")
+            precondition(V3ResponsiveGeometry.foregroundLayout(canvasSize: size, automaticLyricsFocus: true) == .lyricsFocus,
+                         "Explicit automatic focus retains priority in portrait")
+            for scale: CGFloat in [0.8, 1.0, 1.4] {
+                let m = V3ResponsiveGeometry.portraitMetrics(canvasSize: size, artworkScale: scale)
+                precondition(m.contentWidth >= size.width * 0.85, "Portrait lyrics use the window width")
+                precondition(m.lyricsHeight > size.height * 0.5, "Lyrics retain most of the portrait height")
+                precondition(m.topPadding + m.headerHeight + m.gap + m.lyricsHeight + m.bottomPadding <= size.height + 0.001,
+                             "Header and lyrics must fit without an outer scroll view")
+                precondition(m.coverSize <= m.headerHeight - m.headerInset * 2 + 0.001)
+                precondition(m.metadataWidth >= 320, "Long metadata retains a usable column beside artwork")
+                precondition(m.coverColumnWidth + m.headerGap + m.metadataWidth + m.headerInset * 2 <= m.contentWidth + 0.001)
+            }
+        }
+        precondition(V3ResponsiveGeometry.foregroundLayout(canvasSize: CGSize(width: 760, height: 800), automaticLyricsFocus: false) == .adaptiveSplit,
+                     "Near-square compact windows must not unexpectedly become portrait")
+
         let narrowCover = V3ResponsiveGeometry.boundedCoverSize(
             availableWidth: 170,
             availableHeight: 120,

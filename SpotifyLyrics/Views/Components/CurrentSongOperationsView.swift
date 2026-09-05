@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 /// Compact, in-place operations for the currently playing TrackIdentity.
 /// Every command is forwarded to the existing PlaybackState/session methods;
@@ -46,7 +47,13 @@ struct CurrentSongOperationsView: View {
                         .padding(.horizontal, 8)
                         .frame(height: 32)
                 }
-                .help("切换当前歌曲的歌词版本")
+                .help("切换、编辑或复制当前歌词")
+                .contextMenu {
+                    Button("复制整首原文", systemImage: "doc.on.doc") {
+                        LyricsCopyText.copy(LyricsCopyText.format(state.liveLyrics))
+                    }
+                    .disabled(state.liveLyrics.isEmpty)
+                }
                 .accessibilityIdentifier("lyrics.versionShortcut")
             } else {
                 operationsPanel
@@ -112,6 +119,12 @@ struct CurrentSongOperationsView: View {
         }
         .sheet(isPresented: $showLyricsVersionPicker) {
             LyricsVersionPickerView(
+                lines: state.liveLyrics,
+                title: state.currentTrack.title,
+                trackStableKey: state.currentTrackIdentity?.stableKey,
+                artistDisplay: state.currentTrack.artist,
+                language: state.liveLyricsLanguage,
+                userEntries: settings.readingUserDictionary.load(),
                 versions: lyricsVersions,
                 currentVersionID: state.liveLyricsVersionID,
                 isLoading: isLoadingLyricsVersions,
@@ -954,6 +967,13 @@ private struct TranslationCandidatePreviewView: View {
 }
 
 private struct LyricsVersionPickerView: View {
+    let lines: [LyricLine]
+    let title: String
+    let trackStableKey: String?
+    let artistDisplay: String?
+    let language: String?
+    let userEntries: [ReadingDictionaryEntry]
+    @State private var showCopy = false
     let versions: [StoredEditableLyricsVersion]
     let currentVersionID: UUID?
     let isLoading: Bool
@@ -969,7 +989,7 @@ private struct LyricsVersionPickerView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
-                Text("歌词版本")
+                Text("歌词版本与编辑")
                     .font(.title3.weight(.semibold))
                 Spacer()
                 Button("关闭") { dismiss() }
@@ -1007,6 +1027,9 @@ private struct LyricsVersionPickerView: View {
                     .disabled(adoptingVersionID != nil)
             }
 
+            Button("选择并复制歌词", systemImage: "doc.on.doc") { showCopy = true }
+                .disabled(lines.isEmpty)
+
             if !message.isEmpty, !isLoading, !versions.isEmpty {
                 Text(message)
                     .font(.caption)
@@ -1015,7 +1038,11 @@ private struct LyricsVersionPickerView: View {
             }
         }
         .padding(20)
-        .frame(width: 520, height: 460)
+        .frame(width: 520, height: 500)
+        .sheet(isPresented: $showCopy) {
+            LyricsCopyView(lines: lines, title: title, trackStableKey: trackStableKey,
+                           artistDisplay: artistDisplay, language: language, userEntries: userEntries)
+        }
     }
 
     private func versionRow(_ version: StoredEditableLyricsVersion) -> some View {
@@ -1062,5 +1089,176 @@ private struct LyricsVersionPickerView: View {
         }
         .padding(12)
         .background(.quaternary.opacity(0.28), in: RoundedRectangle(cornerRadius: 10))
+    }
+}
+
+
+/// Formats the selected saved/displayed layers without touching their content,
+/// timing, versions, or the playback position.
+enum LyricsCopyText {
+    static func resolvingReadings(_ lines: [LyricLine], trackStableKey: String?, artistDisplay: String?,
+                                  language: String?, userEntries: [ReadingDictionaryEntry]) -> [LyricLine] {
+        lines.map { source in
+            guard !Task.isCancelled else { return source }
+            let surface = source.readingSurfaceText ?? source.originalText
+            guard LyricsLanguageGate.allowsJapaneseReadings(language: language, text: surface) else { return source }
+            func hasText(_ text: String?) -> Bool { !(text?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true) }
+            var line = source
+            if hasText(source.kanaText) {
+                // Confirmed provider/manual kana outranks local morphology.
+                if !hasText(source.romajiText), let kana = source.kanaText {
+                    line.romajiText = JapaneseRomanizer.romanizeConfirmedKana(kana)
+                }
+            } else if let reading = V3JapaneseReadingCache.reading(for: surface, userEntries: userEntries,
+                                                                  trackStableKey: trackStableKey, artistDisplay: artistDisplay) {
+                line.kanaText = reading.kanaText
+                if !hasText(source.romajiText) { line.romajiText = reading.romajiText }
+            }
+            return line
+        }
+    }
+
+    static func format(_ lines: [LyricLine], original: Bool = true, kana: Bool = false,
+                       romaji: Bool = false, translation: Bool = false, selectedIndices: Set<Int>? = nil) -> String {
+        lines.enumerated().compactMap { index, line -> String? in
+            if let selectedIndices, !selectedIndices.contains(index) { return nil }
+            let layers: [String?] = [original ? line.originalText : nil,
+                                    kana ? line.kanaText : nil,
+                                    romaji ? line.romajiText : nil,
+                                    translation ? line.translationText : nil]
+            let text = layers.compactMap { $0 }.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }.joined(separator: "\n")
+            return text.isEmpty ? nil : text
+        }.joined(separator: original && !kana && !romaji && !translation ? "\n" : "\n\n")
+    }
+
+    static func copy(_ text: String) {
+        guard !text.isEmpty else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+    }
+}
+
+struct LyricsCopyView: View {
+    let lines: [LyricLine]
+    let title: String
+    let trackStableKey: String?
+    let artistDisplay: String?
+    let language: String?
+    let userEntries: [ReadingDictionaryEntry]
+    @Environment(\.dismiss) private var dismiss
+    @State private var original = true
+    @State private var kana = false
+    @State private var romaji = false
+    @State private var translation = false
+    @State private var copied = false
+    @State private var resolvedLines: [LyricLine]?
+    @State private var isResolving = true
+    @State private var showPassages: Bool
+    @State private var selectedIndices: Set<Int>
+
+    init(lines: [LyricLine], title: String, trackStableKey: String? = nil, artistDisplay: String? = nil,
+         language: String? = nil, userEntries: [ReadingDictionaryEntry] = [], initialSelectedIndex: Int? = nil) {
+        self.lines = lines
+        self.title = title
+        self.trackStableKey = trackStableKey
+        self.artistDisplay = artistDisplay
+        self.language = language
+        self.userEntries = userEntries
+        _showPassages = State(initialValue: initialSelectedIndex != nil)
+        _selectedIndices = State(initialValue: initialSelectedIndex.map { lines.indices.contains($0) ? Set([$0]) : [] } ?? Set(lines.indices))
+    }
+
+    private var copyLines: [LyricLine] { resolvedLines ?? lines }
+
+    private var text: String {
+        LyricsCopyText.format(copyLines, original: original, kana: kana, romaji: romaji, translation: translation, selectedIndices: selectedIndices)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("复制歌词").font(.title3.bold())
+                    Text(title).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                }
+                Spacer()
+                Button("关闭") { dismiss() }
+            }
+            HStack(spacing: 18) {
+                Toggle("原文", isOn: $original)
+                Toggle("假名", isOn: $kana).disabled(!copyLines.contains { $0.kanaText?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false })
+                Toggle("罗马音", isOn: $romaji).disabled(!copyLines.contains { $0.romajiText?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false })
+                Toggle("翻译", isOn: $translation).disabled(!copyLines.contains { $0.translationText?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false })
+            }
+            .toggleStyle(.checkbox)
+            if isResolving {
+                ProgressView("正在准备可复制的读音…").controlSize(.small)
+            }
+            HStack {
+                Button(showPassages ? "收起段落选择" : "选择段落") { showPassages.toggle() }
+                Text("已选 \(selectedIndices.count)/\(copyLines.count) 行").font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                Button("全选") { selectedIndices = Set(copyLines.indices) }
+                Button("清空") { selectedIndices = [] }
+            }
+            if showPassages {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 8) {
+                        ForEach(Array(copyLines.enumerated()), id: \.offset) { index, line in
+                            Toggle(isOn: Binding(
+                                get: { selectedIndices.contains(index) },
+                                set: { selected in
+                                    if selected { selectedIndices.insert(index) } else { selectedIndices.remove(index) }
+                                }
+                            )) {
+                                Text(line.originalText).lineLimit(2).frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                            .toggleStyle(.checkbox)
+                        }
+                    }
+                    .padding(8)
+                }
+                .frame(maxHeight: 140)
+                .background(.quaternary.opacity(0.2), in: RoundedRectangle(cornerRadius: 8))
+            }
+            ScrollView {
+                Text(text.isEmpty ? "请选择要复制的内容" : text)
+                    .font(.system(size: 16))
+                    .lineSpacing(6)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(16)
+            }
+            .background(.background.opacity(0.45), in: RoundedRectangle(cornerRadius: 12))
+            HStack {
+                Text("选中文字后按 ⌘C，或复制所选段落。")
+                    .font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                Button(copied ? "已复制" : (selectedIndices.count == copyLines.count ? "复制全部" : "复制所选"), systemImage: copied ? "checkmark" : "doc.on.doc") {
+                    LyricsCopyText.copy(text)
+                    copied = true
+                }
+                .disabled(text.isEmpty)
+                .buttonStyle(.borderedProminent)
+            }
+        }
+        .padding(22)
+        .frame(width: 600, height: 560)
+        .onChange(of: text) { _, _ in copied = false }
+        .task {
+            let sourceLines = lines
+            let entries = userEntries
+            let scope = trackStableKey
+            let artist = artistDisplay
+            let sourceLanguage = language
+            let preparation = Task.detached(priority: .userInitiated) {
+                LyricsCopyText.resolvingReadings(sourceLines, trackStableKey: scope, artistDisplay: artist,
+                                                language: sourceLanguage, userEntries: entries)
+            }
+            let prepared = await withTaskCancellationHandler(operation: { await preparation.value }, onCancel: { preparation.cancel() })
+            guard !Task.isCancelled else { return }
+            resolvedLines = prepared
+            isResolving = false
+        }
     }
 }

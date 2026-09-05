@@ -143,6 +143,7 @@ public final class AppSettingsStore: ObservableObject {
         public static let aiWorkflowID = "ai.workflowID"
         public static let settingsCenterPresentation = "settings.centerPresentation"
         public static let readingPreferences = "reading.preferences.v1"
+        public static let v3StageReadabilityEnabled = "v3.stageReadabilityEnabled"
         public static let v3BackdropBlurRadius = "v3.backdropBlurRadius"
         public static let v3BackdropBlurAmbient = "v3.backdropBlur.ambient.v1"
         public static let v3BackdropBlurStage = "v3.backdropBlur.stage.v1"
@@ -303,6 +304,10 @@ public final class AppSettingsStore: ObservableObject {
         didSet { defaults.set(aiTranslationAPIKeyConfigured, forKey: Key.aiAPIKeyConfigured) }
     }
 
+    @Published public var v3StageReadabilityEnabled: Bool {
+        didSet { defaults.set(v3StageReadabilityEnabled, forKey: Key.v3StageReadabilityEnabled) }
+    }
+
     @Published public var v3BackdropBlurRadius: Double {
         didSet {
             defaults.set(v3BackdropBlurRadius, forKey: Key.v3BackdropBlurRadius)
@@ -380,6 +385,7 @@ public final class AppSettingsStore: ObservableObject {
             self.v3BlurByPresentation[presentation] = stored
                 ?? (presentation == selectedPresentation ? legacyBlur : blurDefaults[presentation] ?? legacyBlur)
         }
+        self.v3StageReadabilityEnabled = defaults.bool(forKey: Key.v3StageReadabilityEnabled)
         self.v3BackdropBlurRadius = self.v3BlurByPresentation[selectedPresentation] ?? legacyBlur
         self.v3ArtworkPosition = defaults.string(forKey: Key.v3ArtworkPosition) ?? "left"
         self.v3ArtworkSizeScale = defaults.object(forKey: Key.v3ArtworkSizeScale) as? Double ?? 1.0

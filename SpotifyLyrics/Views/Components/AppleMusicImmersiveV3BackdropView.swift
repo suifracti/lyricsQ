@@ -248,7 +248,7 @@ struct AppleMusicImmersiveV3BackdropView: View {
         }
         .clipped()
         // Full original cover over a diffuse extension; lyric layout is unchanged.
-        Color.black.opacity(increaseContrast ? 0.40 : 0.24)
+        Color.black.opacity(settings.v3StageReadabilityEnabled ? 0.56 : (increaseContrast ? 0.40 : 0.24))
         LinearGradient(colors: [.black.opacity(0.08), .clear, .black.opacity(0.30)],
                        startPoint: .top, endPoint: .bottom)
     }

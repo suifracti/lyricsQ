@@ -98,6 +98,7 @@ private enum ExperienceArtwork {
             (text as NSString).draw(at: point, withAttributes: attrs)
         }
         ("AFTER\nTHE RAIN" as NSString).draw(in: CGRect(x: 50, y: size.height*0.36, width: size.width-100, height: 210), withAttributes: [.font:NSFont.systemFont(ofSize:56,weight:.black),.foregroundColor:NSColor.white])
+        if kind == "white" { NSColor.white.setFill(); bounds.fill() }
         image.unlockFocus()
         guard let tiff=image.tiffRepresentation, let bitmap=NSBitmapImageRep(data:tiff), let png=bitmap.representation(using:.png,properties:[:]) else { return nil }
         let url=ExperienceArguments.root.appendingPathComponent("\(kind).png")
@@ -128,6 +129,11 @@ struct ExperienceVisualHostApp: App {
         if let font = Double(ExperienceArguments.value("--desktop-font", fallback: "")) { defaults.set(font, forKey: "desktopLyrics.fontSize") }
         let settings=AppSettingsStore(defaults:defaults)
         settings.floatingWindowAlwaysOnTop = true
+        precondition(!settings.v3StageReadabilityEnabled)
+        settings.v3StageReadabilityEnabled = true
+        precondition(AppSettingsStore(defaults: defaults).v3StageReadabilityEnabled)
+        settings.v3StageReadabilityEnabled = ProcessInfo.processInfo.arguments.contains("--stage-readability")
+        precondition(AppSettingsStore(defaults: defaults).v3StageReadabilityEnabled == settings.v3StageReadabilityEnabled)
         if ProcessInfo.processInfo.arguments.contains("--ruby-correction") {
             var display = settings.displayPreferences
             display.showKana = true
@@ -190,6 +196,38 @@ private struct ExperienceFixtureRoot: View {
                 if ExperienceArguments.surface == "capsule" {
                     capsuleController.show(state: playback, settings: settings)
                     if ExperienceArguments.value("--capsule-state", fallback: "collapsed") == "expanded" { capsuleController.expand() }
+                }
+                if ProcessInfo.processInfo.arguments.contains("--copy-contract") {
+                    var first = LyricLine(timestamp: 68, originalText: "身体にしてあげよう")
+                    first.kanaText = "からだにしてあげよう"
+                    first.romajiText = "karada ni shite ageyou"
+                    first.translationText = "让身体…"
+                    let last = LyricLine(timestamp: 72, originalText: "またね")
+                    let lines = [first, last]
+                    precondition(LyricsCopyText.format(lines) == "身体にしてあげよう\nまたね")
+                    precondition(LyricsCopyText.format(lines, original: false, kana: true) == "からだにしてあげよう")
+                    precondition(LyricsCopyText.format(lines, romaji: true, translation: true) == "身体にしてあげよう\nkarada ni shite ageyou\n让身体…\n\nまたね")
+                    precondition(LyricsCopyText.format(lines, original: false).isEmpty)
+                    precondition(LyricsCopyText.format([]).isEmpty)
+                    precondition(lines[0].timestamp == 68 && lines[0].originalText == first.originalText)
+                    precondition(LyricsCopyText.format(lines, selectedIndices: [1]) == "またね")
+                    precondition(LyricsCopyText.format(lines, selectedIndices: []).isEmpty)
+                    precondition(LyricsCopyText.format(lines, kana: true, selectedIndices: [0, 99]) == "身体にしてあげよう\nからだにしてあげよう")
+                    let scope = "spotify-id:copy-fixture|metadata:copy|singer|album|170"
+                    let correction = try! ReadingRubyCorrection.entry(surface: "身体", reading: "からだ", trackStableKey: scope)
+                    let raw = LyricLine(timestamp: 68, originalText: "身体にしてあげよう", translationText: "保留翻译")
+                    let automatic = LyricsCopyText.resolvingReadings([raw], trackStableKey: scope, artistDisplay: "Singer", language: "ja", userEntries: [correction])
+                    precondition(automatic[0].kanaText == "からだにしてあげよう")
+                    precondition(automatic[0].romajiText?.contains("karada") == true)
+                    precondition(automatic[0].translationText == "保留翻译" && automatic[0].timestamp == raw.timestamp)
+                    precondition(raw.kanaText == nil && raw.romajiText == nil)
+                    let confirmed = LyricsCopyText.resolvingReadings([first], trackStableKey: scope, artistDisplay: "Singer", language: "ja", userEntries: [])
+                    precondition(confirmed[0].kanaText == first.kanaText && confirmed[0].romajiText == first.romajiText && confirmed[0].translationText == first.translationText)
+                    let chinese = LyricsCopyText.resolvingReadings([LyricLine(timestamp: 0, originalText: "你好世界")], trackStableKey: nil, artistDisplay: nil, language: "zh", userEntries: [])
+                    precondition(chinese[0].kanaText == nil && chinese[0].romajiText == nil)
+                    let unknownHan = LyricsCopyText.resolvingReadings([LyricLine(timestamp: 0, originalText: "身体")], trackStableKey: nil, artistDisplay: nil, language: nil, userEntries: [])
+                    precondition(unknownHan[0].kanaText == nil && unknownHan[0].romajiText == nil)
+                    print("LYRICS_COPY_CONTRACT_PASS")
                 }
                 try? await Task.sleep(for:.seconds(2))
                 if ProcessInfo.processInfo.arguments.contains("--ruby-save-contract") {
