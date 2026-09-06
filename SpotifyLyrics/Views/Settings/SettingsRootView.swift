@@ -207,6 +207,7 @@ private struct GeneralSettingsView: View {
                     .foregroundStyle(.secondary)
                 Toggle("启动时恢复上次窗口状态", isOn: $settings.restoreWindowState)
                 Toggle("主窗口保持置顶", isOn: $settings.keepMainWindowOnTop)
+                LyricsPresentationOffsetControl(settings: settings)
             }
 
             Section("悬浮歌词") {
@@ -228,9 +229,7 @@ private struct GeneralSettingsView: View {
                     Slider(value: $settings.floatingDesktopFontSize, in: 22...64, step: 1)
                     Text("\(Int(settings.floatingDesktopFontSize))").monospacedDigit().frame(width: 30)
                 }
-                Picker("桌面歌词配色", selection: $settings.floatingDesktopTheme) {
-                    ForEach(FloatingDesktopTheme.allCases, id: \.rawValue) { Text($0.title).tag($0.rawValue) }
-                }
+                FloatingDesktopColorControls(settings: settings)
                 Toggle("悬浮歌词保持置顶", isOn: $settings.floatingWindowAlwaysOnTop)
                 Picker("默认交互状态", selection: floatingModeBinding) {
                     ForEach(FloatingLyricsInteractionMode.allCases, id: \.self) { mode in
@@ -238,7 +237,7 @@ private struct GeneralSettingsView: View {
                     }
                 }
                 HStack {
-                    Text("悬浮窗透明度")
+                    Text(settings.floatingLyricsPresentation == .transparentV2 && settings.floatingDesktopKeepsTextOpaque ? "背景不透明度" : "整个悬浮窗透明度")
                     Slider(value: $settings.floatingWindowOpacity, in: 0.45...1, step: 0.01)
                     Text(String(format: "%.0f%%", settings.floatingWindowOpacity * 100))
                         .font(.system(.caption, design: .monospaced))
@@ -248,6 +247,13 @@ private struct GeneralSettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Section("菜单栏") {
+                Toggle("在菜单栏显示歌词", isOn: $settings.menuBarLyricsEnabled)
+                Text("关闭后仅显示播放状态图标，点击图标仍可打开歌词与播放控制。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             Section("启动与切歌") {
@@ -522,10 +528,18 @@ private struct AISettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+                if selectedEngine.stableID == TranslationEngineID.codexChatGPT.rawValue {
+                    Label("由本机 Codex app-server 管理 ChatGPT 登录；不会读取或保存 auth.json / OAuth 原始凭据。首次使用会打开浏览器登录。", systemImage: "lock.shield")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 TextField("兼容接口地址（Base URL）", text: configurationBinding(\.baseURL))
                     .textFieldStyle(.roundedBorder)
+                    .disabled(selectedEngine.stableID == TranslationEngineID.codexChatGPT.rawValue)
                 TextField("模型（Model）", text: configurationBinding(\.model))
                     .textFieldStyle(.roundedBorder)
+                    .disabled(selectedEngine.stableID == TranslationEngineID.codexChatGPT.rawValue)
                 HStack {
                     Text("模型目录")
                     Spacer()
@@ -550,6 +564,7 @@ private struct AISettingsView: View {
                 }
                 SecureField("API Key（只保存到 Keychain）", text: $apiKeyDraft)
                     .textFieldStyle(.roundedBorder)
+                    .disabled(selectedEngine.stableID == TranslationEngineID.codexChatGPT.rawValue)
                 HStack {
                     Button(hasStoredKey ? "替换 API Key" : "保存 API Key") {
                         let value = apiKeyDraft.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -564,6 +579,7 @@ private struct AISettingsView: View {
                             statusMessage = "保存失败：\(error.localizedDescription)"
                         }
                     }
+                    .disabled(selectedEngine.stableID == TranslationEngineID.codexChatGPT.rawValue)
                     Button("清除 API Key", role: .destructive) {
                         do {
                             try keyStore.delete()
@@ -575,6 +591,7 @@ private struct AISettingsView: View {
                             statusMessage = "清除失败：\(error.localizedDescription)"
                         }
                     }
+                    .disabled(selectedEngine.stableID == TranslationEngineID.codexChatGPT.rawValue)
                     Text(hasStoredKey ? "已配置（Keychain）" : "未配置")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -710,9 +727,13 @@ private struct AISettingsView: View {
     private func engineAvailabilityText(_ engine: TranslationEngineMetadata) -> String {
         switch engine.availability {
         case .available:
-            return engine.stableID == TranslationEngineID.appleSystem.rawValue
-                ? "可用：系统翻译优先隐私与速度，歌词语境和文学性可能弱于 AI。"
-                : "可用：请确认 Base URL、模型和 API Key。"
+            if engine.stableID == TranslationEngineID.appleSystem.rawValue {
+                return "可用：系统翻译优先隐私与速度，歌词语境和文学性可能弱于 AI。"
+            }
+            if engine.stableID == TranslationEngineID.codexChatGPT.rawValue {
+                return "可用：翻译请求通过本机 Codex app-server，登录和令牌由 Codex 管理。"
+            }
+            return "可用：请确认 Base URL、模型和 API Key。"
         case .requiresConfiguration:
             return "需要配置：Base URL、模型和 API Key。"
         case .requiresSystemSupport:
@@ -743,8 +764,16 @@ private struct AISettingsView: View {
 
     private var promptContext: AITranslationContext {
         let lines = playback.liveLyrics.enumerated().map { index, line in
-            AITranslationSourceLine(index: index, original: line.originalText, kana: line.kanaText, romaji: line.romajiText)
+            AITranslationSourceLine(
+                index: index,
+                original: line.originalText,
+                kana: line.kanaText,
+                romaji: line.romajiText,
+                lineID: line.id,
+                timestamp: line.timestamp
+            )
         }
+        let profile = selectedProfile
         return AITranslationContext(
             title: playback.currentTrack.title,
             artist: playback.currentTrack.artist,
@@ -752,7 +781,9 @@ private struct AISettingsView: View {
             sourceLanguage: playback.liveLyricsLanguage ?? "und",
             targetLanguage: settings.aiTranslationConfiguration.targetLanguage,
             style: settings.aiTranslationConfiguration.style,
-            lines: lines.isEmpty ? [AITranslationSourceLine(index: 0, original: "")] : lines
+            lines: lines.isEmpty ? [AITranslationSourceLine(index: 0, original: "")] : lines,
+            styleSummary: profile?.styleSummary ?? "",
+            styleExamples: profile?.examples ?? []
         )
     }
 
@@ -847,6 +878,10 @@ private struct TranslationProfilesView: View {
                             Text(profile.basePresetID.displayName + (profile.isArchived ? " · 已归档" : ""))
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
+                            Text(profile.styleSummary.isEmpty ? "尚无已确认人工样例" : profile.styleSummary)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(2)
                         }
                         Spacer()
                         Button("复制", systemImage: "plus.square.on.square") {
@@ -856,6 +891,10 @@ private struct TranslationProfilesView: View {
                         Button("重命名", systemImage: "pencil") {
                             editingID = profile.id
                             editingName = profile.name
+                        }
+                        Button("重建摘要", systemImage: "arrow.clockwise") {
+                            settings.translationProfiles.regenerateSummary(profileID: profile.id)
+                            notifySettingsChanged()
                         }
                         Menu {
                             Button(profile.isArchived ? "恢复" : "归档") {

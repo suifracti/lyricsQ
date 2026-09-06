@@ -246,7 +246,7 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
                    started_at, last_observed_at, observed_playback_duration,
                    track_duration, completion_ratio
             FROM listening_history_sessions
-            ORDER BY last_observed_at DESC, started_at DESC
+            ORDER BY started_at DESC, last_observed_at DESC
             LIMIT ?;
             """)
         defer { sqlite3_finalize(statement) }
@@ -2061,14 +2061,28 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
     private func reloadRedirectResolver() throws {
         guard database != nil else { throw LyricsRepositoryError.unavailable("SQLite handle 已关闭") }
 
-        let keyStatement = try prepare("SELECT stable_key FROM tracks;")
+        let keyStatement = try prepare("SELECT stable_key, spotify_id, spotify_uri, title, artist_display, album, duration FROM tracks;")
         defer { sqlite3_finalize(keyStatement) }
         var knownKeys = Set<String>()
+        var recordingGroups: [String: [(key: String, duration: Double)]] = [:]
         while sqlite3_step(keyStatement) == SQLITE_ROW {
             guard let key = columnText(keyStatement, index: 0) else {
                 throw LyricsRepositoryError.invalidData("Track stable_key 缺失")
             }
             knownKeys.insert(key)
+            // Older playback snapshots used integer seconds while edited or
+            // refreshed snapshots retained fractions. Treat that drift as one
+            // recording only with a shared provider ID AND matching metadata.
+            if let id = TrackIdentity.canonicalSpotifyTrackID(columnText(keyStatement, index: 1))
+                ?? TrackIdentity.canonicalSpotifyTrackID(columnText(keyStatement, index: 2)) {
+                let title = TrackIdentity.normalizedComponent(columnText(keyStatement, index: 3) ?? "")
+                let artist = TrackIdentity.normalizedComponent(columnText(keyStatement, index: 4) ?? "")
+                let album = TrackIdentity.normalizedComponent(columnText(keyStatement, index: 5) ?? "")
+                let duration = sqlite3_column_double(keyStatement, 6)
+                if !title.isEmpty, !artist.isEmpty, duration.isFinite, duration > 0 {
+                    recordingGroups[[id, title, artist, album].joined(separator: "|"), default: []].append((key, duration))
+                }
+            }
         }
 
         var redirects: [String: String] = [:]
@@ -2102,7 +2116,24 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         for source in redirects.keys {
             _ = try resolver.resolve(source)
         }
-        redirectResolver = resolver
+        // This is an in-memory equivalence only: all physical rows, version
+        // IDs and explicit redirects remain intact. A wider duration spread
+        // is ambiguous, so never build a transitive chain of near matches.
+        for group in recordingGroups.values where group.count > 1 {
+            guard let minimum = group.map(\.duration).min(), let maximum = group.map(\.duration).max(),
+                  maximum - minimum <= 1 else { continue }
+            let explicitTargets = try Set(group.compactMap { member -> String? in
+                guard redirects[member.key] != nil else { return nil }
+                return try resolver.resolve(member.key)
+            })
+            // An explicit cross-recording redirect outranks automatic grouping.
+            guard explicitTargets.count <= 1, explicitTargets.isSubset(of: Set(group.map(\.key))),
+                  let canonical = explicitTargets.first ?? group.map(\.key).sorted().first else { continue }
+            for member in group where member.key != canonical && redirects[member.key] == nil {
+                redirects[member.key] = canonical
+            }
+        }
+        redirectResolver = TrackIdentityRedirectResolver(redirects: redirects, knownStableKeys: knownKeys)
     }
 
     private func hasTable(_ name: String) throws -> Bool {
@@ -2686,69 +2717,65 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
     /// - Saved fine timing versions (`lyrics_timing_versions` attached to lyrics)
     public func loadPersonalLibraryEntries(searchQuery: String? = nil) throws -> [PersonalLyricsLibraryEntry] {
         try prepare()
-
-        let sql = """
-            SELECT DISTINCT t.stable_key, t.spotify_id, t.spotify_uri, t.isrc,
-                   t.title, t.artist_display, t.album, t.duration, t.artwork_url, t.updated_at
-            FROM tracks AS t
-            LEFT JOIN lyrics_versions AS lv ON lv.track_stable_key = t.stable_key
-            LEFT JOIN translation_versions AS tv ON tv.lyrics_version_id = lv.id
-            LEFT JOIN reading_versions AS rv ON rv.lyrics_version_id = lv.id
-            LEFT JOIN lyrics_timing_versions AS ltv ON ltv.lyrics_version_id = lv.id
-            WHERE (
-                lv.id IS NOT NULL
-                OR tv.id IS NOT NULL
-                OR rv.id IS NOT NULL
-                OR ltv.id IS NOT NULL
-            )
-            ORDER BY t.updated_at DESC;
-            """
-
-        let statement = try prepare(sql)
+        // Newly saved keys must join their recording family without a restart.
+        try reloadRedirectResolver()
+        let statement = try prepare("""
+            SELECT stable_key FROM tracks AS t
+            WHERE EXISTS (SELECT 1 FROM lyrics_versions WHERE track_stable_key = t.stable_key)
+            ORDER BY stable_key;
+            """)
         defer { sqlite3_finalize(statement) }
-
+        var seen = Set<String>()
         var results: [PersonalLyricsLibraryEntry] = []
-        let queryFilter = searchQuery?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-
+        let filter = searchQuery?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         while sqlite3_step(statement) == SQLITE_ROW {
-            guard let stableKey = columnText(statement, index: 0),
-                  let title = columnText(statement, index: 4),
-                  let artist = columnText(statement, index: 5) else {
-                continue
-            }
-
-            let spotifyID = columnText(statement, index: 1)
-            let spotifyURI = columnText(statement, index: 2)
-            let isrc = columnText(statement, index: 3)
-            let album = columnText(statement, index: 6)
-            let duration = sqlite3_column_double(statement, 7)
-            let artworkURLText = columnText(statement, index: 8)
-            let artworkURL = artworkURLText.flatMap { URL(string: $0) }
-            let trackUpdatedAt = Date(timeIntervalSince1970: sqlite3_column_double(statement, 9))
-
-            if let filter = queryFilter, !filter.isEmpty {
-                let matchTitle = title.lowercased().contains(filter)
-                let matchArtist = artist.lowercased().contains(filter)
-                let matchAlbum = album?.lowercased().contains(filter) ?? false
-                guard matchTitle || matchArtist || matchAlbum else { continue }
-            }
-
-            let entry = try compileLibraryEntry(
-                stableKey: stableKey,
-                spotifyID: spotifyID,
-                spotifyURI: spotifyURI,
-                isrc: isrc,
-                title: title,
-                artist: artist,
-                album: album,
-                duration: duration,
-                artworkURL: artworkURL,
-                fallbackDate: trackUpdatedAt
-            )
-            results.append(entry)
+            guard let key = columnText(statement, index: 0) else { continue }
+            let canonical = try resolvedCanonicalStableKey(key)
+            guard seen.insert(canonical).inserted,
+                  let track = try fetchTrack(stableKey: canonical) else { continue }
+            if !filter.isEmpty, try !libraryFamilyMatches(stableKey: canonical, query: filter) { continue }
+            results.append(try compileLibraryEntry(
+                stableKey: canonical, spotifyID: track.spotifyID, spotifyURI: track.spotifyURI,
+                isrc: track.isrc, title: track.title, artist: track.artistDisplay, album: track.album,
+                duration: track.duration, artworkURL: track.artworkURL.flatMap(URL.init(string:)), fallbackDate: track.updatedAt
+            ))
         }
+        return results.sorted {
+            if $0.lastModifiedAt != $1.lastModifiedAt { return $0.lastModifiedAt > $1.lastModifiedAt }
+            return $0.trackStableKey < $1.trackStableKey
+        }
+    }
 
-        return results
+    /// Search every saved version, including auxiliary layers on historical
+    /// identity keys. The query is compared as literal text, never SQL syntax.
+    private func libraryFamilyMatches(stableKey: String, query: String) throws -> Bool {
+        let family = try resolvedIdentityFamily(stableKey: stableKey)
+        let statement = try prepare("""
+            WITH family AS (SELECT * FROM tracks WHERE stable_key IN (\(placeholders(count: family.count)))),
+                 versions AS (SELECT * FROM lyrics_versions WHERE track_stable_key IN (SELECT stable_key FROM family))
+            SELECT title || ' ' || artist_display || ' ' || album || ' ' || COALESCE(spotify_id, '') || ' ' || COALESCE(spotify_uri, '') || ' ' || COALESCE(isrc, '') AS text, 0 AS is_reading FROM family
+            UNION ALL SELECT value, 0 FROM track_aliases WHERE track_stable_key IN (SELECT stable_key FROM family)
+            UNION ALL SELECT raw_text, 0 FROM versions
+            UNION ALL SELECT original_text || ' ' || COALESCE(kana_text, '') || ' ' || COALESCE(romaji_text, '') || ' ' || COALESCE(translation_text, ''), 0
+                FROM lyric_lines WHERE lyrics_version_id IN (SELECT id FROM versions)
+            UNION ALL SELECT kana_text, 1 FROM lyric_lines WHERE lyrics_version_id IN (SELECT id FROM versions)
+            UNION ALL SELECT COALESCE(kana_text, '') || ' ' || COALESCE(romaji_text, ''), 1
+                FROM lyric_reading_layers WHERE lyrics_version_id IN (SELECT id FROM versions)
+            UNION ALL SELECT rl.reading_text, 1 FROM reading_lines rl JOIN reading_versions rv ON rv.id = rl.reading_version_id
+                WHERE rv.lyrics_version_id IN (SELECT id FROM versions)
+            UNION ALL SELECT tl.translated_text, 0 FROM translation_lines tl JOIN translation_versions tv ON tv.id = tl.translation_version_id
+                WHERE tv.lyrics_version_id IN (SELECT id FROM versions);
+            """)
+        defer { sqlite3_finalize(statement) }
+        for (index, key) in family.enumerated() { try bindText(key, at: Int32(index + 1), to: statement) }
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard let text = columnText(statement, index: 0) else { continue }
+            let options: String.CompareOptions = [.caseInsensitive, .diacriticInsensitive, .widthInsensitive]
+            if text.range(of: query, options: options) != nil { return true }
+            if sqlite3_column_int(statement, 1) == 1,
+               JapaneseRomanizer.romanizeConfirmedKana(text).range(of: query, options: options) != nil { return true }
+        }
+        return false
     }
 
     private func compileLibraryEntry(
@@ -2763,14 +2790,15 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         artworkURL: URL?,
         fallbackDate: Date
     ) throws -> PersonalLyricsLibraryEntry {
+        let family = try resolvedIdentityFamily(stableKey: stableKey)
         let lyricsStmt = try prepare("""
             SELECT id, is_manually_edited, is_locked, confidence, updated_at, source
             FROM lyrics_versions
-            WHERE track_stable_key = ?
+            WHERE track_stable_key IN (\(placeholders(count: family.count)))
             ORDER BY is_preferred DESC, is_locked DESC, confidence DESC, updated_at DESC;
             """)
         defer { sqlite3_finalize(lyricsStmt) }
-        try bindText(stableKey, at: 1, to: lyricsStmt)
+        for (index, key) in family.enumerated() { try bindText(key, at: Int32(index + 1), to: lyricsStmt) }
 
         var lyricsVersionCount = 0
         var hasLockedLyrics = false
@@ -2937,6 +2965,9 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
 
     public func loadPersonalLibraryTrackDetail(stableKey: String) throws -> PersonalLyricsLibraryTrackDetail? {
         try prepare()
+        try reloadRedirectResolver()
+        let stableKey = try resolvedCanonicalStableKey(stableKey)
+        let family = try resolvedIdentityFamily(stableKey: stableKey)
 
         let trackStmt = try prepare("""
             SELECT stable_key, spotify_id, spotify_uri, isrc, title, artist_display,
@@ -2982,11 +3013,11 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
                    lv.confidence, lv.created_at, lv.updated_at,
                    (SELECT COUNT(*) FROM lyric_lines WHERE lyrics_version_id = lv.id)
             FROM lyrics_versions AS lv
-            WHERE lv.track_stable_key = ?
+            WHERE lv.track_stable_key IN (\(placeholders(count: family.count)))
             ORDER BY lv.is_preferred DESC, lv.is_locked DESC, lv.confidence DESC, lv.updated_at DESC;
             """)
         defer { sqlite3_finalize(lyricsStmt) }
-        try bindText(stableKey, at: 1, to: lyricsStmt)
+        for (index, key) in family.enumerated() { try bindText(key, at: Int32(index + 1), to: lyricsStmt) }
 
         var isFirstLyrics = true
         var lyricsVersionIDs: [UUID] = []
@@ -3199,6 +3230,9 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
 
     public func exportPersonalLibraryPackage(stableKey: String) throws -> PersonalLyricsLibraryPackage {
         try prepare()
+        try reloadRedirectResolver()
+        let stableKey = try resolvedCanonicalStableKey(stableKey)
+        let family = try resolvedIdentityFamily(stableKey: stableKey)
 
         let trackStmt = try prepare("""
             SELECT stable_key, spotify_id, spotify_uri, isrc, title, artist_display,
@@ -3230,11 +3264,11 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
             SELECT id, parent_version_id, source, provider_source_id, language,
                    is_synced, raw_text, content_hash, is_machine_generated,
                    is_manually_edited, is_locked, confidence, created_at, updated_at, is_preferred
-            FROM lyrics_versions WHERE track_stable_key = ?
+            FROM lyrics_versions WHERE track_stable_key IN (\(placeholders(count: family.count)))
             ORDER BY created_at ASC;
             """)
         defer { sqlite3_finalize(lyricsStmt) }
-        try bindText(stableKey, at: 1, to: lyricsStmt)
+        for (index, key) in family.enumerated() { try bindText(key, at: Int32(index + 1), to: lyricsStmt) }
 
         var preferredLyricsVersionID: UUID?
         var pkgLyrics: [PersonalLyricsLibraryPackage.PackageLyricsVersion] = []

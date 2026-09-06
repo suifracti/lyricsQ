@@ -3,6 +3,67 @@ import Foundation
 @main
 struct V3ResponsiveGeometryContract {
     static func main() {
+        let canvas = CGRect(x: 0, y: 0, width: 1200, height: 800)
+        for region in [CGRect(x: 40, y: 32, width: 460, height: 736), CGRect(x: 700, y: 32, width: 460, height: 736), CGRect(x: 32, y: 72, width: 696, height: 280)] {
+            let reveal = V3ResponsiveGeometry.playbackRevealRect(region: region, canvas: canvas)
+            precondition(reveal.contains(CGPoint(x: region.midX, y: region.midY)))
+            precondition(reveal.contains(CGPoint(x: region.minX - 8, y: region.midY)), "the gap beside cover is part of the region")
+            precondition(!reveal.contains(CGPoint(x: region.midX, y: region.maxY + 24)))
+            precondition(canvas.contains(reveal))
+        }
+        precondition(V3ResponsiveGeometry.playbackRevealRect(region: .null, canvas: canvas).isNull)
+        let left = V3ResponsiveGeometry.playbackRevealRect(region: CGRect(x: 40, y: 32, width: 460, height: 736), canvas: canvas)
+        precondition(!left.contains(CGPoint(x: 900, y: 400)), "lyrics side must not reveal controls")
+        for hovered in [false, true] {
+            precondition(V3ResponsiveGeometry.playbackDetailsVisible(hoverOnly: false, pointerInRegion: hovered, interacting: false, panelPresented: false))
+            precondition(V3ResponsiveGeometry.playbackDetailsVisible(hoverOnly: true, pointerInRegion: hovered, interacting: true, panelPresented: false))
+            precondition(V3ResponsiveGeometry.playbackDetailsVisible(hoverOnly: true, pointerInRegion: hovered, interacting: false, panelPresented: true))
+        }
+        precondition(!V3ResponsiveGeometry.playbackDetailsVisible(hoverOnly: true, pointerInRegion: false, interacting: false, panelPresented: false))
+        let landscapeHiddenScale = V3ResponsiveGeometry.ambientHiddenCoverScale(
+            coverSize: 320, availableWidth: 430, availableHeight: 656,
+            compact: false, portrait: false
+        )
+        precondition(landscapeHiddenScale > 1.055 && landscapeHiddenScale <= 1.14)
+        precondition(landscapeHiddenScale * 320 <= 430.001)
+        let shortWindowScale = V3ResponsiveGeometry.ambientHiddenCoverScale(
+            coverSize: 220, availableWidth: 280, availableHeight: 520,
+            compact: true, portrait: false
+        )
+        precondition(shortWindowScale > 1 && shortWindowScale <= 1.06,
+                     "short windows must cap the hidden-cover expansion")
+        let portraitHiddenScale = V3ResponsiveGeometry.ambientHiddenCoverScale(
+            coverSize: 180, availableWidth: 220, availableHeight: 236,
+            compact: false, portrait: true
+        )
+        precondition(portraitHiddenScale > 1 && portraitHiddenScale <= 1.14)
+        precondition(portraitHiddenScale * 180 <= 220.001)
+        precondition(V3ResponsiveGeometry.ambientHiddenCoverOffset(containerWidth: 480, coverSize: 320, scale: 1, alignment: "left") == 0)
+        precondition(abs(V3ResponsiveGeometry.ambientHiddenCoverOffset(containerWidth: 480, coverSize: 320, scale: 1.1, alignment: "left") - 80) < 0.001)
+        precondition(abs(V3ResponsiveGeometry.ambientHiddenCoverOffset(containerWidth: 480, coverSize: 320, scale: 1.1, alignment: "right") + 80) < 0.001)
+        precondition(!V3ResponsiveGeometry.stagePlaybackDetailsVisible(pointerY: nil, canvasHeight: 800, previousVisible: true))
+        precondition(!V3ResponsiveGeometry.stagePlaybackDetailsVisible(pointerY: 120, canvasHeight: 800, previousVisible: false))
+        precondition(V3ResponsiveGeometry.stagePlaybackDetailsVisible(pointerY: 680, canvasHeight: 800, previousVisible: false))
+        precondition(!V3ResponsiveGeometry.stagePlaybackDetailsVisible(pointerY: 400, canvasHeight: 800, previousVisible: false),
+                     "the upper side of the split must hide playback")
+        precondition(V3ResponsiveGeometry.stagePlaybackDetailsVisible(pointerY: 400, canvasHeight: 800, previousVisible: true),
+                     "the midpoint hysteresis band must preserve the current state")
+        for height: CGFloat in [1, 120, 280, 520, 720, 1080, 1600] {
+            let stage = V3ResponsiveGeometry.lyricScrollAnchor(viewportHeight: height, stage: true)
+            precondition(stage > 0.47 && stage <= 0.520001)
+            precondition((stage - 0.47) * height <= 48.0001)
+            precondition(V3ResponsiveGeometry.lyricScrollAnchor(viewportHeight: height, stage: false) == 0.47)
+        }
+        for size in [CGSize(width: 760, height: 1000), CGSize(width: 1152, height: 720), CGSize(width: 1920, height: 1080)] {
+            let left = V3ResponsiveGeometry.stageReadingRect(canvasSize: size, artworkAspectRatio: 1, position: "right", lyricPosition: "left")
+            let center = V3ResponsiveGeometry.stageReadingRect(canvasSize: size, artworkAspectRatio: 1, position: "left", lyricPosition: "center")
+            let right = V3ResponsiveGeometry.stageReadingRect(canvasSize: size, artworkAspectRatio: 1, position: "left", lyricPosition: "right")
+            precondition(left.minX >= 0 && right.maxX <= size.width)
+            precondition(left.minX <= center.minX && center.minX <= right.minX)
+            precondition(abs(center.midX - size.width / 2) < 0.001)
+            precondition(left.size == center.size && center.size == right.size, "Placement must not change lyric wrapping or height")
+            precondition(abs(left.minX - (size.width - right.maxX)) < 0.001)
+        }
         precondition(
             V3ResponsiveGeometry.layoutRegime(canvasSize: CGSize(width: 760, height: 520)) == .compact,
             "technical minimum must use the compact regime"
@@ -45,6 +106,25 @@ struct V3ResponsiveGeometryContract {
             ) == .lyricsFocus,
             "automatic lyrics focus remains an explicit compact-window behavior"
         )
+
+        for size in [CGSize(width: 760, height: 1000), CGSize(width: 800, height: 1200), CGSize(width: 900, height: 1400)] {
+            precondition(V3ResponsiveGeometry.foregroundLayout(canvasSize: size, automaticLyricsFocus: false) == .portrait,
+                         "Tall windows must give lyrics their own full-width region")
+            precondition(V3ResponsiveGeometry.foregroundLayout(canvasSize: size, automaticLyricsFocus: true) == .lyricsFocus,
+                         "Explicit automatic focus retains priority in portrait")
+            for scale: CGFloat in [0.8, 1.0, 1.4] {
+                let m = V3ResponsiveGeometry.portraitMetrics(canvasSize: size, artworkScale: scale)
+                precondition(m.contentWidth >= size.width * 0.85, "Portrait lyrics use the window width")
+                precondition(m.lyricsHeight > size.height * 0.5, "Lyrics retain most of the portrait height")
+                precondition(m.topPadding + m.headerHeight + m.gap + m.lyricsHeight + m.bottomPadding <= size.height + 0.001,
+                             "Header and lyrics must fit without an outer scroll view")
+                precondition(m.coverSize <= m.headerHeight - m.headerInset * 2 + 0.001)
+                precondition(m.metadataWidth >= 320, "Long metadata retains a usable column beside artwork")
+                precondition(m.coverColumnWidth + m.headerGap + m.metadataWidth + m.headerInset * 2 <= m.contentWidth + 0.001)
+            }
+        }
+        precondition(V3ResponsiveGeometry.foregroundLayout(canvasSize: CGSize(width: 760, height: 800), automaticLyricsFocus: false) == .adaptiveSplit,
+                     "Near-square compact windows must not unexpectedly become portrait")
 
         let narrowCover = V3ResponsiveGeometry.boundedCoverSize(
             availableWidth: 170,

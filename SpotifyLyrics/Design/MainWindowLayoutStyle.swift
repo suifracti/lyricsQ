@@ -24,7 +24,7 @@ enum MainWindowLayoutStyle: String, CaseIterable, Identifiable {
         case .immersiveSplit:
             return "经典伴随 V1"
         case .appleMusicImmersiveV3:
-            return "专辑沉浸 V2"
+            return "专辑沉浸 V3"
         case .directionDV4:
             return "实验工作台 V0"
         }

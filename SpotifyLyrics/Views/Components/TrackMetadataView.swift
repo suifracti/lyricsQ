@@ -25,6 +25,11 @@ struct TrackMetadataView: View {
                 .lineLimit(2)
                 .multilineTextAlignment(alignment == .center ? .center : .leading)
                 .shadow(color: Color.black.opacity(presentation == .v3Immersive ? 0.22 : 0), radius: 7, y: 2)
+                .contextMenu {
+                    Button("复制歌名", systemImage: "doc.on.doc") {
+                        _ = TrackMetadataCopy.copy(track.title)
+                    }
+                }
 
             ViewThatFits(in: .horizontal) {
                 metadataSingleLine
@@ -97,9 +102,19 @@ struct TrackMetadataView: View {
             .buttonStyle(.plain)
             .foregroundStyle(artistColor)
             .help("在 Spotify 打开艺人：\(artist.name)")
+            .contextMenu {
+                Button("复制歌手", systemImage: "doc.on.doc") {
+                    _ = TrackMetadataCopy.copy(artist.name)
+                }
+            }
         } else {
             Text(artist.name)
                 .foregroundStyle(artistColor)
+                .contextMenu {
+                    Button("复制歌手", systemImage: "doc.on.doc") {
+                        _ = TrackMetadataCopy.copy(artist.name)
+                    }
+                }
         }
     }
 

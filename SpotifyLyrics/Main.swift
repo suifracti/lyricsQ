@@ -86,9 +86,6 @@ struct SpotifyLyricsApp: App {
                 .environmentObject(appSettings)
         }
         .defaultSize(width: 1100, height: 720)
-        .commands {
-            appCommands
-        }
 
         Window("歌词库与收听记录", id: "personal-library-activity") {
             UnifiedLibraryHistoryWindowView()
@@ -97,9 +94,6 @@ struct SpotifyLyricsApp: App {
                 .environmentObject(settingsData)
         }
         .defaultSize(width: 1000, height: 680)
-        .commands {
-            appCommands
-        }
 
 #if DEBUG
         // Real Direction D main-window entry.  The root view is the formal
@@ -148,12 +142,6 @@ struct SpotifyLyricsApp: App {
         }
         .defaultSize(width: 860, height: 580)
 
-        // Settings scenes do not always add an app-menu item when the app is
-        // hosted by a custom SwiftUI window configuration. Keep a stable,
-        // native macOS entry point in addition to SettingsLink controls.
-        .commands {
-            appCommands
-        }
 #if DEBUG
         .commands {
             PresentationPreviewCommands()
@@ -169,7 +157,8 @@ struct SpotifyLyricsApp: App {
             }
             .keyboardShortcut(",", modifiers: .command)
         }
-        CommandMenu("窗口") {
+        // Register once, alongside native window actions; never add a second Window menu.
+        CommandGroup(after: .windowArrangement) {
             Button("歌词编辑器") {
                 playbackState.prepareLyricsEditorForOpening()
                 openWindow(id: "lyrics-editor")
@@ -210,6 +199,7 @@ struct SpotifyLyricsApp: App {
                 WindowManager.shared.restoreFloatingInteractiveMode(state: playbackState)
             }
             .keyboardShortcut("l", modifiers: [.command, .option])
+            .help("即使悬浮歌词已鼠标穿透，也可用此命令直接恢复交互")
 
             Divider()
 

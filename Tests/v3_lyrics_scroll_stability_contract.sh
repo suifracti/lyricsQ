@@ -7,7 +7,7 @@ V3="$ROOT/SpotifyLyrics/Views/MainWindow/AppleMusicImmersiveV3WindowView.swift"
 test -f "$V3" || { echo "FAIL: missing V3 window" >&2; exit 1; }
 
 viewport="$({
-  sed -n '/private struct AppleMusicImmersiveV3LyricsViewport/,/private enum V3JapaneseReadingCache/p' "$V3"
+  sed -n '/private struct AppleMusicImmersiveV3LyricsViewport/,/enum V3JapaneseReadingCache/p' "$V3"
 } || true)"
 
 # The V3 rows change height when the active line and auxiliary layers change.
@@ -19,8 +19,8 @@ if grep -Eq '^[[:space:]]*LazyVStack' <<<"$viewport"; then
   exit 1
 fi
 
-grep -q 'VStack(alignment: .leading, spacing: rowSpacing(synchronized: synchronized))' <<<"$viewport" || {
-  echo 'FAIL: V3 lyric viewport must use the stable eager stack' >&2
+grep -Eq '^[[:space:]]*VStack\(alignment: .*spacing: rowSpacing\(synchronized: synchronized\)\)' <<<"$viewport" || {
+  echo 'FAIL: V3 lyric viewport must use an eager stack with the shared row spacing' >&2
   exit 1
 }
 
@@ -29,9 +29,16 @@ grep -q 'onChange(of: currentIndex)' <<<"$viewport" || {
   exit 1
 }
 
-# Main V3 intentionally includes search preview; live-only would break that route.
-grep -q 'let lines = state.lyrics' <<<"$viewport" || {
-  echo 'FAIL: V3 does not snapshot the lyric projection once per refresh' >&2
+# Main V3 intentionally includes search preview and secondary windows use the
+# live projection. Both paths must snapshot their selected document once per
+# refresh instead of rebuilding rows from a playback tick.
+grep -q 'let lines = documentLines' <<<"$viewport" || {
+  echo 'FAIL: V3 does not snapshot the selected lyric document once per refresh' >&2
+  exit 1
+}
+
+grep -Eq 'let currentIndex = liveOnly \? state\.liveCurrentLineIndex : state\.currentLineIndex' <<<"$viewport" || {
+  echo 'FAIL: V3 must choose the active row from the selected document projection' >&2
   exit 1
 }
 
@@ -40,8 +47,9 @@ grep -q 'trackStableKey: trackStableKey' <<<"$viewport" || {
   exit 1
 }
 
-if grep -q 'state.liveCurrentLineIndex' <<<"$viewport"; then
-  echo 'FAIL: V3 viewport must derive the current row from its shared lyric snapshot' >&2
+live_index_count="$(grep -c 'state.liveCurrentLineIndex' <<<"$viewport" || true)"
+if [[ "$live_index_count" -ne 1 ]]; then
+  echo 'FAIL: V3 viewport must read liveCurrentLineIndex only at the shared currentIndex boundary' >&2
   exit 1
 fi
 

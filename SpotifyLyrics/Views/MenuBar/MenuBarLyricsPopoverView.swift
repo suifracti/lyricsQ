@@ -141,6 +141,15 @@ public struct MenuBarLyricsPopoverView: View {
 
             Divider()
 
+            Toggle("在菜单栏显示歌词", isOn: Binding(
+                get: { controller.menuBarLyricsEnabled },
+                set: { controller.menuBarLyricsEnabled = $0 }
+            ))
+            .toggleStyle(.switch)
+            .controlSize(.small)
+            .font(.system(size: 12))
+            .help("关闭后保留播放状态图标，点击图标仍可打开此菜单")
+
             // Entrypoints
             VStack(spacing: 2) {
                 menuRow(title: "打开 Lyric Island", icon: "macwindow") {

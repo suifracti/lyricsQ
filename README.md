@@ -1,63 +1,83 @@
 # lyricsQ
 
-## Spotify Lyrics for macOS
+### 跟着 Spotify 听歌，也认真看歌词。
 
-**A native Spotify lyrics app for Mac, designed exclusively for Spotify Desktop on macOS.**
+一款面向 macOS Spotify Desktop 的原生歌词应用，提供沉浸式主播放页、桌面歌词、歌词版本管理与手动时间轴编辑。
 
-lyricsQ 会跟随 Spotify Desktop 当前播放的歌曲和进度显示歌词。你可以在主窗口里看歌词，也可以把歌词放到桌面、全屏或屏幕顶部；找不到合适版本时，还能导入、粘贴和编辑自己的歌词。
+> **开发中的预发布测试版，不是正式发布版。**
+> 功能仍在迭代，截图不代表全部功能通过验收。**AI、自动排轴、顶部胶囊目前有 Bug，不可用**；请先阅读下方限制。
 
-这是一个正在开发的个人项目。工程权威基线为远端最新的 **fresh `origin/main`**。最后一次产品代码变更基线为 `b16caee38eb4bb1d02d30c2971437d39ed59eb93`（C5 合并）；状态收敛文档合并为 `54ab96226fb62064e6dad7f6d888dc47cdbd28b9`（PR #20）。
+[下载测试版](https://github.com/suifracti/lyricsQ/releases/tag/v0.1.2-preview.1) · [功能状态](docs/STATUS.md) · [全部截图](docs/work/experience-restoration/experience-feedback-report.md)
 
-已提供内部测试预发布版本 `v0.1.1`（基于提交 `9e65fbbe13b82626bfb5d9bc36f2620a44dd2762`，包含 C3，**不包含后续完成的 C4 / C5**）。当前处于 `Concentrated user experience / reliability triage` 阶段。
+![V3 环境光主播放页](docs/evidence/experience-feedback-20260906/v3-ambient-compact.png)
 
-## 它能做什么
+## 可以用它做什么
 
-### 跟随 Spotify 播放
+以下是当前提供的功能与入口，不是“全部稳定可用”的保证；具体限制见下一节。
 
-- 读取 Spotify Desktop 当前歌曲、播放状态和进度。
-- 按时间轴滚动同步歌词，并突出当前行。
-- 在应用内进行播放、暂停、切歌和进度跳转等基础控制。
+| 功能 | 内容 |
+| --- | --- |
+| Spotify 播放同步与控制 | 读取当前歌曲、歌手、专辑、封面和进度；播放/暂停、上下曲及拖动进度会控制 Spotify |
+| 沉浸式主播放页 V3 | 环境光、经典、舞台三种构图；封面尺寸、背景扩散、歌词对齐；横竖窗口与原生全屏适配 |
+| 悬停显示播放信息 | 环境光/经典按封面区域显示控件，隐藏时适度放大封面；舞台按播放器上下半区显示/隐藏控件 |
+| 歌词与读音 | 原文、翻译、假名、罗马音、拼音图层；假名支持汉字上方注音、独立行和替换排版；真实逐字时间数据可驱动逐字高亮 |
+| 歌词时间 | 主播放页直接点击“歌词时间”提前、延后或归零；与桌面歌词共用“当前歌曲＋当前歌词版本”的偏移，不修改原始时间戳或 Spotify 进度 |
+| 搜索与版本选择 | 多来源候选、来源标识、保存与切换；歌词、翻译、读音和时间轴版本管理 |
+| 复制 | 右键复制歌名、歌手、单行歌词、整首歌词或选定段落 |
+| 桌面歌词 | 单行/双行、第二行内容选择、字号、独立角色颜色、透明度与描边；锁定/鼠标穿透及恢复交互入口 |
+| 全屏与菜单栏 | 全屏歌词、按样式保存对齐和阅读尺寸；菜单栏歌曲信息与基础播放控制（不是下方标为不可用的顶部胶囊） |
+| 手动歌词编辑 | 原文、翻译、读音、逐行时间与行顺序编辑；插入、拆分/合并、撤销/重做；保存修订版本 |
+| 导入与导出 | TXT/LRC、剪贴板内容、原文/翻译导出；个人歌词资产包导入导出 |
+| 本地歌词库 | 管理采用版本、版本名称与备注；可指定同步文件夹（不是内置云服务） |
+| 日语辅助 | 本地读音生成与歌曲级手动纠音；姓名、多音字和罕见词可能需要校对 |
+| 最近播放与统计 | 应用运行时观察到的播放记录、时长、趋势及歌曲/歌手排行；不是 Spotify 的完整历史 |
 
-### 用不同方式显示歌词
+## 已知 Bug 与限制
 
-- **主窗口**：在专辑信息、播放控制和歌词之间提供完整视图；当前包含经典伴随、专辑沉浸和实验工作台三种布局。
-- **桌面歌词**：把歌词作为独立悬浮窗口放在其他应用旁边。
-- **全屏歌词**：只保留适合远距离查看的歌词画面。
-- **顶部胶囊**：用更紧凑的窗口查看歌曲与歌词状态。
+**以下功能目前不可用，不应当作测试版的可用能力：**
 
-### 查找并选择歌词版本
+- **AI 翻译、重新翻译及 AI 辅助歌词处理：Bug / 当前不可用。**
+- **自动排轴、音频强制对齐：Bug / 当前不可用。** 请使用手动歌词时间编辑。
+- **顶部胶囊／灵动岛式歌词：Bug / 当前不可用。** 界面中仍可能存在入口。
 
-lyricsQ 会优先使用本地歌词和已经保存的版本，再按设置查询在线来源。不同结果可以作为独立版本保留，不会直接覆盖你编辑的内容。
+其它实验 UI 和调试工具也不属于正式交付能力；不因为存在入口就代表已完成。主播放页、桌面歌词等仍接受实机反馈，不保证所有歌曲、尺寸和系统环境表现一致。
 
-| 来源 | 当前用途 |
-|---|---|
-| 本地文件与 SQLite | 读取导入、编辑或采用过的歌词版本 |
-| AMLL | 按 Spotify 曲目身份读取社区排轴 |
-| LRCLIB | 搜索同步歌词或纯文本歌词 |
-| 网易云、QQ 音乐 | 可选实验来源，接口和结果都可能变化 |
+### 歌词匹配不是百分之百准确
 
-### 翻译、读音与纠错
+- 在线来源包括 AMLL、LRCLIB、lyrics.ovh，以及实验性的酷我、酷狗、网易云、QQ 音乐；可用性和返回质量依赖第三方。lyrics.ovh 是纯文本候选，不提供同步时间轴。
+- **Piano Ver.、Live、Remix 等可能匹配到普通版或近似录音。** 切换前请核对标题、时长、来源并试听；不会因为展示了版本名称就保证录音匹配。
+- 统一“提前/延后”适合整首固定偏差；逐行误差或不同编曲无法靠一个 offset 修复，应选择更匹配的候选，或在编辑器保存新的修订版本。
+- 逐字高亮依赖真实逐字时间数据；只有逐行时间的歌词不等同于真实逐字同步。翻译与读音也取决于该版本具备的图层。
+- 最近播放和统计只覆盖应用观察到的播放；旧记录或未运行期间的历史不会被补全。
 
-- 在原文旁显示翻译版本。
-- 为日语歌词显示假名、罗马音和上下文读音。
-- 对错误读音和歌词内容进行歌曲级编辑与保存。
+## 更多画面
 
-这些内容来自歌词版本、第三方来源或用户自己的编辑；应用不能保证翻译和读音始终正确。
+截图里反复出现 **stb《アーカイブ - Piano Ver.》**，只是因为作者当时一直在单曲循环它。不是应用只支持这一首，也不是故意用一首歌代表所有歌曲的同步质量。
 
-### 导入和整理自己的歌词
+### 舞台与经典布局
 
-- 导入 LRC 或 TXT 文件。
-- 直接粘贴纯文本歌词并进入编辑预览。
-- 修改歌词、翻译和时间轴，并把新版本保存在本地。
-- 在没有同步歌词时尝试自动排轴。自动排轴仍是实验功能，可能需要屏幕录制或系统音频权限，也可能无法得到可用结果。
+![舞台布局与底部播放区](docs/evidence/experience-feedback-20260906/v3-stage-full-cover-02.png)
 
-## 运行要求
+![经典布局](docs/evidence/experience-feedback-20260906/v3-classic-layout.png)
 
-- macOS 14 或更高版本
-- Spotify Desktop
-- Xcode（从源码构建时）
+### 桌面歌词与手动编辑
 
-## 从源码运行
+![桌面歌词与颜色设置](docs/evidence/experience-feedback-20260906/desktop-lyrics-settings.png)
+
+![手动歌词时间轴编辑器](docs/evidence/experience-feedback-20260906/lyrics-editor-timeline.png)
+
+[查看全部 16 张截图：外观设置、复制、歌词库、最近播放与听歌统计 →](docs/work/experience-restoration/experience-feedback-report.md)
+
+## 下载与安装
+
+- **测试包：v0.1.2-preview.1，应用版本 0.1.2（build 3）。不是正式版。**
+- 本次 DMG 面向 **Apple Silicon（arm64）**，要求 **macOS 14 或更高版本**，配合 Spotify Desktop 使用；未提供 Intel 安装包。
+- 从[预发布页面](https://github.com/suifracti/lyricsQ/releases/tag/v0.1.2-preview.1)下载 DMG，打开后将应用拖到 Applications。请自行保留旧版，重要歌词资产建议先导出。
+- 包内应用使用本地 ad-hoc 签名，**没有 Developer ID 签名或 Apple 公证**。系统可能阻止打开；仅在确认来源并愿意承担测试风险时，使用系统“隐私与安全性”中的单次打开许可，不要关闭系统安全保护。
+- 首次控制 Spotify 需要系统自动化授权。当前测试范围不要求为不可用的自动排轴功能授予录音或屏幕录制权限。
+- Release 构建配置只是编译方式，**不代表这是正式发布版**。下载页附源码标识和 SHA-256 校验信息。
+
+## 从源码构建
 
 ```sh
 git clone https://github.com/suifracti/lyricsQ.git
@@ -65,7 +85,7 @@ cd lyricsQ
 open SpotifyLyrics.xcodeproj
 ```
 
-也可以直接使用命令行构建 Debug 版本：
+选择 SpotifyLyrics scheme。也可以构建 Debug：
 
 ```sh
 xcodebuild -project SpotifyLyrics.xcodeproj \
@@ -75,45 +95,17 @@ xcodebuild -project SpotifyLyrics.xcodeproj \
   CODE_SIGNING_ALLOWED=NO build
 ```
 
-涉及 ScreenCaptureKit 或本机权限的调试可能需要本地开发签名。个人 Team ID、证书和其他凭据不应提交到仓库。
+需要 macOS 与 Xcode。部分系统权限调试可能需要本机签名；不要提交个人证书、Team ID 或凭据。测试与提交规则见[开发流程](docs/DEVELOPMENT_WORKFLOW.md)和[提交检查](docs/SUBMISSION_BASELINE.md)。
 
-## 数据与网络
+## 数据与隐私
 
-- 歌词、编辑版本和索引默认保存在 `~/Library/Application Support/SpotifyLyrics/SpotifyLyrics.sqlite3`。
-- Spotify 授权令牌和用户填写的 AI API Key 使用 macOS Keychain；仓库不包含可用凭据。
-- 使用在线歌词来源时，匹配歌曲所需的标题、歌手、专辑、时长或曲目 ID 会发送给对应服务。
-- 使用用户自行配置的 AI 翻译服务时，歌词文本和请求会发送到该服务端点。
-- 自动排轴可能读取 Spotify 进程音频；所选语音识别后端可能有自己的权限和数据处理规则。
-
-## 当前状态与限制
-
-- **Canonical engineering SOT**：fresh remote `origin/main`。
-- **历史锚点**：
-  - 最后一次产品代码变更合并（Latest product-code baseline）：`b16caee38eb4bb1d02d30c2971437d39ed59eb93`（C5）
-  - 状态收敛文档合并（Status-convergence docs-only merge）：`54ab96226fb62064e6dad7f6d888dc47cdbd28b9`（PR #20）
-- **Other Windows C1–C5**：全部 `CLOSED / FROZEN / MERGED` 合入主线（含独立歌词库、最近播放、统一“歌词库与收听记录”工具窗口、听歌统计完善、菜单栏 Quick Glance / Transport 控制）。
-- **已发布内部测试版**：`v0.1.1`（源提交 `9e65fbbe13b82626bfb5d9bc36f2620a44dd2762`，包含 C3，**不包含后续 C4 / C5**，不覆盖重打）。
-- **本地主目录警告**：`/Users/apple/backup/sptifylyrics` 存在用户未提交资产，不是 canonical main，严禁 reset / clean / pull / checkout 覆盖；新开发必须基于 fresh `origin/main` 建立全新 isolated worktree。
-- **当前阶段**：`Concentrated user experience / reliability triage`（非 C6）。后续仅真实 Blocker 或必要 Relevant 缺陷触发代码工作。
-- 在线歌词的命中、时间轴和翻译质量取决于歌曲元数据与第三方来源。
-- 网易云和 QQ 音乐接入使用非官方实验接口，可能失效，也不代表正式发行承诺。
-- 日语读音在姓名、罕见词和多音词上仍可能出错。
-- 自动排轴、实验工作台以及部分界面仍在测试和验收。
-
-更细的实现状态见 [`docs/STATUS.md`](docs/STATUS.md)。
-
-## 测试
-
-仓库在 `Tests/` 下使用按模块划分的合同脚本。文档修改不需要重新构建应用；修改功能时应运行对应合同与 Debug 构建。基础入口为：
-
-```sh
-bash Tests/v3_lyric_readability_contract.sh
-```
-
-开发和提交边界见 [`docs/DEVELOPMENT_WORKFLOW.md`](docs/DEVELOPMENT_WORKFLOW.md)。
+- 歌词、修订版本和收听记录默认保存在本机 Application Support 的 SpotifyLyrics 数据库中；偏好设置保存在本机。
+- 授权令牌和配置的 API Key 使用 Keychain；不要将凭据、数据库或个人导出资产提交到仓库。
+- 查询在线歌词会向对应来源发送匹配所需的歌曲信息。配置第三方 AI 服务的代码路径可能发送歌词文本；该功能当前不可用，不建议依赖。
+- 文件夹同步使用你选择的位置；是否上传云端取决于该文件夹所用的同步服务。
 
 ## 版权与说明
 
-lyricsQ 与 Spotify、Apple、AMLL、LRCLIB、网易云音乐或 QQ 音乐没有隶属或背书关系。音乐平台名称、商标、歌词、专辑封面和其他第三方内容归各自权利人所有。
+本项目与 Spotify、Apple 及歌词来源服务无隶属或背书关系。音乐、歌词、封面和其它第三方图像归各自权利人所有；展示不代表授予再分发许可。
 
-本仓库公开可见，但不是开源软件。原创源码、文档和设计内容保留全部权利；公开可见不代表获得使用、复制、修改或再分发许可。详见 [`LICENSE`](LICENSE)。
+本仓库公开可见，但**不是开源授权项目**。原创源码、文档和设计保留全部权利；使用范围见 [LICENSE](LICENSE)。测试版下载不改变该许可边界。

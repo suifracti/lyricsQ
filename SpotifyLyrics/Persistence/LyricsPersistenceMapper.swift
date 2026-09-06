@@ -2,8 +2,59 @@ import Foundation
 import CryptoKit
 
 public enum DatabaseSourceIdentifier {
+    /// User-facing labels are independent from stable storage identifiers.
+    /// Unknown historical identifiers remain visible instead of becoming local LRC.
+    public static func displayName(for identifier: String) -> String {
+        switch identifier {
+        case "localLRC", "local": return "本地歌词文件"
+        case "localDatabase": return "本地记录（原始来源未记录）"
+        case "amll": return "AMLL"
+        case "lrclib": return "LRCLIB"
+        case "netEaseExperimental", "neteaseExperimental": return "网易云音乐"
+        case "qqExperimental": return "QQ音乐"
+        case "lyricsOVH": return "Lyrics.ovh"
+        case "kugouExperimental": return "酷狗音乐"
+        case "kuwoExperimental": return "酷我音乐"
+        case "asrMachineGenerated": return "语音识别草稿"
+        case "automaticAlignment": return "自动排轴"
+        case "manualImport": return "手动导入"
+        case "manualCreate": return "手动创建"
+        case "manualEdit": return "人工编辑"
+        case "mock": return "示例歌词"
+        case "", "unknown": return "未知来源"
+        default: return "未知来源（\(identifier)）"
+        }
+    }
+
+    /// Follows immutable parent links only. A local copy or a provider record
+    /// identifier is not evidence of the original provider.
+    public static func provenanceDescription(
+        source: String,
+        parentVersionID: UUID?,
+        ancestor: (UUID) -> (source: String, parentVersionID: UUID?)?
+    ) -> String {
+        guard source == "manualEdit" || source == "automaticAlignment" else {
+            return displayName(for: source)
+        }
+        let operation = displayName(for: source)
+        var next = parentVersionID
+        var visited = Set<UUID>()
+        while let id = next, visited.insert(id).inserted {
+            guard let parent = ancestor(id) else { break }
+            if parent.source != "manualEdit" && parent.source != "automaticAlignment" {
+                return "\(displayName(for: parent.source)) · \(operation)"
+            }
+            next = parent.parentVersionID
+        }
+        return "原始来源未知 · \(operation)"
+    }
+
     public static func identifier(for source: LyricsSource) -> String {
         switch source {
+        case .unknown: return "unknown"
+        case .lyricsOVH: return "lyricsOVH"
+        case .kuwoExperimental: return "kuwoExperimental"
+        case .kugouExperimental: return "kugouExperimental"
         case .local: return "localLRC"
         case .amll: return "amll"
         case .lrclib: return "lrclib"
@@ -20,17 +71,21 @@ public enum DatabaseSourceIdentifier {
 
     public static func source(for identifier: String) -> LyricsSource {
         switch identifier {
-        case "localLRC", "localDatabase": return .local
+        case "lyricsOVH": return .lyricsOVH
+        case "kuwoExperimental": return .kuwoExperimental
+        case "kugouExperimental": return .kugouExperimental
+        case "localLRC", "localDatabase", "local": return .local
         case "amll": return .amll
         case "lrclib": return .lrclib
-        case "netEaseExperimental": return .neteaseExperimental
+        case "netEaseExperimental", "neteaseExperimental": return .neteaseExperimental
         case "qqExperimental": return .qqExperimental
         case "asrMachineGenerated": return .asrMachineGenerated
         case "automaticAlignment": return .automaticAlignment
         case "manualImport": return .manualImport
         case "manualCreate": return .manualCreate
         case "manualEdit": return .manualEdit
-        default: return .local
+        case "mock": return .mock
+        default: return .unknown
         }
     }
 }

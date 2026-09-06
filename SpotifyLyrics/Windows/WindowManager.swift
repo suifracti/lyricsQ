@@ -15,6 +15,7 @@ public final class WindowManager: ObservableObject {
 
     private var floatingController: FloatingLyricsWindowController?
     private var capsuleController: CapsuleLyricsWindowController?
+    private var returnToMainAfterFullScreen = false
     private var fullScreenController: FullScreenLyricsWindowController?
     private var fullScreenAuxiliaryVisibilitySnapshot: FullScreenAuxiliaryVisibilitySnapshot?
     private var terminationObserver: NSObjectProtocol?
@@ -166,24 +167,26 @@ public final class WindowManager: ObservableObject {
         capsuleController?.isVisible == true
     }
 
+    var fullScreenWindow: NSWindow? { fullScreenController?.window }
+
     public var fullScreenWindowIsVisible: Bool {
         fullScreenController?.isVisible == true
     }
 
-    public func toggleFullScreen(state: PlaybackState) {
+    public func toggleFullScreen(state: PlaybackState, settings: AppSettingsStore? = nil) {
         if fullScreenController?.isVisible == true {
             hideFullScreen()
         } else {
-            showFullScreen(state: state)
+            showFullScreen(state: state, settings: settings)
         }
     }
 
-    public func showFullScreen(state: PlaybackState) {
+    public func showFullScreen(state: PlaybackState, settings: AppSettingsStore? = nil) {
         guard fullScreenController?.isVisible != true else { return }
         captureAndHideAuxiliaryWindows()
 
         let controller = makeFullScreenController()
-        guard controller.show(state: state) else {
+        guard controller.show(state: state, settings: settings) else {
             restoreFloatingSurfacesAfterFullscreen()
             return
         }
@@ -223,8 +226,20 @@ public final class WindowManager: ObservableObject {
         capsuleController?.temporarilyHideForFullScreen()
     }
 
+    public func exitFullScreenToMainWindow() {
+        returnToMainAfterFullScreen = true
+        hideFullScreen()
+        if fullScreenController?.isVisible != true { finishFullScreenHide() }
+    }
+
     private func finishFullScreenHide() {
         restoreFloatingSurfacesAfterFullscreen()
+        if returnToMainAfterFullScreen {
+            returnToMainAfterFullScreen = false
+            NSApp.activate(ignoringOtherApps: true)
+            MenuBarLyricsController.shared.openMainWindow()
+            WindowStatePersistence.shared.attachedMainWindow?.makeKeyAndOrderFront(nil)
+        }
     }
 
     public func restoreFloatingSurfacesAfterFullscreen() {

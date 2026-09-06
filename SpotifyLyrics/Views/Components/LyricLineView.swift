@@ -1,4 +1,36 @@
 import SwiftUI
+import AppKit
+
+private struct LyricTextAlignmentKey: EnvironmentKey {
+    static let defaultValue: TextAlignment = .leading
+}
+
+private struct LyricPresentationScaleKey: EnvironmentKey {
+    static let defaultValue: CGFloat = 1
+}
+
+extension EnvironmentValues {
+    var lyricPresentationScale: CGFloat {
+        get { self[LyricPresentationScaleKey.self] }
+        set { self[LyricPresentationScaleKey.self] = newValue }
+    }
+    var lyricTextAlignment: TextAlignment {
+        get { self[LyricTextAlignmentKey.self] }
+        set { self[LyricTextAlignmentKey.self] = newValue }
+    }
+}
+
+extension TextAlignment {
+    var lyricHorizontalAlignment: HorizontalAlignment {
+        switch self { case .leading: return .leading; case .center: return .center; case .trailing: return .trailing }
+    }
+    var lyricFrameAlignment: Alignment {
+        switch self { case .leading: return .leading; case .center: return .center; case .trailing: return .trailing }
+    }
+    var lyricAlignmentFraction: CGFloat {
+        switch self { case .leading: return 0; case .center: return 0.5; case .trailing: return 1 }
+    }
+}
 
 private struct LyricAgentPresentationMapKey: EnvironmentKey {
     static let defaultValue = LyricAgentPresentationMap(lines: [])
@@ -295,6 +327,7 @@ struct LyricLineView: View {
 /// independent presentation mode: it does not enable or disable either of
 /// the other two modes, and it never mutates the stored lyric layers.
 struct KanaReplacementLineView: View {
+    @Environment(\.lyricTextAlignment) private var textAlignment
     let originalText: String
     let kanaText: String
     let tokens: [LyricRubyToken]?
@@ -330,7 +363,7 @@ struct KanaReplacementLineView: View {
     }
 
     var body: some View {
-        RubyTokenFlowLayout(horizontalSpacing: 0, verticalSpacing: 5, maxWidth: maxWidth) {
+        RubyTokenFlowLayout(horizontalSpacing: 0, verticalSpacing: 5, maxWidth: maxWidth, alignmentFraction: textAlignment.lyricAlignmentFraction) {
             ForEach(Array(displayTokenGroups.enumerated()), id: \.offset) { _, group in
                 HStack(alignment: .lastTextBaseline, spacing: 0) {
                     ForEach(group) { token in
@@ -465,6 +498,8 @@ private struct KanaReplacementTokenBlockLayout: Layout {
 /// A line-level ruby fallback that keeps the confirmed kana together with
 /// the whole original line when no per-token mapping is available.
 struct RubyLineView: View {
+    @Environment(\.lyricTextAlignment) private var textAlignment
+    @Environment(\.rubyCorrectionAction) private var correctRuby
     let originalText: String
     let kanaText: String
     let tokens: [LyricRubyToken]?
@@ -481,6 +516,13 @@ struct RubyLineView: View {
     /// Optional readable measure supplied by V3. The token flow remains
     /// intrinsic for legacy/focus callers when this is nil.
     var maxWidth: CGFloat? = nil
+    var highlightColor: Color? = nil
+    var outlineColor: Color = .clear
+    var outlineWidth: CGFloat = 0
+    var baseNSFont: NSFont? = nil
+    var rubyNSFont: NSFont? = nil
+    var unplayedOpacity: Double = 0.42
+    var showsRuby: Bool = true
 
     private var displayTokens: [LyricRubyToken] {
         guard let tokens, !tokens.isEmpty else {
@@ -488,7 +530,7 @@ struct RubyLineView: View {
                 LyricRubyToken(
                     id: 0,
                     surface: originalText,
-                    ruby: kanaText
+                    ruby: kanaText.isEmpty ? nil : kanaText
                 )
             ]
         }
@@ -505,7 +547,7 @@ struct RubyLineView: View {
     }
 
     var body: some View {
-        RubyTokenFlowLayout(horizontalSpacing: 0, verticalSpacing: tokenVerticalSpacing, maxWidth: maxWidth) {
+        RubyTokenFlowLayout(horizontalSpacing: 0, verticalSpacing: tokenVerticalSpacing, maxWidth: maxWidth, alignmentFraction: textAlignment.lyricAlignmentFraction) {
             if timedLayout != nil, currentTime != nil {
                 ForEach(Array(displayTimedTokenGroups.enumerated()), id: \.offset) { _, group in
                     let groupEdgeReserve: CGFloat = group.count > 1
@@ -521,7 +563,14 @@ struct RubyLineView: View {
                                 baseColor: baseColor,
                                 rubyColor: rubyColor,
                                 rubySpacing: rubySpacing,
-                                annotationOverhang: timedToken.hasRuby ? groupEdgeReserve : 0
+                                annotationOverhang: timedToken.hasRuby ? groupEdgeReserve : 0,
+                                highlightColor: highlightColor,
+                                outlineColor: outlineColor,
+                                outlineWidth: outlineWidth,
+                                baseNSFont: baseNSFont,
+                                rubyNSFont: rubyNSFont,
+                                unplayedOpacity: unplayedOpacity,
+                                showsRuby: showsRuby
                             )
                         }
                     }
@@ -542,7 +591,14 @@ struct RubyLineView: View {
                                 baseColor: baseColor,
                                 rubyColor: rubyColor,
                                 rubySpacing: rubySpacing,
-                                annotationOverhang: token.hasRuby ? groupEdgeReserve : 0
+                                annotationOverhang: token.hasRuby ? groupEdgeReserve : 0,
+                                highlightColor: highlightColor,
+                                outlineColor: outlineColor,
+                                outlineWidth: outlineWidth,
+                                baseNSFont: baseNSFont,
+                                rubyNSFont: rubyNSFont,
+                                unplayedOpacity: unplayedOpacity,
+                                showsRuby: showsRuby
                             )
                         }
                     }
@@ -551,7 +607,7 @@ struct RubyLineView: View {
             }
         }
         .frame(maxWidth: maxWidth ?? .infinity, alignment: .leading)
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: correctRuby == nil ? .combine : .contain)
         .accessibilityLabel(originalText)
         #if DEBUG
         .onAppear {
@@ -618,6 +674,7 @@ private func rubyTimedTokenGroups(_ tokens: [TimedRubyToken]) -> [[TimedRubyToke
 }
 
 private struct RubyTokenBlock: View {
+    @Environment(\.rubyCorrectionAction) private var correctRuby
     let token: LyricRubyToken?
     let timedToken: TimedRubyToken?
     let currentTime: TimeInterval?
@@ -627,6 +684,13 @@ private struct RubyTokenBlock: View {
     let rubyColor: Color
     let rubySpacing: CGFloat
     let annotationOverhang: CGFloat
+    let highlightColor: Color?
+    let outlineColor: Color
+    let outlineWidth: CGFloat
+    let baseNSFont: NSFont?
+    let rubyNSFont: NSFont?
+    let unplayedOpacity: Double
+    let showsRuby: Bool
 
     private let katakanaAnnotationTracking: CGFloat = 0.35
 
@@ -635,7 +699,7 @@ private struct RubyTokenBlock: View {
     }
 
     private var displayRuby: String? {
-        timedToken?.displayRubyText ?? token?.displayRubyText
+        showsRuby ? (timedToken?.displayRubyText ?? token?.displayRubyText) : nil
     }
 
     private var hasRuby: Bool {
@@ -646,6 +710,31 @@ private struct RubyTokenBlock: View {
         !hasRuby && surface.unicodeScalars.contains { scalar in
             (0x30A1...0x30FA).contains(scalar.value)
         }
+    }
+
+    @ViewBuilder private func renderedText(_ text: String, font: NSFont?, fill: Color, drawOutline: Bool = true) -> some View {
+        if let font {
+            OutlinedLyricText(text: text, font: font, fill: fill, outline: outlineColor,
+                              width: outlineWidth, drawOutline: drawOutline)
+        } else {
+            Text(text).foregroundColor(fill)
+        }
+    }
+
+    private func maskWidth(_ width: CGFloat, fraction: Double) -> CGFloat {
+        guard fraction > 0 else { return 0 }
+        guard fraction < 1 else { return width }
+        let inset = outlineWidth > 0 && baseNSFont != nil ? outlineWidth + 1 : 0
+        return inset + max(0, width - 2 * inset) * CGFloat(fraction)
+    }
+
+    @ViewBuilder private func annotation(_ ruby: String) -> some View {
+        if let correctRuby {
+            Button { correctRuby(surface, ruby) } label: { renderedText(ruby, font: rubyNSFont, fill: rubyColor) }
+                .buttonStyle(.plain)
+                .help("点击修改「\(surface)」的读音")
+                .accessibilityLabel("修改\(surface)的读音：\(ruby)")
+        } else { renderedText(ruby, font: rubyNSFont, fill: rubyColor) }
     }
 
     var body: some View {
@@ -661,7 +750,7 @@ private struct RubyTokenBlock: View {
             annotationOverhang: annotationOverhang
         ) {
             if let ruby = displayRuby {
-                Text(ruby)
+                annotation(ruby)
                     .font(rubyFont)
                     .tracking(isKatakanaAnnotation ? katakanaAnnotationTracking : 0)
                     .foregroundStyle(rubyColor)
@@ -671,19 +760,18 @@ private struct RubyTokenBlock: View {
             }
 
             if timedToken != nil, currentTime != nil {
-                Text(surface)
+                renderedText(surface, font: baseNSFont, fill: baseColor.opacity(unplayedOpacity))
                     .font(baseFont)
-                    .foregroundColor(baseColor.opacity(0.42))
                     .overlay(
                         GeometryReader { geo in
-                            Text(surface)
+                            renderedText(surface, font: baseNSFont, fill: highlightColor ?? baseColor,
+                                         drawOutline: false)
                                 .font(baseFont)
-                                .foregroundColor(baseColor)
                                 .frame(width: geo.size.width, height: geo.size.height, alignment: .leading)
                                 .mask(alignment: .leading) {
                                     Rectangle()
                                         .frame(
-                                            width: max(0, geo.size.width * CGFloat(fillFraction)),
+                                            width: maskWidth(geo.size.width, fraction: fillFraction),
                                             height: geo.size.height
                                         )
                                 }
@@ -692,9 +780,8 @@ private struct RubyTokenBlock: View {
                     .lineLimit(1)
                     .fixedSize(horizontal: true, vertical: false)
             } else {
-                Text(surface)
+                renderedText(surface, font: baseNSFont, fill: baseColor)
                     .font(baseFont)
-                    .foregroundStyle(baseColor)
                     .lineLimit(1)
                     .fixedSize(horizontal: true, vertical: false)
             }
@@ -851,6 +938,7 @@ private struct RubyTokenFlowLayout: Layout {
     let horizontalSpacing: CGFloat
     let verticalSpacing: CGFloat
     let maxWidth: CGFloat?
+    var alignmentFraction: CGFloat = 0
 
     private struct Item {
         let index: Int
@@ -895,7 +983,7 @@ private struct RubyTokenFlowLayout: Layout {
         var y = bounds.minY
 
         for row in rows {
-            var x = bounds.minX
+            var x = bounds.minX + max(0, bounds.width - row.width) * alignmentFraction
             for item in row.items {
                 let subview = subviews[item.index]
                 subview.place(

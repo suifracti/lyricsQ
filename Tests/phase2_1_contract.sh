@@ -42,14 +42,16 @@ require "SpotifyLyrics/Views/Components/LyricsCanvasView.swift" "Menu(\"歌词�
 require "SpotifyLyrics/Views/Components/LyricLineView.swift" "preferences.showTranslation"
 for file in \
   SpotifyLyrics/Views/Floating/FloatingLyricsView.swift \
-  SpotifyLyrics/Views/Capsule/CapsuleLyricsView.swift \
-  SpotifyLyrics/Views/Fullscreen/FullScreenLyricsView.swift; do
+  SpotifyLyrics/Views/Capsule/CapsuleLyricsView.swift; do
   require "$file" "state.liveLyrics"
   if grep -Fq "state.lyrics" "$ROOT/$file"; then
     echo "FAIL: auxiliary live view still reads preview-capable state: $file" >&2
     exit 1
   fi
 done
+
+require "SpotifyLyrics/Views/Fullscreen/FullScreenLyricsView.swift" "liveOnly: true"
+require "SpotifyLyrics/Views/Fullscreen/FullScreenLyricsView.swift" "AppleMusicImmersiveV3WindowView"
 
 if grep -Fq "state.lyricsState" "$ROOT/SpotifyLyrics/Views/MainWindow/AppleMusicImmersiveV3WindowView.swift"; then
   echo "FAIL: V3 formal view still reads preview-capable lyricsState" >&2

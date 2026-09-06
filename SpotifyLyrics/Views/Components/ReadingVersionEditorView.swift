@@ -59,3 +59,75 @@ struct ReadingVersionEditorView: View {
         .preferredColorScheme(.dark)
     }
 }
+
+struct RubyCorrectionActionKey: EnvironmentKey {
+    static let defaultValue: ((String, String) -> Void)? = nil
+}
+extension EnvironmentValues {
+    var rubyCorrectionAction: ((String, String) -> Void)? {
+        get { self[RubyCorrectionActionKey.self] }
+        set { self[RubyCorrectionActionKey.self] = newValue }
+    }
+}
+struct RubyCorrectionRequest: Identifiable {
+    let id = UUID()
+    let surface: String
+    let reading: String
+    let trackKey: String
+    let lyricsVersionID: UUID
+    let readingVersionID: UUID?
+    let lines: [LyricLine]
+}
+struct RubyCorrectionEditorView: View {
+    @ObservedObject var state: PlaybackState
+    let request: RubyCorrectionRequest
+    @Environment(\.dismiss) private var dismiss
+    @State private var draft: String
+    @State private var saving = false
+    @State private var error = ""
+    @FocusState private var focused: Bool
+
+    init(state: PlaybackState, request: RubyCorrectionRequest) {
+        self.state = state
+        self.request = request
+        _draft = State(initialValue: request.reading)
+    }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("修改「\(request.surface)」的读音").font(.headline)
+            TextField("假名，例如：からだ", text: $draft)
+                .textFieldStyle(.roundedBorder).focused($focused)
+                .onSubmit { save() }
+                .disabled(saving)
+            Text("仅记住这首歌中这个词的读法。保存为新的人工版本，原版保留；假名和罗马音同步更新。")
+                .font(.caption).foregroundStyle(.secondary)
+            if !error.isEmpty { Text(error).font(.caption).foregroundStyle(.red) }
+            HStack {
+                Button("取消") { dismiss() }.disabled(saving)
+                Spacer()
+                if saving { ProgressView().controlSize(.small) }
+                Button("保存读音") { save() }
+                    .buttonStyle(.borderedProminent).disabled(saving || draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+        .padding(22).frame(width: 380)
+        .interactiveDismissDisabled(saving)
+        .onAppear { focused = true }
+    }
+    private func save() {
+        guard !saving else { return }
+        saving = true
+        error = ""
+        Task { @MainActor in
+            do {
+                try await state.readingSession.correctRuby(surface: request.surface, reading: draft,
+                    trackKey: request.trackKey, lyricsVersionID: request.lyricsVersionID, visibleLines: request.lines,
+                    expectedReadingVersionID: request.readingVersionID)
+                dismiss()
+            } catch {
+                self.error = error.localizedDescription
+                saving = false
+            }
+        }
+    }
+}

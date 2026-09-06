@@ -31,7 +31,12 @@ grep -q 'onContinuousHover' "$WINDOW"
 # Lyrics use token-aligned ruby, safe seeking, and current-line scrolling.
 grep -q 'RubyLineView' "$WINDOW"
 grep -q 'LyricsTimeline.validSeekTimestamp' "$WINDOW"
-grep -q 'scrollTo(id, anchor: UnitPoint(x: 0.5, y: 0.47))' "$WINDOW"
+# The literal anchor is now a parameter so stage can move it by a bounded
+# amount; V3ResponsiveGeometry keeps the ordinary 0.47 behavior and supplies
+# the stage-specific value at the viewport boundary.
+grep -q 'scrollTo(id, anchor: UnitPoint(x: 0.5, y: anchorY))' "$WINDOW"
+grep -q 'V3ResponsiveGeometry.lyricScrollAnchor' "$WINDOW"
+grep -q 'stage: stage' "$WINDOW"
 ! grep -q 'LyricsCanvasView' "$WINDOW"
 grep -q 'shouldShowRuby' "$WINDOW"
 grep -q 'distance <= 1' "$WINDOW"
@@ -41,7 +46,9 @@ grep -q 'task(id: requestKey)' "$BACKDROP"
 grep -q 'Task.detached(priority: .utility)' "$BACKDROP"
 grep -q 'noiseData' "$BACKDROP"
 grep -q 'maxPixel: 1280' "$BACKDROP"
-grep -q 'maxPixel: 48' "$BACKDROP"
+# The old check looked for the cache capacity as if it were an image size.
+# Keep the actual bounded-cache invariant explicit instead of dropping it.
+grep -q 'capacity = 48' "$BACKDROP"
 grep -q 'switch settings.v3ArtworkPresentation' "$BACKDROP"
 grep -q 'ambientArtworkLayers' "$BACKDROP"
 grep -q 'stageArtworkLayers' "$BACKDROP"

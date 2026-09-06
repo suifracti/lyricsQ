@@ -302,6 +302,14 @@ public final class PlaybackState: ObservableObject {
                 self.reconnectSpotify()
             }
             .store(in: &self.settingsCancellables)
+        resolvedSettings.$lyricsPresentationOffset
+            .dropFirst()
+            .sink { [weak self] _ in
+                guard let self else { return }
+                self.syncPublishedLineIndex(source: .presentationOffset)
+                self.objectWillChange.send()
+            }
+            .store(in: &self.settingsCancellables)
     }
 
 
@@ -343,6 +351,15 @@ public final class PlaybackState: ObservableObject {
                     continue
                 }
                 providers.append(QQExperimentalLyricsProvider())
+            case .lyricsOVH:
+                guard ProcessInfo.processInfo.environment["SPOTIFYLYRICS_DISABLE_LYRICSOVH"] != "1" else { continue }
+                providers.append(LyricsOVHProvider())
+            case .kuwoExperimental:
+                guard ProcessInfo.processInfo.environment["SPOTIFYLYRICS_DISABLE_KUWO"] != "1" else { continue }
+                providers.append(KuwoExperimentalLyricsProvider())
+            case .kugouExperimental:
+                guard ProcessInfo.processInfo.environment["SPOTIFYLYRICS_DISABLE_KUGOU"] != "1" else { continue }
+                providers.append(KugouExperimentalLyricsProvider())
             }
         }
         // A corrupted/legacy preference must not remove the read-only local
@@ -857,9 +874,6 @@ public final class PlaybackState: ObservableObject {
             entriesByID[entry.sessionID] = enriched
         }
         return entriesByID.values.sorted { lhs, rhs in
-            if lhs.lastObservedAt != rhs.lastObservedAt {
-                return lhs.lastObservedAt > rhs.lastObservedAt
-            }
             if lhs.startedAt != rhs.startedAt {
                 return lhs.startedAt > rhs.startedAt
             }
@@ -2193,6 +2207,8 @@ public final class PlaybackState: ObservableObject {
         position: TimeInterval,
         isPlaying: Bool
     ) {
+        // A selected but paused song has not started a playback occurrence.
+        guard isPlaying else { return }
         var session = ListeningHistorySession(track: track, identity: identity, startedAt: date)
         if let completed = session.observe(at: date, position: position, isPlaying: isPlaying) {
             publishListeningHistory(completed)
@@ -2346,6 +2362,7 @@ public final class PlaybackState: ObservableObject {
         case boundary
         case lyricsSession = "lyrics-session"
         case pauseResume = "pause-resume"
+        case presentationOffset = "presentation-offset"
         case reset
         case mockTick = "mock-tick"
     }
@@ -2495,7 +2512,8 @@ public final class PlaybackState: ObservableObject {
             receivedAtMonotonicTime: playbackAnchorMonotonic,
             isPlaying: isPlaying,
             trackID: currentTrack.id,
-            trackDuration: currentTrack.duration
+            trackDuration: currentTrack.duration,
+            presentationOffset: settingsStore.lyricsPresentationOffset
         )
     }
 }

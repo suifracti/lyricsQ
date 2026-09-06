@@ -59,6 +59,13 @@ public struct AITranslationPromptBuilder: Sendable {
             if profile.preserveRepetition { custom += "\nKeep repeated chorus translations consistent." }
             if profile.keepSongTone { custom += "\nKeep the song's original tone." }
         }
+        if !context.styleSummary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            custom += "\nConfirmed personal style summary (manual examples only):\n\(context.styleSummary)"
+        }
+        if !context.styleExamples.isEmpty {
+            custom += "\nConfirmed manual style examples; imitate style, never copy content into unrelated lines:\n"
+            custom += context.styleExamples.map { "- \($0.original) => \($0.translation)" }.joined(separator: "\n")
+        }
         let fullSystem = custom.isEmpty ? system : system + "\nAdditional user style guidance:\n" + custom
 
         let payload: [String: Any] = [
@@ -69,11 +76,18 @@ public struct AITranslationPromptBuilder: Sendable {
             "targetLanguage": context.targetLanguage,
             "style": context.style,
             "lines": context.lines.map { line in
-                var item: [String: Any] = ["index": line.index, "text": line.original]
+                var item: [String: Any] = [
+                    "index": line.index,
+                    "lineID": line.lineID.uuidString,
+                    "text": line.original
+                ]
                 if let kana = line.kana, !kana.isEmpty { item["kana"] = kana }
                 if let romaji = line.romaji, !romaji.isEmpty { item["romaji"] = romaji }
+                if let timestamp = line.timestamp, timestamp.isFinite { item["timestamp"] = timestamp }
                 return item
-            }
+            },
+            "styleSummary": context.styleSummary,
+            "styleExamples": context.styleExamples.map { ["original": $0.original, "translation": $0.translation] }
         ]
         guard JSONSerialization.isValidJSONObject(payload) else {
             throw AITranslationError.invalidResponse("无法构造翻译请求")

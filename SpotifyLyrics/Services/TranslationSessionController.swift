@@ -456,7 +456,9 @@ public final class TranslationSessionController: ObservableObject {
         errorMessage = nil
         progressMessage = engine?.metadata.stableID == TranslationEngineID.appleSystem.rawValue
             ? "正在检查 Apple 语言支持并准备系统翻译…"
-            : "正在请求整首歌词翻译…"
+            : (engine?.metadata.stableID == TranslationEngineID.codexChatGPT.rawValue
+                ? "正在通过 Codex 会话准备整首歌词翻译…"
+                : "正在请求整首歌词翻译…")
         let originalLines = context.document.lines.map(\.originalText)
         let engine = self.engine
         requestTask = Task { [weak self, repository] in
@@ -467,9 +469,12 @@ public final class TranslationSessionController: ObservableObject {
                         index: index,
                         original: line.originalText,
                         kana: line.kanaText,
-                        romaji: line.romajiText
+                        romaji: line.romajiText,
+                        lineID: line.id,
+                        timestamp: line.timestamp
                     )
                 }
+                let profile = Self.decodeProfile(context.configuration.profileSnapshot)
                 let aiContext = AITranslationContext(
                     title: context.document.title ?? "",
                     artist: context.document.artist ?? "",
@@ -477,7 +482,9 @@ public final class TranslationSessionController: ObservableObject {
                     sourceLanguage: "ja",
                     targetLanguage: context.configuration.targetLanguage,
                     style: context.configuration.style,
-                    lines: sourceLines
+                    lines: sourceLines,
+                    styleSummary: profile?.styleSummary ?? "",
+                    styleExamples: profile?.examples ?? []
                 )
                 let draft: AITranslationDraft
                 do {
@@ -559,5 +566,10 @@ public final class TranslationSessionController: ObservableObject {
         guard let context else { return }
         manualSelection[context.key] = id
         loadExistingOrAutoTranslate(context)
+    }
+
+    private static func decodeProfile(_ snapshot: String) -> TranslationStyleProfile? {
+        guard let data = snapshot.data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode(TranslationStyleProfile.self, from: data)
     }
 }

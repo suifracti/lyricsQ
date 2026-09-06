@@ -5,6 +5,7 @@ ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 TIMELINE="$ROOT_DIR/SpotifyLyrics/Lyrics/LyricsModels.swift"
 PLAYBACK="$ROOT_DIR/SpotifyLyrics/Services/PlaybackState.swift"
 TRANSLATION="$ROOT_DIR/SpotifyLyrics/Services/TranslationSessionController.swift"
+FLOATING_VIEW="$ROOT_DIR/SpotifyLyrics/Views/Floating/FloatingLyricsView.swift"
 TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/floating-lyrics-contract.XXXXXX")"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
@@ -36,6 +37,7 @@ require "$PLAYBACK" 'liveCurrentLineIndex' 'floating window uses the shared curr
 require "$PLAYBACK" 'liveLyricsProjectionCache' 'projection cache is owned by PlaybackState'
 require "$TRANSLATION" 'identity: TrackIdentity' 'translation projection can validate live identity'
 require "$TIMELINE" 'middle = lower' 'timeline lookup uses binary search'
+require "$FLOATING_VIEW" 'NSAttributedString\(string: text, attributes:' 'floating text measurement uses current text before AppKit view update'
 ! grep -Eq 'lines\.indices\.last' "$TIMELINE" || {
   echo 'FAIL: timeline still scans from the end on every playback tick' >&2
   exit 1

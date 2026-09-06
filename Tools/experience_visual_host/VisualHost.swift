@@ -27,7 +27,7 @@ private final class ExperiencePlaybackProvider: PlaybackProvider {
     func pause() async throws { playing = false }
     func previous() async throws { position = 8 }
     func next() async throws { position = 28 }
-    func seek(to position: TimeInterval) async throws { self.position = position }
+    func seek(to position: TimeInterval) async throws { self.position = position; print("VISUAL_SEEK", position); fflush(stdout) }
 }
 private struct ExperienceLyricsProvider: LyricsProvider {
     let name = "Generated fixture lyrics"
@@ -56,6 +56,15 @@ private struct ExperienceLyricsProvider: LyricsProvider {
             lines[2].kanaText = "このよるをこえて、まだみぬあさへ"
             lines[2].romajiText = "Kono yoru o koete, mada minu asa e"
         }
+        if ProcessInfo.processInfo.arguments.contains("--ruby-correction") {
+            lines[2].originalText = "身体にしてあげよう"
+            lines[2].kanaText = "しんたいにしてあげよう"
+        }
+        if ProcessInfo.processInfo.arguments.contains("--missing-ruby") {
+            lines[2].originalText = "既読の速度で愛はかって"
+            lines[2].kanaText = nil
+            lines[2].romajiText = nil
+        }
         if ProcessInfo.processInfo.arguments.contains("--timed") {
             var offset = 0
             lines[2].timedSpans = lines[2].originalText.enumerated().map { index, character in
@@ -66,7 +75,7 @@ private struct ExperienceLyricsProvider: LyricsProvider {
                                      utf16Start: offset, utf16Length: text.utf16.count)
             }
         }
-        return .match(LyricsDocument(identity: identity, title: track.title, artist: track.artist, album: track.album, duration: track.duration, lines: lines, isSynchronized: true, source: .local, confidence: 1))
+        return .match(LyricsDocument(identity: identity, title: track.title, artist: track.artist, album: track.album, duration: track.duration, lines: lines, isSynchronized: true, source: ProcessInfo.processInfo.arguments.contains("--source-provenance") ? .neteaseExperimental : .local, confidence: 1))
     }
 }
 
@@ -94,6 +103,7 @@ private enum ExperienceArtwork {
             (text as NSString).draw(at: point, withAttributes: attrs)
         }
         ("AFTER\nTHE RAIN" as NSString).draw(in: CGRect(x: 50, y: size.height*0.36, width: size.width-100, height: 210), withAttributes: [.font:NSFont.systemFont(ofSize:56,weight:.black),.foregroundColor:NSColor.white])
+        if kind == "white" { NSColor.white.setFill(); bounds.fill() }
         image.unlockFocus()
         guard let tiff=image.tiffRepresentation, let bitmap=NSBitmapImageRep(data:tiff), let png=bitmap.representation(using:.png,properties:[:]) else { return nil }
         let url=ExperienceArguments.root.appendingPathComponent("\(kind).png")
@@ -124,8 +134,37 @@ struct ExperienceVisualHostApp: App {
         if let font = Double(ExperienceArguments.value("--desktop-font", fallback: "")) { defaults.set(font, forKey: "desktopLyrics.fontSize") }
         let settings=AppSettingsStore(defaults:defaults)
         settings.floatingWindowAlwaysOnTop = true
+        precondition(!settings.v3StageReadabilityEnabled)
+        settings.v3StageReadabilityEnabled = true
+        precondition(AppSettingsStore(defaults: defaults).v3StageReadabilityEnabled)
+        settings.v3StageReadabilityEnabled = ProcessInfo.processInfo.arguments.contains("--stage-readability")
+        precondition(AppSettingsStore(defaults: defaults).v3StageReadabilityEnabled == settings.v3StageReadabilityEnabled)
+        settings.v3PlaybackDetailsOnHover = ProcessInfo.processInfo.arguments.contains("--hover-details")
+        precondition(AppSettingsStore(defaults: defaults).v3PlaybackDetailsOnHover == settings.v3PlaybackDetailsOnHover)
+        if ProcessInfo.processInfo.arguments.contains("--desktop-custom") {
+            settings.floatingDesktopOriginalColorHex = "FFFFFF"
+            settings.floatingDesktopHighlightColorHex = "41FFB6"
+            settings.floatingDesktopRubyColorHex = "FFE082"
+            settings.floatingDesktopTranslationColorHex = "D2E5FF"
+            settings.floatingDesktopOutlineColorHex = "121820"
+        }
+        if ProcessInfo.processInfo.arguments.contains("--ruby-correction") || ProcessInfo.processInfo.arguments.contains("--ruby-display") {
+            var display = settings.displayPreferences
+            display.showKana = true
+            display.showRomaji = true
+            display.kanaDisplayMode = .inlineRuby
+            settings.displayPreferences = display
+        }
         settings.v3ArtworkPresentation = V3ArtworkPresentation.allCases.first { $0.title == ExperienceArguments.value("--style-title",fallback:"") } ?? (ExperienceArguments.value("--style",fallback:"ambient") == "stage" ? .stage : ExperienceArguments.value("--style",fallback:"ambient") == "classic" ? .classic : .ambient)
         settings.v3ArtworkPosition=ExperienceArguments.value("--position",fallback:"left")
+        let lyricPosition = ExperienceArguments.value("--lyric-position", fallback: "automatic")
+        settings.v3LyricsPosition = lyricPosition
+        precondition(AppSettingsStore(defaults: defaults).v3LyricsPosition == lyricPosition)
+        let selectedStyle = settings.v3ArtworkPresentation
+        settings.v3ArtworkPresentation = selectedStyle == .stage ? .ambient : .stage
+        precondition(settings.v3LyricsPosition == "automatic")
+        settings.v3ArtworkPresentation = selectedStyle
+        precondition(settings.v3LyricsPosition == lyricPosition)
         if let scale=Double(ExperienceArguments.value("--scale",fallback:"")) { settings.v3ArtworkSizeScale=scale }
         if let blur=Double(ExperienceArguments.value("--blur",fallback:"")) { settings.v3BackdropBlurRadius=blur }
         let provider=ExperiencePlaybackProvider(artwork:ExperienceArtwork.make())
@@ -143,6 +182,9 @@ struct ExperienceVisualHostApp: App {
         }
         .defaultSize(width:ExperienceArguments.size.width,height:ExperienceArguments.size.height)
         .windowStyle(.hiddenTitleBar)
+        Window("歌词编辑", id: "lyrics-editor") {
+            LyricsEditorWindowView().environmentObject(playback).environmentObject(settings)
+        }
         Settings { SettingsRootView().environmentObject(settings).environmentObject(playback).environmentObject(SettingsDataController()) }
     }
 }
@@ -151,12 +193,15 @@ private struct ExperienceFixtureRoot: View {
     @ObservedObject var settings:AppSettingsStore
     @StateObject private var floatingController = FloatingLyricsWindowController()
     @StateObject private var capsuleController = CapsuleLyricsWindowController()
+    @Environment(\.openSettings) private var openSettings
+    @Environment(\.openWindow) private var openWindow
     @State private var layout=MainWindowLayoutStyle.appleMusicImmersiveV3.rawValue
     private var targetWindow: NSWindow? {
         NSApp.windows.first {
             switch ExperienceArguments.surface {
             case "floating": return String(describing: type(of: $0)).contains("FloatingLyricsPanel")
             case "capsule": return String(describing: type(of: $0)).contains("CapsuleLyricsPanel")
+            case "fullscreen": return $0.title == "全屏歌词"
             default: return $0.title == "Experience visual fixture"
             }
         }
@@ -173,14 +218,110 @@ private struct ExperienceFixtureRoot: View {
                 fflush(stdout)
             }
             .task {
+                MenuBarLyricsController.shared.setOpenEditorHandler { openWindow(id: "lyrics-editor") }
+                MenuBarLyricsController.shared.setOpenSettingsHandler { openSettings() }
+                MenuBarLyricsController.shared.setOpenMainWindowHandler { openWindow(id: "fixture-main") }
                 playback.startProvider()
                 try? await Task.sleep(for:.seconds(1))
+                if ProcessInfo.processInfo.arguments.contains("--fullscreen-preview-isolation") {
+                    let previewTrack = Track(id: "spotify:track:unplayedpreview",
+                        title: "UNPLAYED PREVIEW — MUST NOT APPEAR FULLSCREEN", artist: "Preview artist",
+                        album: "Preview album", duration: 240)
+                    let previewLine = LyricLine(timestamp: 0, originalText: "PREVIEW LYRICS — MUST NOT APPEAR FULLSCREEN")
+                    let previewDocument = LyricsDocument(identity: TrackIdentity(track: previewTrack), title: previewTrack.title,
+                        artist: previewTrack.artist, album: previewTrack.album, duration: previewTrack.duration,
+                        lines: [previewLine], isSynchronized: false, source: .local, confidence: 1)
+                    playback.loadSearchResult(SongSearchResult(id: "fixture-preview", source: .local, track: previewTrack,
+                        confidence: 1, lyrics: previewDocument))
+                    try? await Task.sleep(for: .milliseconds(500))
+                    precondition(playback.isShowingSearchPreview && playback.liveLyrics != playback.lyrics)
+                }
+                if ExperienceArguments.surface == "fullscreen" {
+                    WindowManager.shared.showFullScreen(state: playback, settings: settings)
+                    for _ in 0..<60 {
+                        if WindowManager.shared.fullScreenWindow?.styleMask.contains(.fullScreen) == true { break }
+                        try? await Task.sleep(for: .milliseconds(100))
+                    }
+                    precondition(WindowManager.shared.fullScreenWindow?.styleMask.contains(.fullScreen) == true)
+                    print("FULLSCREEN_NATIVE_ENTERED", settings.v3ArtworkPresentation.rawValue)
+                }
                 if ExperienceArguments.surface == "floating" { floatingController.show(state: playback, settings: settings) }
                 if ExperienceArguments.surface == "capsule" {
                     capsuleController.show(state: playback, settings: settings)
                     if ExperienceArguments.value("--capsule-state", fallback: "collapsed") == "expanded" { capsuleController.expand() }
                 }
+                if ProcessInfo.processInfo.arguments.contains("--copy-contract") {
+                    var first = LyricLine(timestamp: 68, originalText: "身体にしてあげよう")
+                    first.kanaText = "からだにしてあげよう"
+                    first.romajiText = "karada ni shite ageyou"
+                    first.translationText = "让身体…"
+                    let last = LyricLine(timestamp: 72, originalText: "またね")
+                    let lines = [first, last]
+                    precondition(LyricsCopyText.format(lines) == "身体にしてあげよう\nまたね")
+                    precondition(LyricsCopyText.format(lines, original: false, kana: true) == "からだにしてあげよう")
+                    precondition(LyricsCopyText.format(lines, romaji: true, translation: true) == "身体にしてあげよう\nkarada ni shite ageyou\n让身体…\n\nまたね")
+                    precondition(LyricsCopyText.format(lines, original: false).isEmpty)
+                    precondition(LyricsCopyText.format([]).isEmpty)
+                    precondition(lines[0].timestamp == 68 && lines[0].originalText == first.originalText)
+                    precondition(LyricsCopyText.format(lines, selectedIndices: [1]) == "またね")
+                    precondition(LyricsCopyText.format(lines, selectedIndices: []).isEmpty)
+                    precondition(LyricsCopyText.format(lines, kana: true, selectedIndices: [0, 99]) == "身体にしてあげよう\nからだにしてあげよう")
+                    let scope = "spotify-id:copy-fixture|metadata:copy|singer|album|170"
+                    let correction = try! ReadingRubyCorrection.entry(surface: "身体", reading: "からだ", trackStableKey: scope)
+                    let raw = LyricLine(timestamp: 68, originalText: "身体にしてあげよう", translationText: "保留翻译")
+                    let automatic = LyricsCopyText.resolvingReadings([raw], trackStableKey: scope, artistDisplay: "Singer", language: "ja", userEntries: [correction])
+                    precondition(automatic[0].kanaText == "からだにしてあげよう")
+                    precondition(automatic[0].romajiText?.contains("karada") == true)
+                    precondition(automatic[0].translationText == "保留翻译" && automatic[0].timestamp == raw.timestamp)
+                    precondition(raw.kanaText == nil && raw.romajiText == nil)
+                    let confirmed = LyricsCopyText.resolvingReadings([first], trackStableKey: scope, artistDisplay: "Singer", language: "ja", userEntries: [])
+                    precondition(confirmed[0].kanaText == first.kanaText && confirmed[0].romajiText == first.romajiText && confirmed[0].translationText == first.translationText)
+                    let chinese = LyricsCopyText.resolvingReadings([LyricLine(timestamp: 0, originalText: "你好世界")], trackStableKey: nil, artistDisplay: nil, language: "zh", userEntries: [])
+                    precondition(chinese[0].kanaText == nil && chinese[0].romajiText == nil)
+                    let unknownHan = LyricsCopyText.resolvingReadings([LyricLine(timestamp: 0, originalText: "身体")], trackStableKey: nil, artistDisplay: nil, language: nil, userEntries: [])
+                    precondition(unknownHan[0].kanaText == nil && unknownHan[0].romajiText == nil)
+                    print("LYRICS_COPY_CONTRACT_PASS")
+                }
                 try? await Task.sleep(for:.seconds(2))
+                if ProcessInfo.processInfo.arguments.contains("--ruby-save-contract") {
+                    do {
+                        guard let versionID = playback.liveLyricsVersionID,
+                              let trackKey = playback.currentTrackIdentity?.stableKey else { fatalError("Missing persisted fixture") }
+                        let before = playback.liveLyrics
+                        try await playback.readingSession.correctRuby(surface: "身体", reading: "からだ", trackKey: trackKey,
+                            lyricsVersionID: versionID, visibleLines: before, expectedReadingVersionID: playback.readingSession.selectedVersion?.record.id)
+                        guard let saved = playback.readingSession.selectedVersion else { fatalError("No saved manual version") }
+                        precondition(saved.record.isManuallyEdited)
+                        precondition(saved.lines[2].readingText == "からだにしてあげよう")
+                        precondition(playback.liveLyrics[2].kanaText == "からだにしてあげよう", "Playback projection cache did not update")
+                        let projected = playback.readingSession.project(onto: before)
+                        precondition(projected[2].romajiText?.contains("karada") == true)
+                        precondition(projected[2].originalText == before[2].originalText && projected[2].timestamp == before[2].timestamp)
+                        precondition(settings.readingUserDictionary.load().contains { $0.trackStableKey == trackKey && $0.reading == "からだ" })
+                        do {
+                            try await playback.readingSession.correctRuby(surface: "身体", reading: "からだ", trackKey: "wrong-song",
+                                lyricsVersionID: versionID, visibleLines: before, expectedReadingVersionID: playback.readingSession.selectedVersion?.record.id)
+                            fatalError("Stale song accepted")
+                        } catch ReadingRepositoryError.sourceContentMismatch {}
+                        playback.readingSession.reload()
+                        try? await Task.sleep(for: .seconds(1))
+                        precondition(playback.readingSession.selectedVersion?.record.id == saved.record.id)
+                        try await playback.readingSession.correctRuby(surface: "身体", reading: "カラダ", trackKey: trackKey,
+                            lyricsVersionID: versionID, visibleLines: playback.liveLyrics, expectedReadingVersionID: saved.record.id)
+                        let secondID = playback.readingSession.selectedVersion!.record.id
+                        precondition(secondID != saved.record.id)
+                        playback.readingSession.restoreRecommended()
+                        precondition(playback.readingSession.selectedVersion?.record.id == secondID)
+                        precondition(playback.readingSession.availableVersions.first(where: { $0.record.id == saved.record.id })?.lines == saved.lines)
+                        do {
+                            try await playback.readingSession.correctRuby(surface: "身体", reading: "からだ", trackKey: trackKey,
+                                lyricsVersionID: versionID, visibleLines: before, expectedReadingVersionID: saved.record.id)
+                            fatalError("Stale reading accepted")
+                        } catch ReadingRepositoryError.invalidLines(_) {}
+                        print("RUBY_SAVE_CONTRACT_PASS")
+                        fflush(stdout)
+                    } catch { fatalError("Ruby save failed: \(error)") }
+                }
                 for window in NSApp.windows where window.title == "Experience visual fixture" {
                     window.setContentSize(ExperienceArguments.size)
                     window.center()
@@ -212,6 +353,24 @@ private struct ExperienceFixtureRoot: View {
                     floatingController.setInteractionMode(FloatingLyricsInteractionMode(rawValue: ExperienceArguments.value("--floating-mode", fallback: "interactive")) ?? .interactive)
                 }
                 try? await Task.sleep(for:.seconds(1))
+                if ProcessInfo.processInfo.arguments.contains("--fullscreen-behavior-checks") {
+                    let originalWindow = WindowManager.shared.fullScreenWindow!
+                    precondition(originalWindow.level == .normal && originalWindow.collectionBehavior.contains(.fullScreenPrimary))
+                    WindowManager.shared.hideFullScreen()
+                    for _ in 0..<80 {
+                        if !WindowManager.shared.fullScreenWindowIsVisible { break }
+                        try? await Task.sleep(for: .milliseconds(100))
+                    }
+                    precondition(!WindowManager.shared.fullScreenWindowIsVisible && !playback.showFullScreen)
+                    WindowManager.shared.showFullScreen(state: playback, settings: settings)
+                    for _ in 0..<80 {
+                        if originalWindow.styleMask.contains(.fullScreen) { break }
+                        try? await Task.sleep(for: .milliseconds(100))
+                    }
+                    precondition(WindowManager.shared.fullScreenWindow === originalWindow && originalWindow.styleMask.contains(.fullScreen))
+                    print("FULLSCREEN_BEHAVIOR_CHECKS_PASSED")
+                    fflush(stdout)
+                }
                 let output=ExperienceArguments.value("--output",fallback:"")
                 if !output.isEmpty, let window=targetWindow, let view=window.contentView, let bitmap=view.bitmapImageRepForCachingDisplay(in:view.bounds) {
                     view.cacheDisplay(in:view.bounds,to:bitmap)

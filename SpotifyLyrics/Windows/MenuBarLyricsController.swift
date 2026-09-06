@@ -24,6 +24,14 @@ public struct MenuBarLyricsSnapshot: Equatable, Sendable {
 }
 
 public enum MenuBarTextFormatter {
+    public static func statusItemTitle(snapshot: MenuBarLyricsSnapshot, lyricsEnabled: Bool) -> String {
+        lyricsEnabled ? truncateToFit(snapshot.statusText) : ""
+    }
+
+    public static func statusItemSymbol(snapshot: MenuBarLyricsSnapshot) -> String {
+        snapshot.hasLiveTrack && !snapshot.isPlaying ? "pause.fill" : "music.note"
+    }
+
     public static let maxVisualWidth: CGFloat = 240.0
     public static let font: NSFont = NSFont.systemFont(ofSize: NSFont.systemFontSize(for: .regular))
 
@@ -58,10 +66,18 @@ public enum MenuBarTextFormatter {
 
 @MainActor
 public final class MenuBarLyricsController: NSObject, ObservableObject {
-    public static let shared = MenuBarLyricsController()
+    public static let shared = MenuBarLyricsController(settings: .shared)
 
     @Published public private(set) var currentSnapshot: MenuBarLyricsSnapshot
 
+    @Published public private(set) var statusItemTitle = ""
+    public var menuBarLyricsEnabled: Bool {
+        get { settings.menuBarLyricsEnabled }
+        set { settings.menuBarLyricsEnabled = newValue }
+    }
+
+    private let settings: AppSettingsStore
+    private var settingsSubscription: AnyCancellable?
     private var statusItem: NSStatusItem?
     private var popover: NSPopover?
     private weak var playbackState: PlaybackState?
@@ -69,8 +85,10 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
     private var openMainWindowHandler: (@MainActor () -> Void)?
     private var openLibraryHandler: (@MainActor () -> Void)?
     private var openSettingsHandler: (@MainActor () -> Void)?
+    private var openEditorHandler: (@MainActor () -> Void)?
 
-    private override init() {
+    public init(settings: AppSettingsStore) {
+        self.settings = settings
         self.currentSnapshot = MenuBarLyricsSnapshot(
             state: .idle,
             statusText: "Lyric Island",
@@ -83,6 +101,12 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
             artworkURL: nil
         )
         super.init()
+        // Subscribe to the emitted value: @Published sends before its stored
+        // property changes, and playback can stay unchanged while paused.
+        settingsSubscription = settings.$menuBarLyricsEnabled
+            .sink { [weak self] enabled in
+                self?.updateStatusItemButton(lyricsEnabled: enabled)
+            }
     }
 
     public func bind(playbackState: PlaybackState) {
@@ -112,6 +136,16 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
 
     public func setOpenSettingsHandler(_ handler: @escaping @MainActor () -> Void) {
         openSettingsHandler = handler
+    }
+
+    public func setOpenEditorHandler(_ handler: @escaping @MainActor () -> Void) {
+        openEditorHandler = handler
+    }
+
+    public func openEditor() {
+        popover?.performClose(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        openEditorHandler?()
     }
 
     public func openMainWindow() {
@@ -182,6 +216,7 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
             button.title = "Lyric Island"
         }
         self.statusItem = item
+        updateStatusItemButton(lyricsEnabled: settings.menuBarLyricsEnabled)
     }
 
     private func setupPopoverIfNeeded() {
@@ -211,26 +246,21 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
 
         guard newSnapshot != currentSnapshot else { return }
 
-        let oldSnapshot = currentSnapshot
         currentSnapshot = newSnapshot
-
-        updateStatusItemButton(newSnapshot: newSnapshot, oldSnapshot: oldSnapshot)
+        updateStatusItemButton(lyricsEnabled: settings.menuBarLyricsEnabled)
     }
 
-    private func updateStatusItemButton(newSnapshot: MenuBarLyricsSnapshot, oldSnapshot: MenuBarLyricsSnapshot) {
+    private func updateStatusItemButton(lyricsEnabled: Bool) {
+        statusItemTitle = MenuBarTextFormatter.statusItemTitle(
+            snapshot: currentSnapshot, lyricsEnabled: lyricsEnabled
+        )
         guard let button = statusItem?.button else { return }
-
-        let truncatedTitle = MenuBarTextFormatter.truncateToFit(newSnapshot.statusText)
-        button.title = truncatedTitle
-
-        if newSnapshot.hasLiveTrack {
-            button.image = NSImage(
-                systemSymbolName: newSnapshot.isPlaying ? "music.note" : "pause.fill",
-                accessibilityDescription: "Lyric Island"
-            )
-        } else {
-            button.image = NSImage(systemSymbolName: "music.note", accessibilityDescription: "Lyric Island")
-        }
+        button.title = statusItemTitle
+        button.imagePosition = lyricsEnabled ? .imageLeft : .imageOnly
+        button.image = NSImage(
+            systemSymbolName: MenuBarTextFormatter.statusItemSymbol(snapshot: currentSnapshot),
+            accessibilityDescription: "Lyric Island"
+        )
     }
 
     public static func deriveSnapshot(from state: PlaybackState) -> MenuBarLyricsSnapshot {

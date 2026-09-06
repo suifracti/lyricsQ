@@ -32,13 +32,13 @@ enum V3ResponsiveGeometry {
 
     enum ForegroundLayout: Equatable {
         case adaptiveSplit
+        case portrait
         case lyricsFocus
     }
 
-    /// Resolves the foreground composition without an implicit poster mode.
-    /// A compact lyrics focus is an explicit preference; otherwise the split
-    /// canvas remains the same composition all the way down to the technical
-    /// window minimum and only its metrics shrink continuously.
+    /// Preserve the continuous split in landscape and near-square windows.
+    /// Tall windows gain a player header and a full-width reading viewport;
+    /// the explicit compact focus preference always takes priority.
     static func foregroundLayout(
         canvasSize: CGSize,
         automaticLyricsFocus: Bool,
@@ -51,7 +51,46 @@ enum V3ResponsiveGeometry {
            width <= compactFocusWidth || height <= compactFocusHeight {
             return .lyricsFocus
         }
+        if height >= 800, height >= width * 1.10 { return .portrait }
         return .adaptiveSplit
+    }
+
+    struct PortraitMetrics: Equatable {
+        let horizontalPadding: CGFloat
+        let topPadding: CGFloat
+        let bottomPadding: CGFloat
+        let contentWidth: CGFloat
+        let headerHeight: CGFloat
+        let headerInset: CGFloat
+        let headerGap: CGFloat
+        let coverColumnWidth: CGFloat
+        let coverSize: CGFloat
+        let metadataWidth: CGFloat
+        let gap: CGFloat
+        let lyricsHeight: CGFloat
+    }
+
+    static func portraitMetrics(canvasSize: CGSize, artworkScale: CGFloat) -> PortraitMetrics {
+        let width = finitePositive(canvasSize.width)
+        let height = finitePositive(canvasSize.height)
+        let horizontalPadding = min(40, max(32, width * 0.04))
+        let contentWidth = max(1, width - horizontalPadding * 2)
+        let topPadding: CGFloat = 72
+        let bottomPadding: CGFloat = 28
+        let gap: CGFloat = 24
+        let headerInset: CGFloat = 16
+        let headerGap: CGFloat = 24
+        let headerHeight = min(312, max(248, contentWidth * 0.34 + headerInset * 2))
+        let coverColumnWidth = min(headerHeight - headerInset * 2, contentWidth * 0.36)
+        let normalizedScale = min(1, max(0, (finiteValue(artworkScale) - 0.8) / 0.6))
+        let coverSize = coverColumnWidth * (0.70 + normalizedScale * 0.30)
+        return PortraitMetrics(
+            horizontalPadding: horizontalPadding, topPadding: topPadding, bottomPadding: bottomPadding,
+            contentWidth: contentWidth, headerHeight: headerHeight, headerInset: headerInset,
+            headerGap: headerGap, coverColumnWidth: coverColumnWidth, coverSize: coverSize,
+            metadataWidth: max(1, contentWidth - headerInset * 2 - headerGap - coverColumnWidth),
+            gap: gap, lyricsHeight: max(1, height - topPadding - bottomPadding - gap - headerHeight)
+        )
     }
 
     struct ColumnSplit: Equatable {
@@ -101,7 +140,8 @@ enum V3ResponsiveGeometry {
         // Metadata, progress, time labels, playback buttons and their spacing
         // keep a fixed vertical budget. This is what prevents a 140% cover
         // from pushing transport controls below a short wide window.
-        let reservedTrackChromeHeight = min(196, max(0, availableHeight - 1))
+        let chromeBudget = interpolate(from: 248, to: 280, progress: interpolation)
+        let reservedTrackChromeHeight = min(chromeBudget, max(0, availableHeight - 1))
         let maximumCover = min(
             max(1, split.artwork - 12),
             max(1, availableHeight - reservedTrackChromeHeight),
@@ -176,12 +216,115 @@ enum V3ResponsiveGeometry {
     }
 
     /// Lyrics occupy an overlay viewport; cover orientation never divides the stage.
-    static func stageReadingRect(canvasSize: CGSize, artworkAspectRatio: CGFloat, position: String) -> CGRect {
+    static func stageReadingRect(canvasSize: CGSize, artworkAspectRatio: CGFloat, position: String, lyricPosition: String = "automatic", readingScale: CGFloat = 1) -> CGRect {
         let width = finitePositive(canvasSize.width)
         let height = finitePositive(canvasSize.height)
-        let readingWidth = min(860, max(1, width - 80))
-        return CGRect(x: (width - readingWidth) / 2, y: 76,
-                      width: readingWidth, height: max(1, height - 180))
+        let readingWidth = min(860 * min(1.5, max(1, readingScale)), max(1, width - 80))
+        let margin = min(40, max(0, (width - readingWidth) / 2))
+        let x = lyricPosition == "left" ? margin
+            : lyricPosition == "right" ? width - readingWidth - margin : (width - readingWidth) / 2
+        return CGRect(x: x, y: 76,
+                      width: readingWidth, height: max(1, height - 192))
+    }
+
+    /// Return the pointer hit region that reveals the playback details.
+    ///
+    /// The caller supplies the measured cover/player composition rather than
+    /// an assumed half of the window. A small, bounded expansion keeps the
+    /// cover-to-card gap comfortable without allowing the lyric viewport to
+    /// become a trigger zone.
+    static func playbackRevealRect(region: CGRect, canvas: CGRect) -> CGRect {
+        guard !region.isNull, !region.isEmpty, !canvas.isNull, !canvas.isEmpty else {
+            return .null
+        }
+        let expanded = region.insetBy(dx: -12, dy: -12)
+        return expanded.intersection(canvas)
+    }
+
+    /// Shared visibility policy for the playback details in every V3 layout.
+    /// Toolbar visibility deliberately remains a separate state machine.
+    static func playbackDetailsVisible(
+        hoverOnly: Bool,
+        pointerInRegion: Bool,
+        interacting: Bool,
+        panelPresented: Bool
+    ) -> Bool {
+        !hoverOnly || pointerInRegion || interacting || panelPresented
+    }
+
+    /// Scale the foreground cover only while playback details are hidden.
+    /// The layout frame remains unchanged, so the lyrics column and the hover
+    /// anchor never move with the visual animation. Short windows get a
+    /// smaller cap; portrait uses the fixed header as its vertical budget.
+    static func ambientHiddenCoverScale(
+        coverSize: CGFloat,
+        availableWidth: CGFloat,
+        availableHeight: CGFloat,
+        compact: Bool,
+        portrait: Bool
+    ) -> CGFloat {
+        let size = finitePositive(coverSize)
+        let width = finitePositive(availableWidth)
+        let height = finitePositive(availableHeight)
+        let widthLimit = max(1, width / size)
+        let heightLimit = max(1, height / size)
+        let cap: CGFloat
+        if portrait {
+            cap = 1.14
+        } else if compact {
+            cap = 1.06
+        } else {
+            let heightProgress = min(1, max(0, (height - 520) / 140))
+            cap = 1.06 + heightProgress * 0.08
+        }
+        return min(cap, widthLimit, heightLimit)
+    }
+
+    /// Visual-only centering for the enlarged cover. The measured frame and
+    /// hover anchor remain unchanged; this merely places the scaled aspect-fit
+    /// image in the same media column without moving the lyric column.
+    static func ambientHiddenCoverOffset(
+        containerWidth: CGFloat,
+        coverSize: CGFloat,
+        scale: CGFloat,
+        alignment: String
+    ) -> CGFloat {
+        let width = finitePositive(containerWidth)
+        let size = finitePositive(coverSize)
+        let safeScale = max(1, finiteValue(scale))
+        guard safeScale > 1.0001 else { return 0 }
+        let slack = max(0, width - size)
+        switch alignment {
+        case "right": return -slack / 2
+        case "center": return 0
+        default: return slack / 2
+        }
+    }
+
+    /// Stage playback controls use the full player canvas as their hit area.
+    /// A small midpoint hysteresis band prevents a pointer resting on the
+    /// split from rapidly toggling the details during native event jitter.
+    static func stagePlaybackDetailsVisible(
+        pointerY: CGFloat?,
+        canvasHeight: CGFloat,
+        previousVisible: Bool,
+        hysteresis: CGFloat = 16
+    ) -> Bool {
+        guard let pointerY, pointerY.isFinite else { return false }
+        let midpoint = finitePositive(canvasHeight) * 0.5
+        let band = min(24, max(8, finitePositive(hysteresis)))
+        if pointerY < midpoint - band { return false }
+        if pointerY > midpoint + band { return true }
+        return previousVisible
+    }
+
+    /// Stage puts the active lyric slightly below the old midpoint, but the
+    /// shift is bounded in points so short windows cannot push the lyric into
+    /// the bottom HUD. Other layouts retain the established anchor.
+    static func lyricScrollAnchor(viewportHeight: CGFloat, stage: Bool) -> CGFloat {
+        guard stage else { return 0.47 }
+        let height = finitePositive(viewportHeight)
+        return 0.47 + min(0.05, 48 / height)
     }
 
     /// Largest centered aspect-fit image. Legacy zoom/position never crop the stage.

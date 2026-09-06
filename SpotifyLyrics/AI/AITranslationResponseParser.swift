@@ -34,6 +34,49 @@ public enum AITranslationResponseParser {
         return try validate(parsed, expectedLineCount: expectedLineCount)
     }
 
+    /// Codex/app-server responses are keyed by the source line UUID instead
+    /// of an ordinal. Timestamps and source text are never accepted back from
+    /// the model; the caller retains those values from the original document.
+    public static func parseStable(
+        _ data: Data,
+        expectedLines: [AITranslationSourceLine]
+    ) throws -> [AITranslationLine] {
+        let object: Any
+        do {
+            object = try JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])
+        } catch {
+            throw AITranslationResponseError.validationFailed("响应不是合法 JSON")
+        }
+        guard let array = object as? [[String: Any]], array.count == expectedLines.count else {
+            throw AITranslationResponseError.validationFailed("稳定行 ID 数量不匹配")
+        }
+        let expectedByID = Dictionary(uniqueKeysWithValues: expectedLines.map { ($0.lineID, $0) })
+        var seen = Set<UUID>()
+        var parsed: [AITranslationLine] = []
+        for item in array {
+            guard Set(item.keys) == Set(["lineID", "translation"]),
+                  let rawID = item["lineID"] as? String,
+                  let lineID = UUID(uuidString: rawID),
+                  let source = expectedByID[lineID],
+                  let translation = item["translation"] as? String,
+                  seen.insert(lineID).inserted,
+                  !translation.contains("\n"), !translation.contains("\r") else {
+                throw AITranslationResponseError.validationFailed("稳定行 ID 或字段不严格")
+            }
+            let sourceIsBlank = source.original.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            let translatedIsBlank = translation.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            guard sourceIsBlank == translatedIsBlank,
+                  !sourceIsBlank || translation.isEmpty else {
+                throw AITranslationResponseError.validationFailed("空白行规则不满足 lineID=\(lineID.uuidString)")
+            }
+            parsed.append(AITranslationLine(index: source.index, translation: translation, lineID: lineID))
+        }
+        guard seen == Set(expectedByID.keys) else {
+            throw AITranslationResponseError.validationFailed("稳定行 ID 集合不完整")
+        }
+        return parsed.sorted { $0.index < $1.index }
+    }
+
     public static func validate(
         _ lines: [AITranslationLine],
         against originalLines: [String]

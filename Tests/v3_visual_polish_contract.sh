@@ -12,7 +12,7 @@ grep -q 'LyricsDesignTokens.readableLyricLineMaxWidth' "$V3_VIEW" || {
   exit 1
 }
 
-grep -q 'private var providerRubyTokens' "$V3_VIEW" || {
+grep -q 'providerKana.map { JapaneseReadingPipeline.analyze' "$V3_VIEW" || {
   echo 'FAIL: V3 has no partial kana mapping when persisted ruby data is unavailable' >&2
   exit 1
 }

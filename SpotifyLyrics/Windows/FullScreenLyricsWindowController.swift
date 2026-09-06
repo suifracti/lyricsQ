@@ -2,200 +2,115 @@ import AppKit
 import Combine
 import SwiftUI
 
-private final class FullScreenLyricsPanel: NSPanel {
-    override var canBecomeKey: Bool { true }
-    override var canBecomeMain: Bool { false }
-
-    override func keyDown(with event: NSEvent) {
-        if event.keyCode == 53 {
-            WindowManager.shared.hideFullScreen()
-            return
-        }
-        super.keyDown(with: event)
+private final class FullScreenLyricsWindow: NSWindow {
+    var onExitRequested: (() -> Void)?
+    override func cancelOperation(_ sender: Any?) {
+        // Sheets and popovers have their own responder chains. Do not close
+        // the underlying presentation while a sheet is being dismissed.
+        guard attachedSheet == nil else { return }
+        onExitRequested?()
     }
 }
 
-/// Owns the single retained fullscreen panel.  Playback, lyric selection,
-/// translation and the current row remain owned by the shared PlaybackState.
+/// One retained native fullscreen window over the shared live playback state.
 @MainActor
 final class FullScreenLyricsWindowController: NSObject, ObservableObject, NSWindowDelegate {
-    @Published private(set) var isVisible = false
-    @Published private(set) var controlsVisible = false
-    /// Extra bottom space occupied by a visible Dock. The panel still covers
-    /// the full screen frame, but controls stay in the screen's visible area.
-    @Published private(set) var extraBottomContentInset: CGFloat = 0
-
-    private var panel: FullScreenLyricsPanel?
+    enum Phase { case hidden, entering, visible, exiting }
+    @Published private(set) var phase: Phase = .hidden
+    var isVisible: Bool { phase != .hidden }
+    private(set) var window: NSWindow?
     private weak var playbackState: PlaybackState?
-    private var screenChangeObserver: NSObjectProtocol?
-    private var localKeyMonitor: Any?
-    private var controlsHideTask: Task<Void, Never>?
-
-    /// WindowManager installs this weakly-capturing callback so Esc, a close
-    /// request, and a menu hide all restore only the auxiliaries that were
-    /// visible before fullscreen opened.
+    private var exitRequested = false
     var onDidHide: (() -> Void)?
 
-    override init() {
-        super.init()
-        screenChangeObserver = NotificationCenter.default.addObserver(
-            forName: NSApplication.didChangeScreenParametersNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                self?.repositionForCurrentScreen()
-            }
-        }
-    }
-
-    deinit {
-        controlsHideTask?.cancel()
-        if let localKeyMonitor {
-            NSEvent.removeMonitor(localKeyMonitor)
-        }
-        if let screenChangeObserver {
-            NotificationCenter.default.removeObserver(screenChangeObserver)
-        }
-    }
-
     func toggle(state: PlaybackState) {
-        if isVisible {
-            hide()
-        } else {
-            _ = show(state: state)
-        }
+        if isVisible { hide() } else { _ = show(state: state) }
     }
 
     @discardableResult
-    func show(state: PlaybackState) -> Bool {
+    func show(state: PlaybackState, settings: AppSettingsStore? = nil) -> Bool {
+        guard phase == .hidden else { return true }
+        guard let screen = targetScreen() else { return false }
         playbackState = state
-        if panel == nil {
-            panel = makePanel(state: state)
-        }
-
-        guard let panel, let screen = targetScreen() else { return false }
-        panel.setFrame(screen.frame, display: true)
-        updateContentInset(for: screen)
-        panel.level = .floating
-        panel.orderFrontRegardless()
-        isVisible = true
-        controlsVisible = true
+        if window == nil { window = makeWindow(state: state, settings: settings ?? .shared) }
+        guard let window else { return false }
+        // Seed the desired display before AppKit owns the fullscreen frame.
+        window.setFrame(screen.visibleFrame.insetBy(dx: 40, dy: 40), display: false)
+        exitRequested = false
+        phase = .entering
         state.showFullScreen = true
-        installLocalKeyMonitor()
-        scheduleControlsHide()
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
+        window.toggleFullScreen(nil)
         return true
     }
 
     func hide() {
-        controlsHideTask?.cancel()
-        controlsHideTask = nil
-        removeLocalKeyMonitor()
+        switch phase {
+        case .hidden, .exiting: return
+        case .entering: exitRequested = true
+        case .visible:
+            exitRequested = true
+            phase = .exiting
+            window?.toggleFullScreen(nil)
+        }
+    }
 
-        let hadVisibleSurface = isVisible || playbackState?.showFullScreen == true
-        panel?.orderOut(nil)
-        isVisible = false
-        controlsVisible = false
-        extraBottomContentInset = 0
+    private func finishHide() {
+        guard phase != .hidden else { return }
+        window?.orderOut(nil)
+        phase = .hidden
+        exitRequested = false
         playbackState?.showFullScreen = false
-
-        if hadVisibleSurface {
-            onDidHide?()
-        }
+        onDidHide?()
     }
 
-    func revealControls() {
-        guard isVisible else { return }
-        controlsHideTask?.cancel()
-        controlsHideTask = nil
-        if !controlsVisible {
-            controlsVisible = true
-        }
-        scheduleControlsHide()
-    }
-
-    func scheduleControlsHide() {
-        guard isVisible else { return }
-        controlsHideTask?.cancel()
-        controlsHideTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: 3_000_000_000)
-            guard !Task.isCancelled else { return }
-            self?.controlsVisible = false
-        }
-    }
-
-    private func makePanel(state: PlaybackState) -> FullScreenLyricsPanel {
-        let panel = FullScreenLyricsPanel(
-            contentRect: .zero,
-            styleMask: [.borderless, .nonactivatingPanel],
-            backing: .buffered,
-            defer: false
-        )
-        panel.delegate = self
-        panel.isReleasedWhenClosed = false
-        panel.isOpaque = false
-        panel.backgroundColor = .clear
-        panel.hasShadow = false
-        panel.hidesOnDeactivate = false
-        panel.isFloatingPanel = true
-        panel.becomesKeyOnlyIfNeeded = true
-        panel.level = .floating
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        panel.acceptsMouseMovedEvents = true
-        panel.contentView = NSHostingView(
-            rootView: FullScreenLyricsView(
-                state: state,
-                windowController: self
-            )
-        )
-        return panel
+    private func makeWindow(state: PlaybackState, settings: AppSettingsStore) -> NSWindow {
+        let window = FullScreenLyricsWindow(contentRect: .zero,
+            styleMask: [.titled, .closable, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
+        window.delegate = self
+        window.isReleasedWhenClosed = false
+        window.title = "全屏歌词"
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.backgroundColor = .black
+        window.level = .normal
+        window.collectionBehavior = [.fullScreenPrimary, .fullScreenDisallowsTiling]
+        window.acceptsMouseMovedEvents = true
+        window.onExitRequested = { [weak self] in self?.hide() }
+        window.contentView = NSHostingView(rootView: FullScreenLyricsView(state: state, settings: settings))
+        return window
     }
 
     private func targetScreen() -> NSScreen? {
-        WindowStatePersistence.shared.attachedMainWindow?.screen
-            ?? NSScreen.main
-            ?? NSScreen.screens.first
+        WindowStatePersistence.shared.attachedMainWindow?.screen ?? NSScreen.main ?? NSScreen.screens.first
     }
 
-    private func repositionForCurrentScreen() {
-        guard isVisible, let panel, let screen = targetScreen() else { return }
-        panel.setFrame(screen.frame, display: true)
-        updateContentInset(for: screen)
+    func window(_ window: NSWindow, willUseFullScreenPresentationOptions proposedOptions: NSApplication.PresentationOptions) -> NSApplication.PresentationOptions {
+        // Window-scoped options are restored by AppKit when fullscreen ends.
+        var options = proposedOptions
+        options.remove([.hideDock, .hideMenuBar])
+        options.formUnion([.autoHideDock, .autoHideMenuBar])
+        return options
     }
 
-    private func updateContentInset(for screen: NSScreen) {
-        // `visibleFrame.minY` rises when the Dock is visible at the bottom;
-        // menu-bar space is at the opposite edge and does not affect the
-        // bottom controls. Keep the extra value separate from the view's
-        // normal rhythm so auto-hidden Dock behavior remains stable.
-        extraBottomContentInset = max(0, screen.visibleFrame.minY - screen.frame.minY)
+    func windowDidEnterFullScreen(_ notification: Notification) {
+        guard phase != .hidden else { return }
+        phase = .visible
+        if exitRequested { hide() }
     }
 
-    private func installLocalKeyMonitor() {
-        guard localKeyMonitor == nil else { return }
-        localKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard let self, self.isVisible else { return event }
-            if event.keyCode == 53 {
-                self.hide()
-                return nil
-            }
-            return event
-        }
+    func windowWillExitFullScreen(_ notification: Notification) {
+        guard phase != .hidden else { return }
+        phase = .exiting
     }
 
-    private func removeLocalKeyMonitor() {
-        if let localKeyMonitor {
-            NSEvent.removeMonitor(localKeyMonitor)
-            self.localKeyMonitor = nil
-        }
+    func windowDidExitFullScreen(_ notification: Notification) { finishHide() }
+    func windowDidFailToEnterFullScreen(_ window: NSWindow) { finishHide() }
+    func windowDidFailToExitFullScreen(_ window: NSWindow) {
+        phase = .visible
+        exitRequested = false
     }
-
-    func windowWillClose(_ notification: Notification) {
-        hide()
-    }
-
-    func windowShouldClose(_ sender: NSWindow) -> Bool {
-        hide()
-        return false
-    }
+    func windowShouldClose(_ sender: NSWindow) -> Bool { hide(); return false }
+    func windowWillClose(_ notification: Notification) { finishHide() }
 }

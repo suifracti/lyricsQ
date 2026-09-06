@@ -50,7 +50,8 @@ public struct AITranslationConfiguration: Equatable, Sendable {
     }
 
     public var isConfigured: Bool {
-        if TranslationEngineID(rawValue: engineID) == .appleSystem {
+        if TranslationEngineID(rawValue: engineID) == .appleSystem
+            || TranslationEngineID(rawValue: engineID) == .codexChatGPT {
             return true
         }
         return !baseURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&

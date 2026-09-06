@@ -6,6 +6,7 @@ struct AITranslationContract {
         try endpointContract()
         try blankLineContract()
         try responseSafetyContract()
+        try stableIDResponseContract()
         try await clientErrorContract()
         try await testConnectionContract()
         print("AI translation contracts passed")
@@ -65,6 +66,30 @@ struct AITranslationContract {
                 _ = try AITranslationResponseParser.parse(Data(body.utf8), expectedLineCount: 1)
                 throw ContractFailure(message: "unsafe response accepted")
             } catch AITranslationResponseError.validationFailed { }
+        }
+    }
+
+    static func stableIDResponseContract() throws {
+        let first = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+        let second = UUID(uuidString: "00000000-0000-0000-0000-000000000002")!
+        let source = [
+            AITranslationSourceLine(index: 0, original: "one", lineID: first, timestamp: 10),
+            AITranslationSourceLine(index: 1, original: "two", lineID: second, timestamp: 20)
+        ]
+        let body = "[{\"lineID\":\"\(second.uuidString)\",\"translation\":\"二\"},{\"lineID\":\"\(first.uuidString)\",\"translation\":\"一\"}]"
+        let parsed = try AITranslationResponseParser.parseStable(Data(body.utf8), expectedLines: source)
+        guard parsed.map(\.index) == [0, 1], parsed.map(\.lineID) == [first, second] else {
+            throw ContractFailure(message: "stable line IDs were not restored to source order")
+        }
+        do {
+            _ = try AITranslationResponseParser.parseStable(
+                Data("[{\"lineID\":\"\(first.uuidString)\",\"translation\":\"一\",\"timestamp\":99},{\"lineID\":\"\(second.uuidString)\",\"translation\":\"二\"}]".utf8),
+                expectedLines: source
+            )
+            throw ContractFailure(message: "stable response accepted a timestamp mutation")
+        } catch AITranslationResponseError.validationFailed { }
+        guard AITranslationConfiguration(engineID: TranslationEngineID.codexChatGPT.rawValue).isConfigured else {
+            throw ContractFailure(message: "Codex engine should not require an API key")
         }
     }
 

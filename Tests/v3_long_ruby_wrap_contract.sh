@@ -15,12 +15,12 @@ grep -q 'let maxWidth: CGFloat?' "$LINE" || {
   exit 1
 }
 
-grep -q 'RubyTokenFlowLayout(horizontalSpacing: 0, verticalSpacing: tokenVerticalSpacing, maxWidth: maxWidth)' "$LINE" || {
+grep -q 'RubyTokenFlowLayout(horizontalSpacing: 0, verticalSpacing: tokenVerticalSpacing, maxWidth: maxWidth, alignmentFraction: textAlignment.lyricAlignmentFraction)' "$LINE" || {
   echo 'FAIL: ruby token flow does not use its explicit width' >&2
   exit 1
 }
 
-grep -q 'RubyTokenFlowLayout(horizontalSpacing: 0, verticalSpacing: 5, maxWidth: maxWidth)' "$LINE" || {
+grep -q 'RubyTokenFlowLayout(horizontalSpacing: 0, verticalSpacing: 5, maxWidth: maxWidth, alignmentFraction: textAlignment.lyricAlignmentFraction)' "$LINE" || {
   echo 'FAIL: kana replacement flow does not use its explicit width' >&2
   exit 1
 }

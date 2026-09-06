@@ -98,6 +98,9 @@ struct MainLyricsWindowView: View {
         }
 #endif
         .onAppear {
+            MenuBarLyricsController.shared.setOpenEditorHandler { [openWindow] in
+                openWindow(id: "lyrics-editor")
+            }
             MenuBarLyricsController.shared.setOpenSettingsHandler { [openSettings] in
                 openSettings()
             }

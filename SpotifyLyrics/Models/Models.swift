@@ -1146,19 +1146,24 @@ public struct LyricsPresentationClock: Equatable, Sendable {
     public let isPlaying: Bool
     public let trackID: String
     public let trackDuration: TimeInterval
+    /// Presentation-only shift. The authoritative provider position remains
+    /// untouched; this value is applied only to lyric selection/highlighting.
+    public let presentationOffset: TimeInterval
 
     public init(
         authoritativePosition: TimeInterval = 0,
         receivedAtMonotonicTime: TimeInterval = 0,
         isPlaying: Bool = false,
         trackID: String = "",
-        trackDuration: TimeInterval = 0
+        trackDuration: TimeInterval = 0,
+        presentationOffset: TimeInterval = 0
     ) {
         self.authoritativePosition = max(0, authoritativePosition)
         self.receivedAtMonotonicTime = receivedAtMonotonicTime
         self.isPlaying = isPlaying
         self.trackID = trackID
         self.trackDuration = max(0, trackDuration)
+        self.presentationOffset = min(10, max(-10, presentationOffset.isFinite ? presentationOffset : 0))
     }
 
     /// Pure monotonic extrapolation of playback position.
@@ -1166,13 +1171,12 @@ public struct LyricsPresentationClock: Equatable, Sendable {
     /// Invariant 2: If isPlaying is true, advances linearly by (now - receivedAtMonotonicTime).
     /// Invariant 3: Clamped to [0, trackDuration] when duration is positive.
     public func presentationTime(at monotonicNow: TimeInterval) -> TimeInterval {
-        guard isPlaying else { return authoritativePosition }
-        let elapsed = max(0, monotonicNow - receivedAtMonotonicTime)
-        let estimated = authoritativePosition + elapsed
+        let elapsed = isPlaying ? max(0, monotonicNow - receivedAtMonotonicTime) : 0
+        let estimated = authoritativePosition + elapsed + presentationOffset
         if trackDuration > 0 {
-            return min(trackDuration, estimated)
+            return min(trackDuration, max(0, estimated))
         }
-        return estimated
+        return max(0, estimated)
     }
 }
 

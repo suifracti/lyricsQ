@@ -1,6 +1,6 @@
 import Foundation
 
-/// Multi-variant lyrics search: Local → other providers, one provider at a time per variant.
+/// Multi-variant lyrics search: local first, then bounded parallel online probes per variant.
 /// Applies SafeMatcher and does not auto-adopt conflicting versions.
 public final class LyricsSearchManager: @unchecked Sendable {
     public let name: String
@@ -95,14 +95,21 @@ public final class LyricsSearchManager: @unchecked Sendable {
         providers: [IndexedProvider]
     ) async -> [ProviderProbeResult] {
         await withTaskGroup(of: ProviderProbeResult.self) { group in
-            for indexedProvider in providers {
+            var next = 0
+            func enqueueNext() {
+                guard !Task.isCancelled, next < providers.count else { return }
+                let indexedProvider = providers[next]
+                next += 1
                 group.addTask {
                     await probe(indexedProvider, track: track, identity: identity)
                 }
             }
+            for _ in 0..<min(3, providers.count) { enqueueNext() }
             var results: [ProviderProbeResult] = []
             for await result in group {
                 results.append(result)
+                if Task.isCancelled { group.cancelAll() }
+                else { enqueueNext() }
             }
             return results.sorted { $0.index < $1.index }
         }
@@ -251,6 +258,9 @@ public final class LyricsSearchManager: @unchecked Sendable {
                 }
 
                 for probe in probeResults {
+                    guard !Task.isCancelled else {
+                        return SearchOutcome(result: .failed(.cancelled), diagnostics: diagnostics)
+                    }
                     let provider = probe.provider
                     let result = probe.result
                     let elapsed = probe.duration

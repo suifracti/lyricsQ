@@ -39,6 +39,7 @@
 		1100001D2D83400100000001 /* ImmersiveSplitWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1100001D2D83400100000000 /* ImmersiveSplitWindowView.swift */; };
 		1100001E2D83400100000001 /* ArtworkView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1100001E2D83400100000000 /* ArtworkView.swift */; };
 		1100001F2D83400100000001 /* TrackMetadataView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1100001F2D83400100000000 /* TrackMetadataView.swift */; };
+		110001102D83400100000001 /* TrackMetadataCopy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110001102D83400100000000 /* TrackMetadataCopy.swift */; };
 		110000202D83400100000001 /* PlaybackControlsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000202D83400100000000 /* PlaybackControlsView.swift */; };
 		110000212D83400100000001 /* LyricsViewport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000212D83400100000000 /* LyricsViewport.swift */; };
 		110000222D83400100000001 /* ArtworkBackgroundView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000222D83400100000000 /* ArtworkBackgroundView.swift */; };
@@ -64,8 +65,12 @@
 		110000362D83400100000001 /* LyricsSafeMatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000362D83400100000000 /* LyricsSafeMatcher.swift */; };
 		110000372D83400100000001 /* LyricsRecoveryModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000372D83400100000000 /* LyricsRecoveryModels.swift */; };
 		110000402D83400100000001 /* japanese_kanji_readings.json in Resources */ = {isa = PBXBuildFile; fileRef = 110000402D83400100000000 /* japanese_kanji_readings.json */; };
+		110001402D83400100000001 /* SpotifyLyrics.icns in Resources */ = {isa = PBXBuildFile; fileRef = 110001402D83400100000000 /* SpotifyLyrics.icns */; };
 		110000432D83400100000001 /* NetEaseExperimentalLyricsProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000432D83400100000000 /* NetEaseExperimentalLyricsProvider.swift */; };
 		110000442D83400100000001 /* QQExperimentalLyricsProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000442D83400100000000 /* QQExperimentalLyricsProvider.swift */; };
+		A60F09060000000000000101 /* LyricsOVHProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60F09060000000000000100 /* LyricsOVHProvider.swift */; };
+		A60F09060000000000000201 /* KuwoExperimentalLyricsProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60F09060000000000000200 /* KuwoExperimentalLyricsProvider.swift */; };
+		A60F09060000000000000301 /* KugouExperimentalLyricsProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60F09060000000000000300 /* KugouExperimentalLyricsProvider.swift */; };
 		110000452D83400100000001 /* LocalAudioASRService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000452D83400100000000 /* LocalAudioASRService.swift */; };
 		110000462D83400100000001 /* LyricsE2ELog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000462D83400100000000 /* LyricsE2ELog.swift */; };
 		110000472D83400100000001 /* AlignmentModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000472D83400100000000 /* AlignmentModels.swift */; };
@@ -243,6 +248,7 @@
 		1100001D2D83400100000000 /* ImmersiveSplitWindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImmersiveSplitWindowView.swift; sourceTree = "<group>"; };
 		1100001E2D83400100000000 /* ArtworkView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtworkView.swift; sourceTree = "<group>"; };
 		1100001F2D83400100000000 /* TrackMetadataView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackMetadataView.swift; sourceTree = "<group>"; };
+		110001102D83400100000000 /* TrackMetadataCopy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackMetadataCopy.swift; sourceTree = "<group>"; };
 		110000202D83400100000000 /* PlaybackControlsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackControlsView.swift; sourceTree = "<group>"; };
 		110000212D83400100000000 /* LyricsViewport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricsViewport.swift; sourceTree = "<group>"; };
 		110000222D83400100000000 /* ArtworkBackgroundView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtworkBackgroundView.swift; sourceTree = "<group>"; };
@@ -268,8 +274,12 @@
 		110000362D83400100000000 /* LyricsSafeMatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricsSafeMatcher.swift; sourceTree = "<group>"; };
 		110000372D83400100000000 /* LyricsRecoveryModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricsRecoveryModels.swift; sourceTree = "<group>"; };
 		110000402D83400100000000 /* japanese_kanji_readings.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = japanese_kanji_readings.json; sourceTree = "<group>"; };
+		110001402D83400100000000 /* SpotifyLyrics.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = SpotifyLyrics.icns; sourceTree = "<group>"; };
 		110000432D83400100000000 /* NetEaseExperimentalLyricsProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetEaseExperimentalLyricsProvider.swift; sourceTree = "<group>"; };
 		110000442D83400100000000 /* QQExperimentalLyricsProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QQExperimentalLyricsProvider.swift; sourceTree = "<group>"; };
+		A60F09060000000000000100 /* LyricsOVHProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricsOVHProvider.swift; sourceTree = "<group>"; };
+		A60F09060000000000000200 /* KuwoExperimentalLyricsProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KuwoExperimentalLyricsProvider.swift; sourceTree = "<group>"; };
+		A60F09060000000000000300 /* KugouExperimentalLyricsProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KugouExperimentalLyricsProvider.swift; sourceTree = "<group>"; };
 		110000452D83400100000000 /* LocalAudioASRService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalAudioASRService.swift; sourceTree = "<group>"; };
 		110000462D83400100000000 /* LyricsE2ELog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricsE2ELog.swift; sourceTree = "<group>"; };
 		110000472D83400100000000 /* AlignmentModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlignmentModels.swift; sourceTree = "<group>"; };
@@ -585,6 +595,7 @@
 				1100001A2D83400100000000 /* TrackBackdropView.swift */,
 				1100001E2D83400100000000 /* ArtworkView.swift */,
 				1100001F2D83400100000000 /* TrackMetadataView.swift */,
+				110001102D83400100000000 /* TrackMetadataCopy.swift */,
 				110000202D83400100000000 /* PlaybackControlsView.swift */,
 				110000212D83400100000000 /* LyricsViewport.swift */,
 				110000222D83400100000000 /* ArtworkBackgroundView.swift */,
@@ -625,6 +636,9 @@
 				110000102D83400100000000 /* ArtworkImageLoader.swift */,
 				110000432D83400100000000 /* NetEaseExperimentalLyricsProvider.swift */,
 				110000442D83400100000000 /* QQExperimentalLyricsProvider.swift */,
+				A60F09060000000000000100 /* LyricsOVHProvider.swift */,
+				A60F09060000000000000200 /* KuwoExperimentalLyricsProvider.swift */,
+				A60F09060000000000000300 /* KugouExperimentalLyricsProvider.swift */,
 			);
 			path = Providers;
 			sourceTree = "<group>";
@@ -762,6 +776,7 @@
 			isa = PBXGroup;
 			children = (
 				110000402D83400100000000 /* japanese_kanji_readings.json */,
+				110001402D83400100000000 /* SpotifyLyrics.icns */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -882,6 +897,7 @@
 				1100001D2D83400100000001 /* ImmersiveSplitWindowView.swift in Sources */,
 				1100001E2D83400100000001 /* ArtworkView.swift in Sources */,
 				1100001F2D83400100000001 /* TrackMetadataView.swift in Sources */,
+				110001102D83400100000001 /* TrackMetadataCopy.swift in Sources */,
 				110000202D83400100000001 /* PlaybackControlsView.swift in Sources */,
 				110000212D83400100000001 /* LyricsViewport.swift in Sources */,
 				110000222D83400100000001 /* ArtworkBackgroundView.swift in Sources */,
@@ -936,6 +952,9 @@
 				110000432D83400100000001 /* NetEaseExperimentalLyricsProvider.swift in Sources */,
 				110000452D83400100000001 /* LocalAudioASRService.swift in Sources */,
 				110000442D83400100000001 /* QQExperimentalLyricsProvider.swift in Sources */,
+				A60F09060000000000000101 /* LyricsOVHProvider.swift in Sources */,
+				A60F09060000000000000201 /* KuwoExperimentalLyricsProvider.swift in Sources */,
+				A60F09060000000000000301 /* KugouExperimentalLyricsProvider.swift in Sources */,
 				110000302D83400100000001 /* TrackAlias.swift in Sources */,
 				110000312D83400100000001 /* TrackMetadata.swift in Sources */,
 				110000322D83400100000001 /* TrackTextNormalizer.swift in Sources */,
@@ -1029,6 +1048,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				110000402D83400100000001 /* japanese_kanji_readings.json in Resources */,
+				110001402D83400100000001 /* SpotifyLyrics.icns in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1050,8 +1070,8 @@
 				/* Avoid main stub + SpotifyLyrics.debug.dylib TCC identity split. */
 				ENABLE_DEBUG_DYLIB = NO;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 2;
-				MARKETING_VERSION = 0.1.1;
+				CURRENT_PROJECT_VERSION = 3;
+				MARKETING_VERSION = 0.1.2;
 				GENERATE_INFOPLIST_FILE = YES;
 				/* Merge screen-capture usage string (INFOPLIST_KEY alone was dropped on generate). */
 				INFOPLIST_FILE = "SpotifyLyrics/Info-Additions.plist";
@@ -1077,8 +1097,8 @@
 				CODE_SIGN_ENTITLEMENTS = SpotifyLyrics/SpotifyLyricsRelease.entitlements;
 				CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 2;
-				MARKETING_VERSION = 0.1.1;
+				CURRENT_PROJECT_VERSION = 3;
+				MARKETING_VERSION = 0.1.2;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "SpotifyLyrics/Info-Additions.plist";
 				INFOPLIST_KEY_NSHighResolutionCapable = YES;

@@ -87,6 +87,7 @@ public final class AppSettingsStore: ObservableObject {
         public static let settingsVersion = "settings.version"
         public static let mainWindowLayoutStyle = "mainWindowLayoutStyle"
         public static let automaticCompactLyricsFocus = "general.automaticCompactLyricsFocus"
+        public static let menuBarLyricsEnabled = "menuBar.lyricsEnabled"
         public static let connectSpotifyOnLaunch = "general.connectSpotifyOnLaunch"
         public static let autoSearchLyricsOnTrackChange = "general.autoSearchLyricsOnTrackChange"
         /// Product zero-operation automatic alignment (default off).
@@ -103,6 +104,13 @@ public final class AppSettingsStore: ObservableObject {
         public static let floatingDesktopLineMode = "desktopLyrics.lineMode"
         public static let floatingDesktopTheme = "desktopLyrics.theme"
         public static let floatingDesktopCompanion = "desktopLyrics.companion"
+        public static let floatingDesktopOriginalColorHex = "desktopLyrics.originalColorHex"
+        public static let floatingDesktopHighlightColorHex = "desktopLyrics.highlightColorHex"
+        public static let floatingDesktopRubyColorHex = "desktopLyrics.rubyColorHex"
+        public static let floatingDesktopTranslationColorHex = "desktopLyrics.translationColorHex"
+        public static let floatingDesktopOutlineColorHex = "desktopLyrics.outlineColorHex"
+        public static let floatingDesktopOutlineWidth = "desktopLyrics.outlineWidth"
+        public static let floatingDesktopKeepsTextOpaque = "desktopLyrics.keepsTextOpaque"
         public static let floatingWindowOpacity = "general.floatingWindowOpacity"
         public static let floatingLyricsPresentation = "general.floatingLyricsPresentation"
         public static let floatingLyricsSurfaceStyle = "general.floatingLyricsSurfaceStyle"
@@ -143,6 +151,10 @@ public final class AppSettingsStore: ObservableObject {
         public static let aiWorkflowID = "ai.workflowID"
         public static let settingsCenterPresentation = "settings.centerPresentation"
         public static let readingPreferences = "reading.preferences.v1"
+        public static let v3PlaybackDetailsOnHover = "v3.playbackDetailsOnHover"
+        public static let lyricsPresentationOffset = "lyrics.presentationOffset.v1"
+        public static let v3LyricsPositions = "v3.lyricsPositions.v1"
+        public static let v3StageReadabilityEnabled = "v3.stageReadabilityEnabled"
         public static let v3BackdropBlurRadius = "v3.backdropBlurRadius"
         public static let v3BackdropBlurAmbient = "v3.backdropBlur.ambient.v1"
         public static let v3BackdropBlurStage = "v3.backdropBlur.stage.v1"
@@ -190,6 +202,10 @@ public final class AppSettingsStore: ObservableObject {
         didSet { defaults.set(automaticCompactLyricsFocus, forKey: Key.automaticCompactLyricsFocus) }
     }
 
+    @Published public var menuBarLyricsEnabled: Bool {
+        didSet { defaults.set(menuBarLyricsEnabled, forKey: Key.menuBarLyricsEnabled) }
+    }
+
     @Published public var connectSpotifyOnLaunch: Bool {
         didSet { defaults.set(connectSpotifyOnLaunch, forKey: Key.connectSpotifyOnLaunch) }
     }
@@ -234,6 +250,28 @@ public final class AppSettingsStore: ObservableObject {
     }
     @Published public var floatingDesktopCompanion: String {
         didSet { defaults.set(floatingDesktopCompanion, forKey: Key.floatingDesktopCompanion) }
+    }
+
+    @Published public var floatingDesktopOriginalColorHex: String {
+        didSet { defaults.set(floatingDesktopOriginalColorHex, forKey: Key.floatingDesktopOriginalColorHex) }
+    }
+    @Published public var floatingDesktopHighlightColorHex: String {
+        didSet { defaults.set(floatingDesktopHighlightColorHex, forKey: Key.floatingDesktopHighlightColorHex) }
+    }
+    @Published public var floatingDesktopRubyColorHex: String {
+        didSet { defaults.set(floatingDesktopRubyColorHex, forKey: Key.floatingDesktopRubyColorHex) }
+    }
+    @Published public var floatingDesktopTranslationColorHex: String {
+        didSet { defaults.set(floatingDesktopTranslationColorHex, forKey: Key.floatingDesktopTranslationColorHex) }
+    }
+    @Published public var floatingDesktopOutlineColorHex: String {
+        didSet { defaults.set(floatingDesktopOutlineColorHex, forKey: Key.floatingDesktopOutlineColorHex) }
+    }
+    @Published public var floatingDesktopOutlineWidth: Double {
+        didSet { defaults.set(floatingDesktopOutlineWidth, forKey: Key.floatingDesktopOutlineWidth) }
+    }
+    @Published public var floatingDesktopKeepsTextOpaque: Bool {
+        didSet { defaults.set(floatingDesktopKeepsTextOpaque, forKey: Key.floatingDesktopKeepsTextOpaque) }
     }
 
     @Published public var floatingWindowOpacity: Double {
@@ -303,6 +341,27 @@ public final class AppSettingsStore: ObservableObject {
         didSet { defaults.set(aiTranslationAPIKeyConfigured, forKey: Key.aiAPIKeyConfigured) }
     }
 
+    @Published public var v3PlaybackDetailsOnHover: Bool {
+        didSet { defaults.set(v3PlaybackDetailsOnHover, forKey: Key.v3PlaybackDetailsOnHover) }
+    }
+
+    /// Shared presentation-only lyric offset. It never changes Spotify's
+    /// position, provider timestamps, or the stored LRC document.
+    @Published public var lyricsPresentationOffset: Double {
+        didSet {
+            let normalized = min(10, max(-10, lyricsPresentationOffset.isFinite ? lyricsPresentationOffset : 0))
+            if normalized != lyricsPresentationOffset {
+                lyricsPresentationOffset = normalized
+            } else {
+                defaults.set(normalized, forKey: Key.lyricsPresentationOffset)
+            }
+        }
+    }
+
+    @Published public var v3StageReadabilityEnabled: Bool {
+        didSet { defaults.set(v3StageReadabilityEnabled, forKey: Key.v3StageReadabilityEnabled) }
+    }
+
     @Published public var v3BackdropBlurRadius: Double {
         didSet {
             defaults.set(v3BackdropBlurRadius, forKey: Key.v3BackdropBlurRadius)
@@ -332,6 +391,18 @@ public final class AppSettingsStore: ObservableObject {
         set { v3ArtworkPresentationRawValue = newValue.rawValue }
     }
 
+    @Published private var v3LyricsPositions: [String: String] = [:]
+
+    /// Reading placement is remembered per composition, independently of artwork.
+    public var v3LyricsPosition: String {
+        get { v3LyricsPositions[v3ArtworkPresentation.rawValue] ?? "automatic" }
+        set {
+            let value = ["automatic", "left", "center", "right"].contains(newValue) ? newValue : "automatic"
+            v3LyricsPositions[v3ArtworkPresentation.rawValue] = value
+            defaults.set(v3LyricsPositions, forKey: Key.v3LyricsPositions)
+        }
+    }
+
     private static func v3BlurDefaultsKey(for presentation: V3ArtworkPresentation) -> String {
         switch presentation {
         case .ambient: return Key.v3BackdropBlurAmbient
@@ -359,6 +430,8 @@ public final class AppSettingsStore: ObservableObject {
 
     public init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+        self.v3LyricsPositions = (defaults.dictionary(forKey: Key.v3LyricsPositions) as? [String: String] ?? [:])
+            .filter { ["automatic", "left", "center", "right"].contains($0.value) }
         let legacyBlur = defaults.object(forKey: Key.v3BackdropBlurRadius) as? Double ?? 36.0
         let selectedPresentation: V3ArtworkPresentation
         if let storedPresentation = defaults.string(forKey: Key.v3ArtworkPresentation),
@@ -380,6 +453,12 @@ public final class AppSettingsStore: ObservableObject {
             self.v3BlurByPresentation[presentation] = stored
                 ?? (presentation == selectedPresentation ? legacyBlur : blurDefaults[presentation] ?? legacyBlur)
         }
+        self.v3PlaybackDetailsOnHover = defaults.bool(forKey: Key.v3PlaybackDetailsOnHover)
+        self.lyricsPresentationOffset = min(
+            10,
+            max(-10, defaults.object(forKey: Key.lyricsPresentationOffset) as? Double ?? 0)
+        )
+        self.v3StageReadabilityEnabled = defaults.bool(forKey: Key.v3StageReadabilityEnabled)
         self.v3BackdropBlurRadius = self.v3BlurByPresentation[selectedPresentation] ?? legacyBlur
         self.v3ArtworkPosition = defaults.string(forKey: Key.v3ArtworkPosition) ?? "left"
         self.v3ArtworkSizeScale = defaults.object(forKey: Key.v3ArtworkSizeScale) as? Double ?? 1.0
@@ -417,6 +496,7 @@ public final class AppSettingsStore: ObservableObject {
         mainWindowLayoutStyleRawValue = layout
         classicCompanionPresentationRawValue = classicPresentation
         automaticCompactLyricsFocus = defaults.object(forKey: Key.automaticCompactLyricsFocus) as? Bool ?? false
+        menuBarLyricsEnabled = defaults.object(forKey: Key.menuBarLyricsEnabled) as? Bool ?? true
         connectSpotifyOnLaunch = defaults.object(forKey: Key.connectSpotifyOnLaunch) as? Bool ?? true
         autoSearchLyricsOnTrackChange = defaults.object(forKey: Key.autoSearchLyricsOnTrackChange) as? Bool ?? true
         automaticAlignmentEnabled = defaults.object(forKey: Key.automaticAlignmentEnabled) as? Bool ?? false
@@ -434,6 +514,13 @@ public final class AppSettingsStore: ObservableObject {
         floatingDesktopLineMode = defaults.string(forKey: Key.floatingDesktopLineMode) ?? "double"
         floatingDesktopTheme = defaults.string(forKey: Key.floatingDesktopTheme) ?? "mint"
         floatingDesktopCompanion = defaults.string(forKey: Key.floatingDesktopCompanion) ?? "translation"
+        floatingDesktopOriginalColorHex = defaults.object(forKey: Key.floatingDesktopOriginalColorHex) as? String ?? ""
+        floatingDesktopHighlightColorHex = defaults.object(forKey: Key.floatingDesktopHighlightColorHex) as? String ?? ""
+        floatingDesktopRubyColorHex = defaults.object(forKey: Key.floatingDesktopRubyColorHex) as? String ?? ""
+        floatingDesktopTranslationColorHex = defaults.object(forKey: Key.floatingDesktopTranslationColorHex) as? String ?? ""
+        floatingDesktopOutlineColorHex = defaults.object(forKey: Key.floatingDesktopOutlineColorHex) as? String ?? ""
+        floatingDesktopOutlineWidth = defaults.object(forKey: Key.floatingDesktopOutlineWidth) as? Double ?? 1.25
+        floatingDesktopKeepsTextOpaque = defaults.object(forKey: Key.floatingDesktopKeepsTextOpaque) as? Bool ?? true
         floatingWindowOpacity = defaults.object(forKey: Key.floatingWindowOpacity) as? Double ?? 0.96
         floatingLyricsPresentationRawValue = defaults.string(forKey: Key.floatingLyricsPresentation)
             ?? FloatingLyricsPresentationVersion.current.rawValue

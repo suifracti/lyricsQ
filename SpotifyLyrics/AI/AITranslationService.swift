@@ -1,4 +1,8 @@
 import Foundation
+import AppKit
+#if canImport(CryptoKit)
+import CryptoKit
+#endif
 #if canImport(Translation)
 import Translation
 #endif
@@ -210,10 +214,336 @@ public struct AppleSystemTranslationEngine: TranslationEngine, Sendable {
     }
 }
 
+/// A thin, managed app-server client. Authentication remains inside Codex:
+/// this process only sends protocol messages and opens the returned browser
+/// URL. It never reads auth.json, copies OAuth tokens, or stores credentials.
+public struct CodexAppServerTranslationService: TranslationEngine, Sendable {
+    private let executableCandidates: [String]
+
+    public init(executableCandidates: [String] = [
+        "/Applications/ChatGPT.app/Contents/Resources/codex",
+        "/usr/local/bin/codex",
+        "/opt/homebrew/bin/codex"
+    ]) {
+        self.executableCandidates = executableCandidates
+    }
+
+    public var metadata: TranslationEngineMetadata {
+        TranslationEngineMetadata(
+            stableID: TranslationEngineID.codexChatGPT.rawValue,
+            displayName: "Codex / ChatGPT 登录",
+            availability: .available,
+            requiresAPIKey: false,
+            supportsModelDirectory: false
+        )
+    }
+
+    public func translate(
+        context: AITranslationContext,
+        sourceContentHash: String,
+        configuration: AITranslationConfiguration
+    ) async throws -> AITranslationDraft {
+        let executable = try resolveExecutable()
+        let lines = context.lines
+        let prompt = makePrompt(context: context, configuration: configuration)
+        let responseText = try await Task.detached(priority: .userInitiated) {
+            let client = try CodexAppServerClient(executable: executable)
+            defer { client.stop() }
+            try client.initialize()
+            try client.ensureAuthenticated()
+            return try client.translate(
+                prompt: prompt,
+                model: configuration.model,
+                outputSchema: Self.outputSchema()
+            )
+        }.value
+
+        let responseData = try Self.jsonData(from: responseText)
+        let stableLinesData = try Self.unwrapStableLines(from: responseData)
+        do {
+            let validated = try AITranslationResponseParser.parseStable(stableLinesData, expectedLines: lines)
+            return AITranslationDraft(
+                lines: validated,
+                targetLanguage: configuration.targetLanguage,
+                model: configuration.model.isEmpty ? "Codex ChatGPT" : configuration.model,
+                baseURLHost: "codex-app-server",
+                promptHash: Self.hash(prompt),
+                sourceContentHash: sourceContentHash,
+                engineID: TranslationEngineID.codexChatGPT.rawValue,
+                promptPresetID: configuration.promptPresetID,
+                profileID: configuration.profileID,
+                profileSnapshot: configuration.profileSnapshot,
+                temperature: configuration.temperature,
+                workflowID: configuration.workflowID,
+                fallbackStrategy: configuration.fallbackStrategy,
+                isDraft: true
+            )
+        } catch let error as AITranslationResponseError {
+            throw AITranslationError.codexResponseInvalid(String(describing: error))
+        }
+    }
+
+    public func testConnection(configuration: AITranslationConfiguration) async throws {
+        let executable = try resolveExecutable()
+        _ = try await Task.detached(priority: .utility) {
+            let client = try CodexAppServerClient(executable: executable)
+            defer { client.stop() }
+            try client.initialize()
+            try client.ensureAuthenticated()
+        }.value
+    }
+
+    private func resolveExecutable() throws -> String {
+        if let path = executableCandidates.first(where: { FileManager.default.isExecutableFile(atPath: $0) }) {
+            return path
+        }
+        throw AITranslationError.codexNotInstalled
+    }
+
+    private func makePrompt(context: AITranslationContext, configuration: AITranslationConfiguration) -> String {
+        let payload: [String: Any] = [
+            "title": context.title,
+            "artist": context.artist,
+            "album": context.album,
+            "sourceLanguage": context.sourceLanguage,
+            "targetLanguage": context.targetLanguage,
+            "style": context.style,
+            "styleSummary": context.styleSummary,
+            "styleExamples": context.styleExamples.map { ["original": $0.original, "translation": $0.translation] },
+            "lines": context.lines.map { line in
+                var value: [String: Any] = [
+                    "lineID": line.lineID.uuidString,
+                    "index": line.index,
+                    "text": line.original
+                ]
+                if let timestamp = line.timestamp { value["timestamp"] = timestamp }
+                if let kana = line.kana, !kana.isEmpty { value["kana"] = kana }
+                if let romaji = line.romaji, !romaji.isEmpty { value["romaji"] = romaji }
+                return value
+            }
+        ]
+        let json = (try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]))
+            .flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
+        return """
+        Translate the complete song represented by the JSON below into \(configuration.targetLanguage). Use the song context and confirmed manual style examples, but never invent or remove source lines. Return ONLY a JSON object with exactly one key, lines. The value of lines must be an array whose items contain exactly these two keys: lineID (the supplied UUID string) and translation (a single-line string). Return every supplied line exactly once, including blank lines. Blank source lines must have an empty translation. Do not return timestamps, indexes, source text, explanations, markdown fences, or metadata. Timestamps are read-only context and must not be edited.
+        JSON:
+        \(json)
+        """
+    }
+
+    private static func outputSchema() -> [String: Any] {
+        [
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["lines"],
+            "properties": [
+                "lines": [
+                    "type": "array",
+                    "items": [
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": ["lineID", "translation"],
+                        "properties": [
+                            "lineID": ["type": "string"],
+                            "translation": ["type": "string"]
+                        ]
+                    ]
+                ]
+            ]
+        ]
+    }
+
+    private static func jsonData(from text: String) throws -> Data {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let body: String
+        if trimmed.hasPrefix("```") {
+            let lines = trimmed.components(separatedBy: .newlines)
+            body = lines.dropFirst().dropLast().joined(separator: "\n")
+        } else {
+            body = trimmed
+        }
+        guard let data = body.data(using: .utf8) else {
+            throw AITranslationError.codexResponseInvalid("响应编码无效")
+        }
+        return data
+    }
+
+    private static func unwrapStableLines(from data: Data) throws -> Data {
+        guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              object.keys.count == 1,
+              object["lines"] is [[String: Any]],
+              let lines = object["lines"] else {
+            throw AITranslationError.codexResponseInvalid("响应必须是只包含 lines 的 JSON 对象")
+        }
+        return try JSONSerialization.data(withJSONObject: lines, options: [.sortedKeys])
+    }
+
+    private static func hash(_ value: String) -> String {
+        #if canImport(CryptoKit)
+        return SHA256.hash(data: Data(value.utf8)).map { String(format: "%02x", $0) }.joined()
+        #else
+        return String(value.hashValue)
+        #endif
+    }
+}
+
+private final class CodexAppServerClient: @unchecked Sendable {
+    private let process: Process
+    private let input: FileHandle
+    private let output: FileHandle
+    private var nextID = 1
+
+    init(executable: String) throws {
+        let process = Process()
+        let stdinPipe = Pipe()
+        let stdoutPipe = Pipe()
+        self.process = process
+        process.standardInput = stdinPipe
+        process.standardOutput = stdoutPipe
+        process.standardError = FileHandle.nullDevice
+        process.executableURL = URL(fileURLWithPath: executable)
+        process.arguments = ["app-server", "--listen", "stdio://"]
+        self.input = stdinPipe.fileHandleForWriting
+        self.output = stdoutPipe.fileHandleForReading
+        try process.run()
+    }
+
+    func stop() {
+        if process.isRunning { process.terminate() }
+        try? input.close()
+        try? output.close()
+    }
+
+    func initialize() throws {
+        _ = try request(
+            method: "initialize",
+            params: [
+                "clientInfo": [
+                    "name": "spotifylyrics",
+                    "title": "SpotifyLyrics",
+                    "version": "0.1.0"
+                ]
+            ]
+        )
+        try sendNotification(method: "initialized", params: [:])
+    }
+
+    func ensureAuthenticated() throws {
+        let accountResult = try request(method: "account/read", params: ["refreshToken": false])
+        if let account = accountResult["account"] as? [String: Any], account["type"] as? String == "chatgpt" {
+            return
+        }
+        let login = try request(method: "account/login/start", params: ["type": "chatgpt", "appBrand": "chatgpt"])
+        guard let authURL = login["authUrl"] as? String,
+              let loginID = login["loginId"] as? String,
+              let url = URL(string: authURL) else {
+            throw AITranslationError.codexUnavailable("登录地址无效")
+        }
+        _ = NSWorkspace.shared.open(url)
+        let deadline = Date().addingTimeInterval(180)
+        while Date() < deadline {
+            let message = try readMessage()
+            guard message["method"] as? String == "account/login/completed" else { continue }
+            let params = message["params"] as? [String: Any] ?? [:]
+            guard params["loginId"] as? String == loginID || params["loginId"] == nil else { continue }
+            if params["success"] as? Bool == true { return }
+            throw AITranslationError.codexRequiresLogin
+        }
+        throw AITranslationError.codexRequiresLogin
+    }
+
+    func translate(prompt: String, model: String, outputSchema: [String: Any]) throws -> String {
+        var threadParams: [String: Any] = [
+            "cwd": FileManager.default.currentDirectoryPath,
+            "ephemeral": true,
+            "serviceName": "spotifylyrics"
+        ]
+        if !model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { threadParams["model"] = model }
+        let thread = try request(method: "thread/start", params: threadParams)
+        guard let threadID = thread["thread"] as? [String: Any] ?? thread["thread"] as? [String: Any],
+              let id = threadID["id"] as? String else {
+            throw AITranslationError.codexUnavailable("未返回临时会话 ID")
+        }
+        var turnParams: [String: Any] = [
+            "threadId": id,
+            "input": [["type": "text", "text": prompt]],
+            "outputSchema": outputSchema,
+            "approvalPolicy": "never",
+            "cwd": FileManager.default.currentDirectoryPath
+        ]
+        if !model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { turnParams["model"] = model }
+        let turn = try request(method: "turn/start", params: turnParams)
+        let turnID = (turn["turn"] as? [String: Any])?["id"] as? String
+        var finalText = ""
+        while true {
+            let message = try readMessage()
+            if message["method"] as? String == "item/completed",
+               let params = message["params"] as? [String: Any],
+               let item = params["item"] as? [String: Any],
+               item["type"] as? String == "agentMessage",
+               let text = item["text"] as? String {
+                finalText = text
+            }
+            guard message["method"] as? String == "turn/completed" else { continue }
+            if let expected = turnID,
+               let params = message["params"] as? [String: Any],
+               let completedTurn = params["turn"] as? [String: Any],
+               completedTurn["id"] as? String != expected { continue }
+            break
+        }
+        guard !finalText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw AITranslationError.codexUnavailable("会话未返回翻译内容")
+        }
+        return finalText
+    }
+
+    private func request(method: String, params: [String: Any]) throws -> [String: Any] {
+        let id = nextID
+        nextID += 1
+        try send(["id": id, "method": method, "params": params])
+        while true {
+            let message = try readMessage()
+            if let responseID = message["id"] as? Int, responseID == id {
+                if let error = message["error"] as? [String: Any] {
+                    throw AITranslationError.codexUnavailable(error["message"] as? String ?? method)
+                }
+                return message["result"] as? [String: Any] ?? [:]
+            }
+        }
+    }
+
+    private func sendNotification(method: String, params: [String: Any]) throws {
+        try send(["method": method, "params": params])
+    }
+
+    private func send(_ object: [String: Any]) throws {
+        let data = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+        try input.write(contentsOf: data + Data([0x0A]))
+    }
+
+    private func readMessage() throws -> [String: Any] {
+        var data = Data()
+        while true {
+            guard let chunk = try output.read(upToCount: 1), !chunk.isEmpty else {
+                throw AITranslationError.codexUnavailable("本地服务提前退出")
+            }
+            if chunk[chunk.startIndex] == 0x0A { break }
+            data.append(chunk)
+        }
+        guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw AITranslationError.codexUnavailable("收到无法解析的协议消息")
+        }
+        return object
+    }
+}
+
 public enum TranslationEngineRegistry {
     public static func make(stableID: String) -> any TranslationEngine {
         if stableID == TranslationEngineID.appleSystem.rawValue {
             return AppleSystemTranslationEngine()
+        }
+        if stableID == TranslationEngineID.codexChatGPT.rawValue {
+            return CodexAppServerTranslationService()
         }
         return OpenAICompatibleTranslationService()
     }

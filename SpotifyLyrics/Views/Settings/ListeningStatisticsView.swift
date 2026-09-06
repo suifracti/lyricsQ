@@ -2,6 +2,7 @@ import SwiftUI
 
 public struct ListeningStatisticsView: View {
     @EnvironmentObject private var playback: PlaybackState
+    @State private var visibleSongCount = 20
     @State private var selectedTimeRange: ListeningStatisticsTimeRange = .allTime
 
     public init() {}
@@ -71,6 +72,7 @@ public struct ListeningStatisticsView: View {
             playback.refreshListeningStatistics(for: selectedTimeRange)
         }
         .onChange(of: selectedTimeRange) { _, newValue in
+            visibleSongCount = 20
             playback.refreshListeningStatistics(for: newValue)
         }
     }
@@ -169,9 +171,9 @@ public struct ListeningStatisticsView: View {
 
     @ViewBuilder
     private func topSongs(_ songs: [ListeningStatisticsSong]) -> some View {
-        let displaySongs = Array(songs.prefix(5))
+        let displaySongs = Array(songs.prefix(visibleSongCount))
         if !displaySongs.isEmpty {
-            statisticsGroup(title: "Top Songs", icon: "music.note") {
+            statisticsGroup(title: "歌曲排行", icon: "music.note") {
                 ForEach(Array(displaySongs.enumerated()), id: \.element.id) { index, song in
                     HStack(spacing: 10) {
                         Text("\(index + 1)")
@@ -196,6 +198,11 @@ public struct ListeningStatisticsView: View {
                     if song.id != displaySongs.last?.id {
                         Divider()
                     }
+                }
+                if songs.count > visibleSongCount {
+                    Button("显示更多歌曲") { visibleSongCount += 20 }
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 6)
                 }
             }
         }
