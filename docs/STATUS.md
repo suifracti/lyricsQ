@@ -1,6 +1,16 @@
 # Project Status
 
-Status snapshot: 2026-09-06.
+Status snapshot: 2026-09-07.
+
+## Current user-facing availability correction — 2026-09-07
+
+The feature-branch preview now documents availability from the user's actual experience, not only from source presence or structural contracts. The following paths have visible UI/code but are currently half-finished and must be treated as bugs:
+
+- AI translation, retranslation and related AI lyric processing: **Bug / unavailable**.
+- Automatic timing alignment / local audio forced alignment: **Bug / unavailable**.
+- Top capsule / Dynamic-Island-style lyrics capsule: **Bug / unavailable**.
+
+Older entries below record implementation history and contract/build results; they do not override this current user-facing status. Stable paths are the main V3 player, desktop lyrics, native fullscreen lyrics, lyrics library, manual import/edit/versioning, lyric copy and local history/statistics.
 
 Expanded-source preview: added lyrics.ovh plain/manual fallback plus Kuwo and Kugou real line-timed experimental sources; seven network providers total. Version lists show readable source/provenance through revisions, preserving unknown raw IDs. Bounded3-provider concurrency and cancellation race fixed. Fixed-response/temporary-DB/configuration/concurrency tests, actual Swift provider health checks and native source/settings inspection passed. See [source report](work/experience-restoration/expanded-lyrics-sources-report.md).
 

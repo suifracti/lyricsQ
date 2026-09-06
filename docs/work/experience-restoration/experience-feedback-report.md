@@ -46,6 +46,22 @@ User-authorized work follows the supplied preview screenshots: reading controls,
 
 ![听歌统计](../../evidence/experience-feedback-20260906/library-listening-statistics.png)
 
+### 其它功能截图
+
+![歌词逐行复制菜单](../../evidence/experience-feedback-20260906/v3-copy-context-menu.png)
+
+![歌名歌手复制提示](../../evidence/experience-feedback-20260906/v3-copy-track-toast.png)
+
+![主播放页歌词显示与时间偏移](../../evidence/experience-feedback-20260906/v3-lyrics-display-popover.png)
+
+![桌面歌词设置](../../evidence/experience-feedback-20260906/desktop-lyrics-settings.png)
+
+![桌面歌词图层设置](../../evidence/experience-feedback-20260906/desktop-lyrics-settings-layers.png)
+
+![桌面歌词颜色选择](../../evidence/experience-feedback-20260906/desktop-lyrics-color-picker.png)
+
+![歌词编辑器时间轴](../../evidence/experience-feedback-20260906/lyrics-editor-timeline.png)
+
 ### 为什么截图里主要是这一首歌
 
 截图里反复出现《アーカイブ - Piano Ver.》，原因是这次验收期间一直在循环播放它，不是应用只能识别或只保存这一首歌。
