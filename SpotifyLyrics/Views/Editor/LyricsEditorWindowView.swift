@@ -13,7 +13,9 @@ struct LyricsEditorWindowView: View {
         VStack(spacing: 0) {
             header
             Divider()
-            if let preview = editor.pendingTextImport {
+            if let preview = editor.pendingTranslationPaste {
+                translationPastePreview(preview)
+            } else if let preview = editor.pendingTextImport {
                 textImportPreview(preview)
             } else if let preview = editor.pendingImport {
                 importPreview(preview)
@@ -97,7 +99,12 @@ struct LyricsEditorWindowView: View {
             Spacer()
             versionPicker
             translationPicker
-            Button("粘贴歌词", systemImage: "doc.on.clipboard") { pasteText() }
+            Menu("粘贴", systemImage: "doc.on.clipboard") {
+                Button("作为翻译") { pasteTranslation(target: .translation) }
+                Button("作为原文") { pasteTranslation(target: .original) }
+                Divider()
+                Button("作为新歌词版本") { pasteText() }
+            }
             Button("导入 TXT", systemImage: "doc.text") { importTXT() }
             Button("导入 LRC", systemImage: "square.and.arrow.down") { importLRC() }
             Button("导出原文", systemImage: "square.and.arrow.up") { exportOriginal() }
@@ -504,12 +511,69 @@ struct LyricsEditorWindowView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
+    private func translationPastePreview(_ preview: TranslationPasteImportPreview) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("粘贴\(preview.target.title)预览").font(.title2.weight(.semibold))
+            Text(preview.summary)
+                .foregroundStyle(preview.canApply ? .green : .orange)
+            Text(preview.importedWasTimed
+                 ? "已按稳定行序和时间标签检查；检测到的整体偏移只用于匹配，不会改写原歌词时间。"
+                 : "未发现时间标签；只有非空行数完全一致时才会按顺序导入。")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            if !preview.matches.isEmpty {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 5) {
+                        ForEach(Array(preview.matches.prefix(24).enumerated()), id: \.offset) { _, match in
+                            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                                Text("第 \(match.sourceLineIndex + 1) 行")
+                                    .font(.caption.monospacedDigit())
+                                    .foregroundStyle(.secondary)
+                                Text(match.text)
+                                    .lineLimit(1)
+                                Spacer()
+                                Text(match.confidence == .high ? "已匹配" : "待确认")
+                                    .font(.caption)
+                                    .foregroundStyle(match.confidence == .high ? .green : .orange)
+                            }
+                        }
+                    }
+                    .padding(12)
+                    .background(.quaternary.opacity(0.32))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                }
+            }
+            if !preview.canApply {
+                Label("存在缺行、多行或歧义；确认按钮已禁用，不会静默错配。", systemImage: "exclamationmark.triangle")
+                    .foregroundStyle(.orange)
+            }
+            Spacer()
+            HStack {
+                Button("取消") { editor.cancelImportPreview() }
+                Spacer()
+                Button("确认导入") { editor.confirmTranslationPaste() }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(!preview.canApply)
+            }
+        }
+        .padding(28)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
     private func pasteText() {
         guard let text = NSPasteboard.general.string(forType: .string) else {
             editor.reportExportResult("剪贴板中没有文本")
             return
         }
         editor.prepareTextImport(text, source: .manualCreate)
+    }
+
+    private func pasteTranslation(target: TranslationPasteTarget) {
+        guard let text = NSPasteboard.general.string(forType: .string) else {
+            editor.reportExportResult("剪贴板中没有文本")
+            return
+        }
+        editor.prepareTranslationPaste(text, target: target)
     }
 
     private func importTXT() {

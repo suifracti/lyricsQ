@@ -15,6 +15,7 @@ public enum AITranslationSourceKind: String, CaseIterable, Codable, Sendable {
 public enum TranslationEngineID: String, CaseIterable, Codable, Sendable {
     case openAICompatible = "translationEngine.openAICompatible.v1"
     case appleSystem = "translationEngine.appleSystem.v1"
+    case codexChatGPT = "translationEngine.codexChatGPT.v1"
 }
 
 public enum TranslationEngineAvailability: String, Codable, Sendable {
@@ -80,6 +81,13 @@ public enum TranslationEngineCatalog {
             availability: .requiresSystemSupport,
             requiresAPIKey: false,
             supportsModelDirectory: false
+        ),
+        TranslationEngineMetadata(
+            stableID: TranslationEngineID.codexChatGPT.rawValue,
+            displayName: "Codex / ChatGPT 登录",
+            availability: .available,
+            requiresAPIKey: false,
+            supportsModelDirectory: false
         )
     ]
 
@@ -118,6 +126,30 @@ public struct TranslationPromptPresetMetadata: Equatable, Sendable {
     }
 }
 
+/// A style example is recorded only from a user-confirmed manual translation.
+/// It is local preference data, not a provider response and not a credential.
+public struct TranslationStyleExample: Codable, Equatable, Sendable, Identifiable {
+    public let id: UUID
+    public let original: String
+    public let translation: String
+    public let sourceKind: String
+    public let createdAt: Date
+
+    public init(
+        id: UUID = UUID(),
+        original: String,
+        translation: String,
+        sourceKind: String = AITranslationSourceKind.manualEdit.rawValue,
+        createdAt: Date = Date()
+    ) {
+        self.id = id
+        self.original = original
+        self.translation = translation
+        self.sourceKind = sourceKind
+        self.createdAt = createdAt
+    }
+}
+
 public enum TranslationPromptPresetCatalog {
     public static let all: [TranslationPromptPresetMetadata] = [
         .init(id: .naturalSong, displayName: "自然歌曲", detail: "保留歌曲语气与意象，优先自然中文"),
@@ -145,6 +177,9 @@ public struct TranslationStyleProfile: Codable, Equatable, Sendable, Identifiabl
     public var preserveProperNouns: Bool
     public var preserveRepetition: Bool
     public var keepSongTone: Bool
+    public var examples: [TranslationStyleExample]
+    public var styleSummary: String
+    public var summaryVersion: Int
     public let createdAt: Date
     public var updatedAt: Date
     public var isArchived: Bool
@@ -159,6 +194,9 @@ public struct TranslationStyleProfile: Codable, Equatable, Sendable, Identifiabl
         preserveProperNouns: Bool = true,
         preserveRepetition: Bool = true,
         keepSongTone: Bool = true,
+        examples: [TranslationStyleExample] = [],
+        styleSummary: String = "",
+        summaryVersion: Int = 1,
         createdAt: Date = Date(),
         updatedAt: Date = Date(),
         isArchived: Bool = false
@@ -172,6 +210,9 @@ public struct TranslationStyleProfile: Codable, Equatable, Sendable, Identifiabl
         self.preserveProperNouns = preserveProperNouns
         self.preserveRepetition = preserveRepetition
         self.keepSongTone = keepSongTone
+        self.examples = Array(examples.suffix(24))
+        self.styleSummary = styleSummary
+        self.summaryVersion = max(1, summaryVersion)
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.isArchived = isArchived
@@ -182,6 +223,31 @@ public struct TranslationStyleProfile: Codable, Equatable, Sendable, Identifiabl
         copy.name = name
         copy.updatedAt = Date()
         return copy
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, name, basePresetID, customInstructions, targetLanguage
+        case temperatureOverride, preserveProperNouns, preserveRepetition, keepSongTone
+        case examples, styleSummary, summaryVersion, createdAt, updatedAt, isArchived
+    }
+
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try values.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        self.name = try values.decode(String.self, forKey: .name)
+        self.basePresetID = try values.decodeIfPresent(TranslationPromptPresetID.self, forKey: .basePresetID) ?? .naturalSong
+        self.customInstructions = try values.decodeIfPresent(String.self, forKey: .customInstructions) ?? ""
+        self.targetLanguage = try values.decodeIfPresent(String.self, forKey: .targetLanguage) ?? "zh-Hans"
+        self.temperatureOverride = try values.decodeIfPresent(Double.self, forKey: .temperatureOverride)
+        self.preserveProperNouns = try values.decodeIfPresent(Bool.self, forKey: .preserveProperNouns) ?? true
+        self.preserveRepetition = try values.decodeIfPresent(Bool.self, forKey: .preserveRepetition) ?? true
+        self.keepSongTone = try values.decodeIfPresent(Bool.self, forKey: .keepSongTone) ?? true
+        self.examples = Array((try values.decodeIfPresent([TranslationStyleExample].self, forKey: .examples) ?? []).suffix(24))
+        self.styleSummary = try values.decodeIfPresent(String.self, forKey: .styleSummary) ?? ""
+        self.summaryVersion = max(1, try values.decodeIfPresent(Int.self, forKey: .summaryVersion) ?? 1)
+        self.createdAt = try values.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
+        self.updatedAt = try values.decodeIfPresent(Date.self, forKey: .updatedAt) ?? self.createdAt
+        self.isArchived = try values.decodeIfPresent(Bool.self, forKey: .isArchived) ?? false
     }
 
     /// Immutable metadata captured with a translation version. It contains
@@ -248,7 +314,10 @@ public final class TranslationProfileStore: ObservableObject, @unchecked Sendabl
             temperatureOverride: profile.temperatureOverride,
             preserveProperNouns: profile.preserveProperNouns,
             preserveRepetition: profile.preserveRepetition,
-            keepSongTone: profile.keepSongTone
+            keepSongTone: profile.keepSongTone,
+            examples: profile.examples,
+            styleSummary: profile.styleSummary,
+            summaryVersion: profile.summaryVersion
         )
         save(duplicate)
         return duplicate
@@ -268,6 +337,51 @@ public final class TranslationProfileStore: ObservableObject, @unchecked Sendabl
             defaults.set(data, forKey: key)
             revision &+= 1
         }
+    }
+
+    /// Adds examples from a completed manual save and rebuilds a deterministic
+    /// summary locally. No network or model is involved in this operation.
+    public func recordConfirmedExamples(
+        profileID: UUID,
+        examples incoming: [TranslationStyleExample]
+    ) {
+        guard let existing = list(includeArchived: true).first(where: { $0.id == profileID }) else { return }
+        var updated = existing
+        let valid = incoming.filter {
+            !$0.original.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                && !$0.translation.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                && $0.sourceKind == AITranslationSourceKind.manualEdit.rawValue
+        }
+        var combined = existing.examples
+        for example in valid where !combined.contains(where: {
+            $0.original == example.original && $0.translation == example.translation
+        }) {
+            combined.append(example)
+        }
+        updated.examples = Array(combined.suffix(24))
+        updated.styleSummary = Self.summary(for: updated.examples)
+        updated.summaryVersion = max(1, existing.summaryVersion + 1)
+        updated.updatedAt = Date()
+        save(updated)
+    }
+
+    public func regenerateSummary(profileID: UUID) {
+        guard let existing = list(includeArchived: true).first(where: { $0.id == profileID }) else { return }
+        var updated = existing
+        updated.styleSummary = Self.summary(for: updated.examples)
+        updated.summaryVersion = max(1, existing.summaryVersion + 1)
+        updated.updatedAt = Date()
+        save(updated)
+    }
+
+    private static func summary(for examples: [TranslationStyleExample]) -> String {
+        guard !examples.isEmpty else { return "尚未记录已确认的人工翻译样例。" }
+        let repeatedPairs = Dictionary(grouping: examples) { $0.translation.count }
+            .max { $0.value.count < $1.value.count }?.key
+        if let repeatedPairs {
+            return "已确认 \(examples.count) 条人工样例；常见译文长度约 \(repeatedPairs) 字，保持原文重复与语气。"
+        }
+        return "已确认 \(examples.count) 条人工样例；保持原文重复、专名和歌曲语气。"
     }
 
     private func save(_ profile: TranslationStyleProfile) {
@@ -326,10 +440,21 @@ public enum AITranslationVersionStatus: String, Codable, Sendable {
 public struct AITranslationLine: Codable, Equatable, Sendable {
     public let index: Int
     public let translation: String
+    public let lineID: UUID?
 
-    public init(index: Int, translation: String) {
+    public init(index: Int, translation: String, lineID: UUID? = nil) {
         self.index = index
         self.translation = translation
+        self.lineID = lineID
+    }
+
+    private enum CodingKeys: String, CodingKey { case index, translation, lineID }
+
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        index = try values.decode(Int.self, forKey: .index)
+        translation = try values.decode(String.self, forKey: .translation)
+        lineID = try values.decodeIfPresent(UUID.self, forKey: .lineID)
     }
 }
 
@@ -341,6 +466,9 @@ public struct AITranslationContext: Equatable, Sendable {
     public let targetLanguage: String
     public let style: String
     public let lines: [AITranslationSourceLine]
+    public let styleSummary: String
+    public let styleExamples: [TranslationStyleExample]
+    public let selectedLineIDs: Set<UUID>?
 
     public init(
         title: String,
@@ -349,7 +477,10 @@ public struct AITranslationContext: Equatable, Sendable {
         sourceLanguage: String,
         targetLanguage: String,
         style: String,
-        lines: [AITranslationSourceLine]
+        lines: [AITranslationSourceLine],
+        styleSummary: String = "",
+        styleExamples: [TranslationStyleExample] = [],
+        selectedLineIDs: Set<UUID>? = nil
     ) {
         self.title = title
         self.artist = artist
@@ -358,20 +489,34 @@ public struct AITranslationContext: Equatable, Sendable {
         self.targetLanguage = targetLanguage
         self.style = style
         self.lines = lines
+        self.styleSummary = styleSummary
+        self.styleExamples = Array(styleExamples.suffix(12))
+        self.selectedLineIDs = selectedLineIDs
     }
 }
 
 public struct AITranslationSourceLine: Equatable, Sendable {
     public let index: Int
+    public let lineID: UUID
     public let original: String
     public let kana: String?
     public let romaji: String?
+    public let timestamp: TimeInterval?
 
-    public init(index: Int, original: String, kana: String? = nil, romaji: String? = nil) {
+    public init(
+        index: Int,
+        original: String,
+        kana: String? = nil,
+        romaji: String? = nil,
+        lineID: UUID = UUID(),
+        timestamp: TimeInterval? = nil
+    ) {
         self.index = index
+        self.lineID = lineID
         self.original = original
         self.kana = kana
         self.romaji = romaji
+        self.timestamp = timestamp
     }
 }
 
@@ -476,6 +621,10 @@ public enum AITranslationError: Error, Equatable, Sendable, LocalizedError {
     case invalidResponse(String)
     case persistence(String)
     case engineUnavailable(String)
+    case codexNotInstalled
+    case codexRequiresLogin
+    case codexUnavailable(String)
+    case codexResponseInvalid(String)
 
     public var errorDescription: String? {
         switch self {
@@ -491,6 +640,10 @@ public enum AITranslationError: Error, Equatable, Sendable, LocalizedError {
         case .invalidResponse: return "AI 翻译响应校验失败"
         case .persistence: return "AI 翻译保存失败"
         case .engineUnavailable(let message): return message
+        case .codexNotInstalled: return "未找到 ChatGPT/Codex 本地运行时"
+        case .codexRequiresLogin: return "请先在浏览器完成 ChatGPT/Codex 登录"
+        case .codexUnavailable(let message): return "Codex 本地服务不可用：\(message)"
+        case .codexResponseInvalid: return "Codex 返回的歌词翻译无法按稳定行 ID 校验"
         }
     }
 }

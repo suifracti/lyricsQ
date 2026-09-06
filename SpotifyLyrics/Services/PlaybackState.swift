@@ -302,6 +302,14 @@ public final class PlaybackState: ObservableObject {
                 self.reconnectSpotify()
             }
             .store(in: &self.settingsCancellables)
+        resolvedSettings.$lyricsPresentationOffset
+            .dropFirst()
+            .sink { [weak self] _ in
+                guard let self else { return }
+                self.syncPublishedLineIndex(source: .presentationOffset)
+                self.objectWillChange.send()
+            }
+            .store(in: &self.settingsCancellables)
     }
 
 
@@ -2354,6 +2362,7 @@ public final class PlaybackState: ObservableObject {
         case boundary
         case lyricsSession = "lyrics-session"
         case pauseResume = "pause-resume"
+        case presentationOffset = "presentation-offset"
         case reset
         case mockTick = "mock-tick"
     }
@@ -2503,7 +2512,8 @@ public final class PlaybackState: ObservableObject {
             receivedAtMonotonicTime: playbackAnchorMonotonic,
             isPlaying: isPlaying,
             trackID: currentTrack.id,
-            trackDuration: currentTrack.duration
+            trackDuration: currentTrack.duration,
+            presentationOffset: settingsStore.lyricsPresentationOffset
         )
     }
 }

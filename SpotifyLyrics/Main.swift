@@ -210,6 +210,7 @@ struct SpotifyLyricsApp: App {
                 WindowManager.shared.restoreFloatingInteractiveMode(state: playbackState)
             }
             .keyboardShortcut("l", modifiers: [.command, .option])
+            .help("即使悬浮歌词已鼠标穿透，也可用此命令直接恢复交互")
 
             Divider()
 

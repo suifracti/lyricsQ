@@ -55,6 +55,7 @@ public final class LyricsEditorSessionController: ObservableObject {
     @Published public private(set) var validation = LyricsTimelineValidationResult(issues: [], isSynchronized: false)
     @Published public private(set) var pendingImport: LyricsEditorImportPreview?
     @Published public private(set) var pendingTextImport: TextLyricsImportResult?
+    @Published public private(set) var pendingTranslationPaste: TranslationPasteImportPreview?
     @Published public private(set) var message: String?
     @Published public private(set) var isStale = false
     /// Assist: line IDs that currently hold unconfirmed auto-suggestions.
@@ -99,7 +100,7 @@ public final class LyricsEditorSessionController: ObservableObject {
     }
 
     public var hasUnsavedChanges: Bool {
-        draft?.isDirty == true || pendingImport != nil || pendingTextImport != nil
+        draft?.isDirty == true || pendingImport != nil || pendingTextImport != nil || pendingTranslationPaste != nil
     }
 
     public var currentIdentity: TrackIdentity? { identity }
@@ -146,6 +147,7 @@ public final class LyricsEditorSessionController: ObservableObject {
         self.selectedTranslation = selectedTranslation
         self.pendingImport = nil
         self.pendingTextImport = nil
+        self.pendingTranslationPaste = nil
         self.isNewSourceSession = false
         self.newSourceKind = .manualCreate
         self.pendingTextImportSource = .manualCreate
@@ -230,6 +232,7 @@ public final class LyricsEditorSessionController: ObservableObject {
         self.selectedTranslation = nil
         self.pendingImport = nil
         self.pendingTextImport = nil
+        self.pendingTranslationPaste = nil
         self.message = nil
         self.isStale = false
         self.isNewSourceSession = true
@@ -280,6 +283,7 @@ public final class LyricsEditorSessionController: ObservableObject {
         self.selectedTranslation = nil
         self.pendingImport = nil
         self.pendingTextImport = nil
+        self.pendingTranslationPaste = nil
         self.message = nil
         self.isStale = false
         self.isNewSourceSession = false
@@ -302,6 +306,7 @@ public final class LyricsEditorSessionController: ObservableObject {
         saveTask?.cancel()
         pendingImport = nil
         pendingTextImport = nil
+        pendingTranslationPaste = nil
         draft = nil
         availableVersions = []
         availableTranslations = []
@@ -570,7 +575,55 @@ public final class LyricsEditorSessionController: ObservableObject {
     public func cancelImportPreview() {
         pendingImport = nil
         pendingTextImport = nil
+        pendingTranslationPaste = nil
         state = isStale ? .stale : .editing
+    }
+
+    /// Preview a pasted original/translation against the currently open
+    /// document. Applying is separate and fail-closed: a count mismatch,
+    /// missing timestamp, or ambiguous timestamp never mutates the draft.
+    public func prepareTranslationPaste(
+        _ content: String,
+        target: TranslationPasteTarget = .translation
+    ) {
+        guard !isStale, isStillCurrent?() ?? true, let draft else {
+            message = "当前歌词不可编辑，请重新打开对应歌曲的编辑器"
+            state = .stale
+            return
+        }
+        do {
+            let preview = try TranslationPasteImporter.preview(
+                content: content,
+                sourceLines: draft.lines,
+                sourceIsSynchronized: validation.isSynchronized,
+                target: target
+            )
+            pendingTranslationPaste = preview
+            pendingImport = nil
+            pendingTextImport = nil
+            state = .importPreview
+            message = preview.canApply
+                ? "\(preview.summary)，可确认导入"
+                : "\(preview.summary)，仅显示预览，尚未写入"
+        } catch {
+            message = error.localizedDescription
+            state = .failed(error.localizedDescription)
+        }
+    }
+
+    public func confirmTranslationPaste() {
+        guard !isStale, let preview = pendingTranslationPaste, let draft else { return }
+        do {
+            var updated = draft
+            updated.lines = try TranslationPasteImporter.apply(preview, to: draft.lines)
+            self.draft = updated
+            pendingTranslationPaste = nil
+            validate(updated)
+            state = .editing
+            message = "已导入\(preview.target.title)；保存后才会写入独立版本"
+        } catch {
+            message = error.localizedDescription
+        }
     }
 
     public func prepareTextImport(_ content: String, source: LyricsSource = .manualCreate) {
@@ -808,6 +861,21 @@ public final class LyricsEditorSessionController: ObservableObject {
         if let translation = result.translationVersion {
             availableTranslations.insert(translation, at: 0)
             selectedTranslation = translation
+            if let profileID = translationConfiguration.profileID,
+               let currentDraft = self.draft {
+                let examples = translation.lines.compactMap { stored -> TranslationStyleExample? in
+                    guard currentDraft.lines.indices.contains(stored.lineIndex) else { return nil }
+                    let original = currentDraft.lines[stored.lineIndex].originalText
+                    let translated = stored.translatedText
+                    guard !original.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                          !translated.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+                    return TranslationStyleExample(original: original, translation: translated)
+                }
+                AppSettingsStore.shared.translationProfiles.recordConfirmedExamples(
+                    profileID: profileID,
+                    examples: examples
+                )
+            }
         }
         pendingImport = nil
         state = .saved

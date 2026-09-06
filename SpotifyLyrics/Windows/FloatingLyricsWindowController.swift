@@ -7,6 +7,11 @@ private final class FloatingLyricsPanel: NSPanel {
     override var canBecomeMain: Bool { false }
 }
 
+private final class FloatingLyricsStylePanel: NSPanel {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { false }
+}
+
 /// Owns exactly one retained floating panel. Hiding orders it out instead of
 /// closing or releasing the panel, so repeated toggles cannot create a second
 /// window or a second SwiftUI state tree.
@@ -14,9 +19,11 @@ private final class FloatingLyricsPanel: NSPanel {
 final class FloatingLyricsWindowController: NSObject, ObservableObject, NSWindowDelegate {
     @Published private(set) var isVisible = false
     @Published private(set) var interactionMode: FloatingLyricsInteractionMode = .interactive
+    @Published private(set) var isStylePanelVisible = false
 
     private let persistence = FloatingLyricsWindowPersistence.shared
     private var panel: FloatingLyricsPanel?
+    private var stylePanel: FloatingLyricsStylePanel?
     private weak var playbackState: PlaybackState?
     private var settings: AppSettingsStore?
     private var settingsCancellables: Set<AnyCancellable> = []
@@ -71,6 +78,7 @@ final class FloatingLyricsWindowController: NSObject, ObservableObject, NSWindow
     }
 
     func close() {
+        hideStylePanel()
         panel?.orderOut(nil)
         isVisible = false
         settings?.floatingWindowWasVisible = false
@@ -82,6 +90,7 @@ final class FloatingLyricsWindowController: NSObject, ObservableObject, NSWindow
     /// only for the duration of the fullscreen surface.
     func temporarilyHideForFullScreen() {
         guard isVisible else { return }
+        hideStylePanel()
         panel?.orderOut(nil)
         isVisible = false
         playbackState?.showFloatingWindow = false
@@ -98,6 +107,65 @@ final class FloatingLyricsWindowController: NSObject, ObservableObject, NSWindow
 
     func restoreInteractiveMode() {
         setInteractionMode(.interactive)
+    }
+
+    func toggleStylePanel(settings: AppSettingsStore) {
+        self.settings = settings
+        if isStylePanelVisible {
+            hideStylePanel()
+        } else {
+            showStylePanel(settings: settings)
+        }
+    }
+
+    private func showStylePanel(settings: AppSettingsStore) {
+        guard let panel else { return }
+        let stylePanel = self.stylePanel ?? makeStylePanel(settings: settings)
+        self.stylePanel = stylePanel
+        positionStylePanel(stylePanel, relativeTo: panel)
+        stylePanel.orderFrontRegardless()
+        isStylePanelVisible = true
+    }
+
+    private func makeStylePanel(settings: AppSettingsStore) -> FloatingLyricsStylePanel {
+        let stylePanel = FloatingLyricsStylePanel(
+            contentRect: NSRect(x: 0, y: 0, width: 360, height: 660),
+            styleMask: [.titled, .closable, .utilityWindow, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        stylePanel.title = "桌面歌词设置"
+        stylePanel.delegate = self
+        stylePanel.isReleasedWhenClosed = false
+        stylePanel.isFloatingPanel = true
+        stylePanel.hidesOnDeactivate = false
+        stylePanel.hasShadow = true
+        stylePanel.backgroundColor = .clear
+        stylePanel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        stylePanel.contentView = NSHostingView(
+            rootView: FloatingLyricsStylePanelView(settings: settings)
+        )
+        applyWindowLevel(to: stylePanel, settings: settings)
+        return stylePanel
+    }
+
+    private func hideStylePanel() {
+        stylePanel?.orderOut(nil)
+        isStylePanelVisible = false
+    }
+
+    private func positionStylePanel(_ stylePanel: NSPanel, relativeTo panel: NSWindow) {
+        guard let visibleFrame = panel.screen?.visibleFrame ?? NSScreen.main?.visibleFrame,
+              let settings else { return }
+        let contentHeight = min(620, max(420, visibleFrame.height - 80))
+        stylePanel.setContentSize(NSSize(width: 360, height: contentHeight))
+        let layout = FloatingLyricsStylePanelLayout(
+            lyricsFrame: panel.frame,
+            panelSize: stylePanel.frame.size,
+            visibleFrame: visibleFrame
+        )
+        stylePanel.setFrame(layout.frame, display: false)
+        applyWindowLevel(to: stylePanel, settings: settings)
     }
 
     private func configure(state: PlaybackState, settings: AppSettingsStore) {
@@ -188,6 +256,7 @@ final class FloatingLyricsWindowController: NSObject, ObservableObject, NSWindow
 
     func hide() {
         guard let panel else { return }
+        hideStylePanel()
         saveFrame(panel)
         panel.orderOut(nil)
         isVisible = false
@@ -242,20 +311,44 @@ final class FloatingLyricsWindowController: NSObject, ObservableObject, NSWindow
     }
 
     func windowDidMove(_ notification: Notification) {
+        if let movedWindow = notification.object as? NSWindow, movedWindow === stylePanel {
+            return
+        }
         guard let panel else { return }
         saveFrame(panel)
+        if isStylePanelVisible, let stylePanel {
+            positionStylePanel(stylePanel, relativeTo: panel)
+        }
     }
 
     func windowDidResize(_ notification: Notification) {
+        if let resizedWindow = notification.object as? NSWindow, resizedWindow === stylePanel {
+            return
+        }
         guard let panel else { return }
         let safe = persistence.clamp(panel.frame, to: panel.screen?.visibleFrame ?? panel.frame)
         if safe != panel.frame {
             panel.setFrame(safe, display: false)
         }
         saveFrame(panel)
+        if isStylePanelVisible, let stylePanel {
+            positionStylePanel(stylePanel, relativeTo: panel)
+        }
+    }
+
+    func windowShouldClose(_ window: NSWindow) -> Bool {
+        if window === stylePanel {
+            hideStylePanel()
+            return false
+        }
+        return true
     }
 
     func windowWillClose(_ notification: Notification) {
+        if let closingWindow = notification.object as? NSWindow, closingWindow === stylePanel {
+            isStylePanelVisible = false
+            return
+        }
         // A user/system close is treated as a hide. The retained panel can be
         // reopened without creating another controller or state tree.
         if let panel { saveFrame(panel) }
@@ -287,5 +380,8 @@ final class FloatingLyricsWindowController: NSObject, ObservableObject, NSWindow
             panel.setFrame(safe, display: true)
         }
         saveFrame(panel)
+        if isStylePanelVisible, let stylePanel {
+            positionStylePanel(stylePanel, relativeTo: panel)
+        }
     }
 }

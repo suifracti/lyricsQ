@@ -42,8 +42,8 @@ grep -q '经典伴随呈现' "$MAIN" || {
   echo 'FAIL: classic companion presentation is not switchable from the main window' >&2
   exit 1
 }
-grep -q 'return "专辑沉浸 V2"' "$STYLE" || {
-  echo 'FAIL: maintained immersive layout still exposes the engineering V3 name' >&2
+grep -q 'return "专辑沉浸 V3"' "$STYLE" || {
+  echo 'FAIL: maintained immersive layout does not expose the user-facing V3 name' >&2
   exit 1
 }
 grep -q 'return "实验工作台 V0"' "$STYLE" || {
@@ -81,8 +81,8 @@ grep -q '"经典伴随 V1"' "$CATALOG" || {
   echo 'FAIL: catalog does not expose the fused V1 family' >&2
   exit 1
 }
-grep -q '"专辑沉浸 V2"' "$CATALOG" || {
-  echo 'FAIL: catalog does not expose the renamed V2 family' >&2
+grep -q '"专辑沉浸 V3"' "$CATALOG" || {
+  echo 'FAIL: catalog does not expose the renamed V3 family' >&2
   exit 1
 }
 grep -q '"实验工作台 V0"' "$CATALOG" || {

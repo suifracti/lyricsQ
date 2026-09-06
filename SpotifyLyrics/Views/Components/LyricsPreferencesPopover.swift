@@ -23,6 +23,9 @@ struct LyricsPreferencesPopover: View {
             }
 
             Divider().overlay(LyricsDesignTokens.controlBorder)
+            LyricsPresentationOffsetControl(settings: AppSettingsStore.shared)
+
+            Divider().overlay(LyricsDesignTokens.controlBorder)
 
             VStack(alignment: .leading, spacing: 10) {
                 Text("显示窗口")
@@ -108,5 +111,68 @@ struct LyricsPreferencesPopover: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+    }
+}
+
+/// One shared presentation offset editor used by the main preferences,
+/// settings center, and floating desktop inspector. It only changes the
+/// lyric presentation clock; it never seeks Spotify or edits LRC timestamps.
+struct LyricsPresentationOffsetControl: View {
+    @ObservedObject var settings: AppSettingsStore
+    @State private var input = ""
+
+    private var offset: Double {
+        min(10, max(-10, settings.lyricsPresentationOffset))
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Label("歌词时间偏移", systemImage: "clock.arrow.2.circlepath")
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                Spacer()
+                Text(label)
+                    .font(.system(size: 11, design: .rounded).monospacedDigit())
+                    .foregroundStyle(LyricsDesignTokens.secondaryText)
+            }
+            HStack(spacing: 6) {
+                Button("提前 0.10s") { adjust(-0.1) }
+                Button("延后 0.10s") { adjust(0.1) }
+                TextField("秒", text: $input)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 66)
+                    .onSubmit { commitInput() }
+                Button("归零") { settings.lyricsPresentationOffset = 0 }
+                    .disabled(abs(offset) < 0.0001)
+            }
+            .font(.system(size: 11, design: .rounded))
+            Text("只影响当前歌词的显示、自动滚动和逐字高亮，不改变播放进度。")
+                .font(.system(size: 10, design: .rounded))
+                .foregroundStyle(LyricsDesignTokens.mutedText)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .onAppear { syncInput() }
+        .onChange(of: settings.lyricsPresentationOffset) { _, _ in syncInput() }
+    }
+
+    private var label: String {
+        if abs(offset) < 0.005 { return "0.00s" }
+        return offset < 0 ? "提前 \(String(format: "%.2f", abs(offset)))s" : "延后 \(String(format: "%.2f", offset))s"
+    }
+
+    private func adjust(_ delta: Double) {
+        settings.lyricsPresentationOffset = min(10, max(-10, offset + delta))
+    }
+
+    private func commitInput() {
+        guard let value = Double(input.replacingOccurrences(of: ",", with: ".")), value.isFinite else {
+            syncInput()
+            return
+        }
+        settings.lyricsPresentationOffset = min(10, max(-10, value))
+    }
+
+    private func syncInput() {
+        input = String(format: "%.2f", offset)
     }
 }

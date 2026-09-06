@@ -100,6 +100,81 @@ public enum FloatingLyricsPresentationHelper {
     }
 }
 
+public enum FloatingLyricsStylePanelPlacement: String, Equatable, Sendable {
+    case right
+    case left
+    case above
+    case below
+}
+
+/// Chooses a detached settings-panel frame so it does not sit on top of the
+/// transparent lyric surface. The fallback is clamped to the visible screen
+/// when a display is too small to provide a complete side placement.
+public struct FloatingLyricsStylePanelLayout: Equatable, Sendable {
+    public let placement: FloatingLyricsStylePanelPlacement
+    public let frame: CGRect
+
+    public init(
+        lyricsFrame: CGRect,
+        panelSize: CGSize,
+        visibleFrame: CGRect,
+        gap: CGFloat = 12
+    ) {
+        let visible = visibleFrame.standardized
+        let safeVisibleWidth = max(1, visible.width)
+        let safeVisibleHeight = max(1, visible.height)
+        let width = min(max(1, panelSize.width.isFinite ? panelSize.width : 360), safeVisibleWidth)
+        let height = min(max(1, panelSize.height.isFinite ? panelSize.height : 620), safeVisibleHeight)
+        let safeGap = max(0, gap.isFinite ? gap : 12)
+
+        func clamped(_ value: CGFloat, lower: CGFloat, upper: CGFloat) -> CGFloat {
+            min(max(lower, value), upper)
+        }
+
+        let centeredY = clamped(
+            lyricsFrame.midY - height / 2,
+            lower: visible.minY,
+            upper: visible.maxY - height
+        )
+        let centeredX = clamped(
+            lyricsFrame.midX - width / 2,
+            lower: visible.minX,
+            upper: visible.maxX - width
+        )
+        let candidates: [(FloatingLyricsStylePanelPlacement, CGRect)] = [
+            (.right, CGRect(x: lyricsFrame.maxX + safeGap, y: centeredY, width: width, height: height)),
+            (.left, CGRect(x: lyricsFrame.minX - safeGap - width, y: centeredY, width: width, height: height)),
+            (.above, CGRect(x: centeredX, y: lyricsFrame.maxY + safeGap, width: width, height: height)),
+            (.below, CGRect(x: centeredX, y: lyricsFrame.minY - safeGap - height, width: width, height: height))
+        ]
+
+        if let fitting = candidates.first(where: { placement, candidate in
+            visible.contains(candidate) && !candidate.intersects(lyricsFrame)
+        }) {
+            placement = fitting.0
+            frame = fitting.1
+            return
+        }
+
+        let availableSpace: [(FloatingLyricsStylePanelPlacement, CGFloat)] = [
+            (.right, visible.maxX - lyricsFrame.maxX),
+            (.left, lyricsFrame.minX - visible.minX),
+            (.above, visible.maxY - lyricsFrame.maxY),
+            (.below, lyricsFrame.minY - visible.minY)
+        ]
+        let fallbackPlacement = availableSpace.max(by: { $0.1 < $1.1 })?.0 ?? .right
+        let fallback = candidates.first(where: { $0.0 == fallbackPlacement })?.1 ?? candidates[0].1
+        let clampedFrame = CGRect(
+            x: clamped(fallback.minX, lower: visible.minX, upper: visible.maxX - width),
+            y: clamped(fallback.minY, lower: visible.minY, upper: visible.maxY - height),
+            width: width,
+            height: height
+        )
+        placement = fallbackPlacement
+        frame = clampedFrame
+    }
+}
+
 /// Reserve the same control strip before and during hover so lyrics never jump
 /// or sit under controls. Short panels devote their scroll area to one verse.
 public struct FloatingLyricsLayout: Equatable, Sendable {
@@ -122,6 +197,29 @@ public enum FloatingDesktopTheme: String, CaseIterable, Sendable {
     case mint, amber, ice
     public var title: String {
         switch self { case .mint: return "薄荷"; case .amber: return "暖金"; case .ice: return "冰蓝" }
+    }
+}
+
+public enum FloatingDesktopRibbonAlignment: String, Equatable, Sendable {
+    case center
+    case leading
+}
+
+/// A text pass plan used by the AppKit desktop renderer. Outline and fill are
+/// deliberately separate: the fill is drawn last so a stroke can never tint
+/// the interior of the glyph, and masked highlight passes can omit the stroke
+/// instead of drawing the same dark edge a second time.
+public struct FloatingDesktopTextRenderPlan: Equatable, Sendable {
+    public let outlineEnabled: Bool
+    public let strokeWidthPercent: Double
+    public let fillPassIsOpaque: Bool
+
+    public init(outlineWidth: Double, fontSize: Double, drawOutline: Bool = true) {
+        let safeWidth = outlineWidth.isFinite ? min(3, max(0, outlineWidth)) : 0
+        let safeFontSize = fontSize.isFinite ? max(1, fontSize) : 1
+        outlineEnabled = drawOutline && safeWidth > 0
+        strokeWidthPercent = outlineEnabled ? 100 * safeWidth / safeFontSize : 0
+        fillPassIsOpaque = true
     }
 }
 
@@ -186,6 +284,53 @@ public enum FloatingDesktopTypography {
         return overflow * progress
     }
 
+    /// Returns the visible placement of a ribbon. A zero or missing measured
+    /// width means layout has not reported the text yet; it must not be
+    /// treated as a genuinely zero-width line and centered into the right
+    /// half of the clipped viewport.
+    public static func ribbonPlacementOffset(
+        measuredWidth: Double?,
+        viewport: Double,
+        elapsed: Double,
+        duration: Double
+    ) -> Double {
+        guard let measuredWidth,
+              measuredWidth.isFinite,
+              measuredWidth > 0,
+              viewport.isFinite,
+              viewport > 0 else {
+            return 0
+        }
+        if measuredWidth > viewport {
+            return -ribbonOffset(
+                textWidth: measuredWidth,
+                viewport: viewport,
+                elapsed: elapsed,
+                duration: duration
+            )
+        }
+        return max(0, (viewport - measuredWidth) / 2)
+    }
+
+    /// Chooses the frame alignment independently from the scroll offset. A
+    /// missing measurement is still a live line, so a short line must not
+    /// flash at the leading edge and then jump to center on the first
+    /// PreferenceKey callback. Overflowing lines stay leading-aligned so the
+    /// existing left-to-right reveal remains intact.
+    public static func ribbonAlignment(
+        measuredWidth: Double?,
+        viewport: Double
+    ) -> FloatingDesktopRibbonAlignment {
+        guard let measuredWidth,
+              measuredWidth.isFinite,
+              measuredWidth > 0,
+              viewport.isFinite,
+              viewport > 0 else {
+            return .center
+        }
+        return measuredWidth > viewport ? .leading : .center
+    }
+
     public static func fontSize(_ value: Double) -> Double {
         value.isFinite ? min(64, max(22, value)) : 34
     }
@@ -194,6 +339,29 @@ public enum FloatingDesktopTypography {
         guard mode == .double else { return nil }
         return [translation, next].compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
             .first { !$0.isEmpty }
+    }
+
+    /// Resolves the desktop inspector's explicit second-line choice. Unlike
+    /// the legacy helper above, this does not silently substitute another
+    /// layer, so changing the Picker is immediately observable.
+    public static func selectedCompanion(
+        mode: FloatingDesktopLineMode,
+        selection: String,
+        translation: String?,
+        next: String?,
+        kana: String?,
+        reading: String?
+    ) -> String? {
+        guard mode == .double else { return nil }
+        let value: String?
+        switch selection {
+        case "next": value = next
+        case "kana": value = kana
+        case "reading": value = reading
+        default: value = translation
+        }
+        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed?.isEmpty == false ? trimmed : nil
     }
 
     public static func segments(line: LyricLine, currentTime: TimeInterval) -> [TimedTextSegment]? {

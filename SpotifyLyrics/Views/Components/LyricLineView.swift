@@ -712,9 +712,10 @@ private struct RubyTokenBlock: View {
         }
     }
 
-    @ViewBuilder private func renderedText(_ text: String, font: NSFont?, fill: Color) -> some View {
-        if outlineWidth > 0, let font {
-            OutlinedLyricText(text: text, font: font, fill: fill, outline: outlineColor, width: outlineWidth)
+    @ViewBuilder private func renderedText(_ text: String, font: NSFont?, fill: Color, drawOutline: Bool = true) -> some View {
+        if let font {
+            OutlinedLyricText(text: text, font: font, fill: fill, outline: outlineColor,
+                              width: outlineWidth, drawOutline: drawOutline)
         } else {
             Text(text).foregroundColor(fill)
         }
@@ -763,7 +764,8 @@ private struct RubyTokenBlock: View {
                     .font(baseFont)
                     .overlay(
                         GeometryReader { geo in
-                            renderedText(surface, font: baseNSFont, fill: highlightColor ?? baseColor)
+                            renderedText(surface, font: baseNSFont, fill: highlightColor ?? baseColor,
+                                         drawOutline: false)
                                 .font(baseFont)
                                 .frame(width: geo.size.width, height: geo.size.height, alignment: .leading)
                                 .mask(alignment: .leading) {

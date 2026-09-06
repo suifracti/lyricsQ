@@ -261,6 +261,39 @@ struct PresentationClockContract {
             "paused clock must not use poll anti-regression"
         )
 
+        print("[12] Testing presentation-only advance/delay/reset semantics...")
+        let advanceByTwoSeconds = LyricsPresentationClock(
+            authoritativePosition: 10,
+            receivedAtMonotonicTime: 100,
+            isPlaying: false,
+            trackID: "offset",
+            trackDuration: 30,
+            presentationOffset: -2.0
+        )
+        let delayByTwoSeconds = LyricsPresentationClock(
+            authoritativePosition: 10,
+            receivedAtMonotonicTime: 100,
+            isPlaying: false,
+            trackID: "offset",
+            trackDuration: 30,
+            presentationOffset: 2.0
+        )
+        let reset = LyricsPresentationClock(
+            authoritativePosition: 10,
+            receivedAtMonotonicTime: 100,
+            isPlaying: false,
+            trackID: "offset",
+            trackDuration: 30,
+            presentationOffset: 0
+        )
+        assert(abs(advanceByTwoSeconds.presentationTime(at: 100) - 8.0) < 1e-6,
+               "提前 2s must move presented time from 10s to 8s")
+        assert(abs(delayByTwoSeconds.presentationTime(at: 100) - 12.0) < 1e-6,
+               "延后 2s must move presented time from 10s to 12s")
+        assert(abs(reset.presentationTime(at: 100) - 10) < 1e-6)
+        let sourceLine = LyricLine(timestamp: 10, originalText: "unchanged")
+        assert(sourceLine.timestamp == 10, "presentation offset must not mutate source timestamps")
+
         print("PASS: Presentation clock contract verified")
     }
 }

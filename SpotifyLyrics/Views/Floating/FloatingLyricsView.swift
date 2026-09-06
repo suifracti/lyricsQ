@@ -9,7 +9,6 @@ struct FloatingLyricsView: View {
     @EnvironmentObject private var settings: AppSettingsStore
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isHovering = false
-    @State private var showsStyle = false
 
     private var presentationVersion: FloatingLyricsPresentationVersion {
         settings.floatingLyricsPresentation
@@ -59,9 +58,9 @@ struct FloatingLyricsView: View {
                 .font(.system(size: 10, weight: .medium))
                 .lineLimit(1)
             Spacer(minLength: 4)
-            Button { showsStyle.toggle() } label: { Image(systemName: "textformat.size").frame(width: 26, height: 26) }
+            Button { windowController.toggleStylePanel(settings: settings) } label: { Image(systemName: "textformat.size").frame(width: 26, height: 26) }
                 .accessibilityLabel("桌面歌词样式")
-                .popover(isPresented: $showsStyle) { styleControls }
+                .accessibilityValue(windowController.isStylePanelVisible ? "已打开" : "已关闭")
 
             Button {
                 windowController.toggleInteractionMode()
@@ -76,7 +75,7 @@ struct FloatingLyricsView: View {
             } label: {
                 Image(systemName: "cursorarrow.slash").frame(width: 26, height: 26)
             }
-            .help("启用鼠标穿透；可在应用菜单恢复交互")
+            .help("启用鼠标穿透；即使主窗口不接收鼠标，也可用 ⌥⌘L 从应用菜单恢复交互")
             .accessibilityLabel("启用鼠标穿透")
             Button { windowController.close() } label: {
                 Image(systemName: "xmark").frame(width: 26, height: 26)
@@ -90,8 +89,8 @@ struct FloatingLyricsView: View {
         .padding(.horizontal, 10)
         .background(Color.black.opacity(0.72), in: RoundedRectangle(cornerRadius: 10))
         .padding(.horizontal, 6)
-        .opacity((isHovering || showsStyle) && windowController.interactionMode != .passThrough ? 1 : 0)
-        .allowsHitTesting((isHovering || showsStyle) && windowController.interactionMode != .passThrough)
+        .opacity((isHovering || windowController.isStylePanelVisible) && windowController.interactionMode != .passThrough ? 1 : 0)
+        .allowsHitTesting((isHovering || windowController.isStylePanelVisible) && windowController.interactionMode != .passThrough)
         .accessibilityHidden(windowController.interactionMode == .passThrough)
     }
 
@@ -155,43 +154,6 @@ struct FloatingLyricsView: View {
         }
     }
 
-    private var styleControls: some View {
-        ScrollView {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("桌面歌词").font(.headline)
-            Picker("行数", selection: $settings.floatingDesktopLineMode) {
-                ForEach(FloatingDesktopLineMode.allCases, id: \.rawValue) { Text($0.title).tag($0.rawValue) }
-            }.pickerStyle(.segmented)
-            HStack {
-                Text("字号")
-                Slider(value: $settings.floatingDesktopFontSize, in: 22...64, step: 1)
-                Text("\(Int(settings.floatingDesktopFontSize))").monospacedDigit().frame(width: 26)
-            }
-            FloatingDesktopColorControls(settings: settings)
-            Picker("第二行", selection: $settings.floatingDesktopCompanion) {
-                Text("译文 / 下一句").tag("translation")
-                Text("下一句").tag("next")
-                Text("假名").tag("kana")
-                Text("罗马音 / 拼音").tag("reading")
-            }
-            Text("第二行使用已开启且可用的歌词层，缺失时显示下一句。")
-                .font(.caption).foregroundStyle(.secondary)
-            Divider()
-            Text("共享歌词层").font(.caption).foregroundStyle(.secondary)
-            Toggle("原文", isOn: $settings.displayPreferences.showOriginal)
-            Toggle("译文", isOn: $settings.displayPreferences.showTranslation)
-            Toggle("罗马音", isOn: $settings.displayPreferences.showRomaji)
-            Toggle("拼音", isOn: $settings.displayPreferences.showPinyin)
-            Toggle("假名", isOn: $settings.displayPreferences.showKana)
-            Text("假名显示在原文上方；第二行可独立显示译文或其他读音。")
-                .font(.caption).foregroundStyle(.secondary)
-            Text("逐字变色仅用于带真实逐字时间的歌词；单行时间不模拟逐字进度。")
-                .font(.caption).foregroundStyle(.secondary)
-        }
-        .padding(18).frame(width: 320)
-        }.frame(maxHeight: 650)
-    }
-
     private func desktopVerse(_ rows: [LyricLine], width: CGFloat, height: CGFloat, synchronized: Bool = true) -> some View {
         let activeIndex = synchronized ? state.liveCurrentLineIndex : nil
         let index = activeIndex.flatMap { rows.indices.contains($0) ? $0 : nil } ?? 0
@@ -225,11 +187,19 @@ struct FloatingLyricsView: View {
             default: return preferences.showTranslation ? line.translationText : nil
             }
         }()
-        let companion = FloatingDesktopTypography.companion(mode: FloatingDesktopLineMode(rawValue: settings.floatingDesktopLineMode) ?? .double,
-            translation: chosen == primary ? nil : chosen, next: next)
+        let lineMode = FloatingDesktopLineMode(rawValue: settings.floatingDesktopLineMode) ?? .double
+        let companion = FloatingDesktopTypography.selectedCompanion(
+            mode: lineMode,
+            selection: settings.floatingDesktopCompanion,
+            translation: chosen == primary ? nil : chosen,
+            next: next,
+            kana: kana,
+            reading: reading
+        )
         let fontSize = FloatingDesktopTypography.fittedFontSize(requested: settings.floatingDesktopFontSize,
             height: height, doubleLine: companion != nil, hasRuby: hasRuby, outlineWidth: palette.outlineWidth)
-        let elapsed = reduceMotion || activeIndex == nil ? 0 : state.currentTime - line.timestamp
+        let presentedTime = state.presentationClock.presentationTime(at: ProcessInfo.processInfo.systemUptime)
+        let elapsed = reduceMotion || activeIndex == nil ? 0 : max(0, presentedTime - line.timestamp)
         let end = line.endTime ?? (rows.indices.contains(index + 1) ? rows[index + 1].timestamp : state.currentTrack.duration)
         let duration = max(1, end - line.timestamp)
         let timedLayout = primaryIsOriginal && activeIndex != nil
@@ -281,7 +251,13 @@ struct FloatingLyricsView: View {
         .frame(width: width, alignment: .center)
         .padding(.horizontal, 16).padding(.vertical, 8)
         .frame(maxHeight: .infinity, alignment: .center)
-        .id("desktop-\(state.liveLyricsSessionRevision)-\(index)")
+        // The active line is a presentation-state handoff, not a relayout
+        // animation.  In particular, do not let the window hover animation
+        // animate the new line's insertion or its first width measurement.
+        .transaction { transaction in
+            transaction.animation = nil
+        }
+        .id("desktop-\(state.liveLyricsSessionRevision)-\(index)-\(settings.floatingDesktopLineMode)-\(settings.floatingDesktopCompanion)")
     }
 
     @ViewBuilder
@@ -413,6 +389,57 @@ struct FloatingLyricsView: View {
     }
 }
 
+/// The desktop style inspector lives in its own panel so a compact,
+/// transparent lyric window never loses its only visible line underneath the
+/// settings surface.
+struct FloatingLyricsStylePanelView: View {
+    @ObservedObject var settings: AppSettingsStore
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                Text("桌面歌词").font(.headline)
+                Picker("行数", selection: $settings.floatingDesktopLineMode) {
+                    ForEach(FloatingDesktopLineMode.allCases, id: \.rawValue) { Text($0.title).tag($0.rawValue) }
+                }
+                .pickerStyle(.segmented)
+                HStack {
+                    Text("字号")
+                    Slider(value: $settings.floatingDesktopFontSize, in: 22...64, step: 1)
+                    Text("\(Int(settings.floatingDesktopFontSize))").monospacedDigit().frame(width: 26)
+                }
+                FloatingDesktopColorControls(settings: settings)
+                Picker("第二行", selection: $settings.floatingDesktopCompanion) {
+                    Text("译文 / 下一句").tag("translation")
+                    Text("下一句").tag("next")
+                    Text("假名").tag("kana")
+                    Text("罗马音 / 拼音").tag("reading")
+                }
+                Text("第二行按此处选择显示；所选歌词层为空时保持单行。")
+                    .font(.caption).foregroundStyle(.secondary)
+                LyricsPresentationOffsetControl(settings: settings)
+                Divider()
+                Text("共享歌词层").font(.caption).foregroundStyle(.secondary)
+                Toggle("原文", isOn: $settings.displayPreferences.showOriginal)
+                Toggle("译文", isOn: $settings.displayPreferences.showTranslation)
+                Toggle("罗马音", isOn: $settings.displayPreferences.showRomaji)
+                Toggle("拼音", isOn: $settings.displayPreferences.showPinyin)
+                Toggle("假名", isOn: $settings.displayPreferences.showKana)
+                Text("假名显示在原文上方；第二行可独立显示译文或其他读音。")
+                    .font(.caption).foregroundStyle(.secondary)
+                Text("逐字变色仅用于带真实逐字时间的歌词；单行时间不模拟逐字进度。")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            .padding(18)
+            .frame(width: 352)
+        }
+        .frame(width: 352, height: 600)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.white.opacity(0.14)))
+        .preferredColorScheme(.dark)
+    }
+}
+
 /// Each layer is one measured horizontal ribbon. Shared playback position
 /// reveals overflow; dragging lets a paused listener inspect either end.
 private struct FloatingDesktopRibbon<Content: View>: View {
@@ -422,15 +449,34 @@ private struct FloatingDesktopRibbon<Content: View>: View {
     let elapsed: Double
     let duration: Double
     @ViewBuilder let content: () -> Content
-    @State private var measuredWidth: CGFloat = 0
+    @State private var measuredWidth: CGFloat?
     @State private var manualOffset: CGFloat?
     @State private var dragOrigin: CGFloat?
 
+    private var frameAlignment: Alignment {
+        switch FloatingDesktopTypography.ribbonAlignment(
+            measuredWidth: measuredWidth.map(Double.init),
+            viewport: Double(width)
+        ) {
+        case .center: return .center
+        case .leading: return .leading
+        }
+    }
+
     private var automaticOffset: CGFloat {
-        FloatingDesktopTypography.ribbonOffset(textWidth: measuredWidth, viewport: width, elapsed: elapsed, duration: duration)
+        CGFloat(FloatingDesktopTypography.ribbonPlacementOffset(
+            measuredWidth: measuredWidth.map(Double.init),
+            viewport: Double(width),
+            elapsed: elapsed,
+            duration: duration
+        ))
     }
     private var offset: CGFloat {
-        min(max(0, measuredWidth - width), max(0, manualOffset ?? automaticOffset))
+        guard let measuredWidth, measuredWidth > 0 else { return 0 }
+        guard measuredWidth > width else { return 0 }
+        let overflow = measuredWidth - width
+        let scrollOffset = min(overflow, max(0, manualOffset ?? -automaticOffset))
+        return -scrollOffset
     }
     var body: some View {
         content()
@@ -439,15 +485,19 @@ private struct FloatingDesktopRibbon<Content: View>: View {
             .background(GeometryReader { geometry in
                 Color.clear.preference(key: FloatingRibbonWidthKey.self, value: geometry.size.width)
             })
-            .offset(x: measuredWidth > width ? -offset : max(0, (width - measuredWidth) / 2))
-            .frame(width: width, height: height, alignment: .leading)
+            .offset(x: offset)
+            .frame(width: width, height: height, alignment: frameAlignment)
             .clipped()
             .contentShape(Rectangle())
-            .onPreferenceChange(FloatingRibbonWidthKey.self) { measuredWidth = $0 }
+            .onPreferenceChange(FloatingRibbonWidthKey.self) { value in
+                guard value.isFinite, value > 0 else { return }
+                measuredWidth = value
+            }
             .gesture(DragGesture(minimumDistance: 4)
                 .onChanged { value in
-                    if dragOrigin == nil { dragOrigin = manualOffset ?? automaticOffset }
-                    manualOffset = min(max(0, measuredWidth - width), max(0, (dragOrigin ?? 0) - value.translation.width))
+                    if dragOrigin == nil { dragOrigin = manualOffset ?? max(0, -automaticOffset) }
+                    let overflow = max(0, (measuredWidth ?? 0) - width)
+                    manualOffset = min(overflow, max(0, (dragOrigin ?? 0) - value.translation.width))
                 }
                 .onEnded { _ in dragOrigin = nil })
             .help("长句可左右拖动查看")
@@ -460,7 +510,8 @@ private struct FloatingRibbonWidthKey: PreferenceKey {
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
 }
 
-/// AppKit draws the glyph outline and fill in one attributed-string pass.
+/// AppKit draws the optional outline first and the fill second. Keeping the
+/// fill pass separate prevents the stroke from tinting the glyph interior.
 /// No blur, playback ownership, or timing projection lives in this primitive.
 struct OutlinedLyricText: NSViewRepresentable {
     let text: String
@@ -468,42 +519,77 @@ struct OutlinedLyricText: NSViewRepresentable {
     let fill: Color
     let outline: Color
     let width: CGFloat
+    var drawOutline: Bool = true
 
     func makeNSView(context: Context) -> OutlinedLyricTextView { OutlinedLyricTextView() }
     func updateNSView(_ view: OutlinedLyricTextView, context: Context) {
-        view.update(text: text, font: font, fill: NSColor(fill), outline: NSColor(outline), width: width)
+        view.update(text: text, font: font, fill: NSColor(fill), outline: NSColor(outline),
+                    width: width, drawOutline: drawOutline)
     }
     func sizeThatFits(_ proposal: ProposedViewSize, nsView: OutlinedLyricTextView, context: Context) -> CGSize? {
-        nsView.intrinsicContentSize
+        // Measure the current SwiftUI value directly. Reading intrinsicContentSize here
+        // can observe the previous AppKit value before updateNSView has received the
+        // replacement line, which makes the new line render at an old/empty width for
+        // one layout pass. The AppKit view keeps its intrinsic size for its own fallback;
+        // SwiftUI's first measurement must be driven by the current text.
+        let inset = max(1, width + 1)
+        let size = NSAttributedString(string: text, attributes: [.font: font]).size()
+        return CGSize(width: ceil(size.width) + inset * 2,
+                      height: ceil(size.height) + inset * 2)
     }
 }
 
 final class OutlinedLyricTextView: NSView {
-    private var text = NSAttributedString(string: "")
+    private var fillText = NSAttributedString(string: "")
+    private var outlineText: NSAttributedString?
     private var inset: CGFloat = 2
     override var isFlipped: Bool { true }
     override var intrinsicContentSize: NSSize {
-        let size = text.size()
+        let size = fillText.size()
         return NSSize(width: ceil(size.width) + inset * 2, height: ceil(size.height) + inset * 2)
     }
-    func update(text value: String, font: NSFont, fill: NSColor, outline: NSColor, width: CGFloat) {
+    func update(text value: String, font: NSFont, fill: NSColor, outline: NSColor,
+                width: CGFloat, drawOutline: Bool) {
         let nextInset = max(1, width + 1)
-        var attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: fill]
-        if width > 0 {
-            attributes[.strokeColor] = outline
-            attributes[.strokeWidth] = -100 * width / max(1, font.pointSize)
+        let plan = FloatingDesktopTextRenderPlan(
+            outlineWidth: Double(width),
+            fontSize: Double(font.pointSize),
+            drawOutline: drawOutline
+        )
+        let nextFillText = NSAttributedString(string: value, attributes: [
+            .font: font,
+            .foregroundColor: fill
+        ])
+        let nextOutlineText: NSAttributedString? = if plan.outlineEnabled {
+            NSAttributedString(string: value, attributes: [
+                .font: font,
+                .foregroundColor: outline,
+                .strokeColor: outline,
+                .strokeWidth: plan.strokeWidthPercent
+            ])
+        } else {
+            nil
         }
-        let nextText = NSAttributedString(string: value, attributes: attributes)
-        guard !text.isEqual(to: nextText) || inset != nextInset else { return }
+
+        let outlineMatches: Bool = switch (outlineText, nextOutlineText) {
+        case (nil, nil): true
+        case let (.some(existing), .some(next)): existing.isEqual(to: next)
+        default: false
+        }
+        guard !fillText.isEqual(to: nextFillText) || !outlineMatches || inset != nextInset else { return }
         inset = nextInset
-        text = nextText
+        fillText = nextFillText
+        outlineText = nextOutlineText
         setAccessibilityElement(true)
         setAccessibilityLabel(value)
         invalidateIntrinsicContentSize()
         needsDisplay = true
     }
     override func draw(_ dirtyRect: NSRect) {
-        text.draw(at: NSPoint(x: inset, y: inset))
+        if let outlineText {
+            outlineText.draw(at: NSPoint(x: inset, y: inset))
+        }
+        fillText.draw(at: NSPoint(x: inset, y: inset))
     }
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }

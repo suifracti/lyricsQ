@@ -39,6 +39,7 @@
 		1100001D2D83400100000001 /* ImmersiveSplitWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1100001D2D83400100000000 /* ImmersiveSplitWindowView.swift */; };
 		1100001E2D83400100000001 /* ArtworkView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1100001E2D83400100000000 /* ArtworkView.swift */; };
 		1100001F2D83400100000001 /* TrackMetadataView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1100001F2D83400100000000 /* TrackMetadataView.swift */; };
+		110001102D83400100000001 /* TrackMetadataCopy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110001102D83400100000000 /* TrackMetadataCopy.swift */; };
 		110000202D83400100000001 /* PlaybackControlsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000202D83400100000000 /* PlaybackControlsView.swift */; };
 		110000212D83400100000001 /* LyricsViewport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000212D83400100000000 /* LyricsViewport.swift */; };
 		110000222D83400100000001 /* ArtworkBackgroundView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000222D83400100000000 /* ArtworkBackgroundView.swift */; };
@@ -246,6 +247,7 @@
 		1100001D2D83400100000000 /* ImmersiveSplitWindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImmersiveSplitWindowView.swift; sourceTree = "<group>"; };
 		1100001E2D83400100000000 /* ArtworkView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtworkView.swift; sourceTree = "<group>"; };
 		1100001F2D83400100000000 /* TrackMetadataView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackMetadataView.swift; sourceTree = "<group>"; };
+		110001102D83400100000000 /* TrackMetadataCopy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackMetadataCopy.swift; sourceTree = "<group>"; };
 		110000202D83400100000000 /* PlaybackControlsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackControlsView.swift; sourceTree = "<group>"; };
 		110000212D83400100000000 /* LyricsViewport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricsViewport.swift; sourceTree = "<group>"; };
 		110000222D83400100000000 /* ArtworkBackgroundView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtworkBackgroundView.swift; sourceTree = "<group>"; };
@@ -591,6 +593,7 @@
 				1100001A2D83400100000000 /* TrackBackdropView.swift */,
 				1100001E2D83400100000000 /* ArtworkView.swift */,
 				1100001F2D83400100000000 /* TrackMetadataView.swift */,
+				110001102D83400100000000 /* TrackMetadataCopy.swift */,
 				110000202D83400100000000 /* PlaybackControlsView.swift */,
 				110000212D83400100000000 /* LyricsViewport.swift */,
 				110000222D83400100000000 /* ArtworkBackgroundView.swift */,
@@ -891,6 +894,7 @@
 				1100001D2D83400100000001 /* ImmersiveSplitWindowView.swift in Sources */,
 				1100001E2D83400100000001 /* ArtworkView.swift in Sources */,
 				1100001F2D83400100000001 /* TrackMetadataView.swift in Sources */,
+				110001102D83400100000001 /* TrackMetadataCopy.swift in Sources */,
 				110000202D83400100000001 /* PlaybackControlsView.swift in Sources */,
 				110000212D83400100000001 /* LyricsViewport.swift in Sources */,
 				110000222D83400100000001 /* ArtworkBackgroundView.swift in Sources */,

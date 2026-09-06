@@ -152,6 +152,7 @@ public final class AppSettingsStore: ObservableObject {
         public static let settingsCenterPresentation = "settings.centerPresentation"
         public static let readingPreferences = "reading.preferences.v1"
         public static let v3PlaybackDetailsOnHover = "v3.playbackDetailsOnHover"
+        public static let lyricsPresentationOffset = "lyrics.presentationOffset.v1"
         public static let v3LyricsPositions = "v3.lyricsPositions.v1"
         public static let v3StageReadabilityEnabled = "v3.stageReadabilityEnabled"
         public static let v3BackdropBlurRadius = "v3.backdropBlurRadius"
@@ -344,6 +345,19 @@ public final class AppSettingsStore: ObservableObject {
         didSet { defaults.set(v3PlaybackDetailsOnHover, forKey: Key.v3PlaybackDetailsOnHover) }
     }
 
+    /// Shared presentation-only lyric offset. It never changes Spotify's
+    /// position, provider timestamps, or the stored LRC document.
+    @Published public var lyricsPresentationOffset: Double {
+        didSet {
+            let normalized = min(10, max(-10, lyricsPresentationOffset.isFinite ? lyricsPresentationOffset : 0))
+            if normalized != lyricsPresentationOffset {
+                lyricsPresentationOffset = normalized
+            } else {
+                defaults.set(normalized, forKey: Key.lyricsPresentationOffset)
+            }
+        }
+    }
+
     @Published public var v3StageReadabilityEnabled: Bool {
         didSet { defaults.set(v3StageReadabilityEnabled, forKey: Key.v3StageReadabilityEnabled) }
     }
@@ -440,6 +454,10 @@ public final class AppSettingsStore: ObservableObject {
                 ?? (presentation == selectedPresentation ? legacyBlur : blurDefaults[presentation] ?? legacyBlur)
         }
         self.v3PlaybackDetailsOnHover = defaults.bool(forKey: Key.v3PlaybackDetailsOnHover)
+        self.lyricsPresentationOffset = min(
+            10,
+            max(-10, defaults.object(forKey: Key.lyricsPresentationOffset) as? Double ?? 0)
+        )
         self.v3StageReadabilityEnabled = defaults.bool(forKey: Key.v3StageReadabilityEnabled)
         self.v3BackdropBlurRadius = self.v3BlurByPresentation[selectedPresentation] ?? legacyBlur
         self.v3ArtworkPosition = defaults.string(forKey: Key.v3ArtworkPosition) ?? "left"
