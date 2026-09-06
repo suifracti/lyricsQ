@@ -1,114 +1,39 @@
-# Project Status
+# 当前状态
 
-Status snapshot: 2026-09-07.
+更新日期：2026-09-07。
 
-## Current user-facing availability correction — 2026-09-07
+## 预发布测试版，不是正式发布版
 
-The feature-branch preview now documents availability from the user's actual experience, not only from source presence or structural contracts. The following paths have visible UI/code but are currently half-finished and must be treated as bugs:
+本轮目标是合入已有体验改动、整理首页与截图、修复菜单重复注册并提供可审核的 DMG。发布标签为 `v0.1.2-preview.1`；应用版本为 0.1.2（3）。GitHub 必须标记为 Pre-release，不设为正式最新版。
 
-- AI translation, retranslation and related AI lyric processing: **Bug / unavailable**.
-- Automatic timing alignment / local audio forced alignment: **Bug / unavailable**.
-- Top capsule / Dynamic-Island-style lyrics capsule: **Bug / unavailable**.
+功能与限制以 [README](../README.md) 为对外入口。代码存在、合同脚本通过或截图存在，都不等于实机验收完成。
 
-Older entries below record implementation history and contract/build results; they do not override this current user-facing status. Stable paths are the main V3 player, desktop lyrics, native fullscreen lyrics, lyrics library, manual import/edit/versioning, lyric copy and local history/statistics.
+## 当前不可用
 
-Expanded-source preview: added lyrics.ovh plain/manual fallback plus Kuwo and Kugou real line-timed experimental sources; seven network providers total. Version lists show readable source/provenance through revisions, preserving unknown raw IDs. Bounded3-provider concurrency and cancellation race fixed. Fixed-response/temporary-DB/configuration/concurrency tests, actual Swift provider health checks and native source/settings inspection passed. See [source report](work/experience-restoration/expanded-lyrics-sources-report.md).
+用户明确反馈以下功能仍有 Bug，不能作为可用能力宣传：
 
-Native fullscreen preview: all three V3 styles share the maintained live-only renderer, native Space lifecycle and Dock auto-hide. Per-style lyric placement/alignment and large-screen reading scale are persisted/presented independently of artwork. Menu-bar lyric-text switch retains icon/menu access. Native style switching, remembered alignment, live/preview isolation and fullscreen editor routing verified. See [fullscreen report](work/experience-restoration/fullscreen-placement-report.md).
+- AI 翻译、重新翻译与 AI 辅助歌词处理。
+- 自动排轴／本地音频强制对齐。
+- 顶部胶囊／灵动岛式歌词。
 
-Current feature-branch iteration: V3 native progress input owns pointer tracking and final mouse-up coordinates; fullhost forward/backward/click commands verified. Shared contextual ruby preserves known partial readings and fixes stale enriched-token precedence (既読); desktop and player share genuine word-span progress. Optional hover-only playback information and desktop role colors/crisp glyph outlines are implemented. Debug and focused contracts pass; native fullscreen integration is now verified; combined Release build passed; user acceptance remains pending. See [current report](work/experience-restoration/hover-ruby-seek-report.md).
+其它实验界面不作为正式能力；菜单栏歌曲信息菜单与顶部胶囊不是同一功能。
 
-V3 direct shortcuts: “外观背景” directly opens the existing cover/ambient/layout popover (removed from nested More menu); its open state prevents toolbar auto-hide. Lyric-version shortcut: a labeled “歌词版本” button now opens the existing saved-version picker directly from the top-right toolbar. The picker marks the current version and includes “查找更多歌词版本”. Track changes dismiss the old picker; open picker keeps toolbar visible. Existing adoption/storage logic is reused.
+## 已有功能与待反馈边界
 
-Latest task preview (feature branch `codex/lyrics-search-ambient-fix`, based on main PR #22 / `54a73a2`): piano-version searches retain raw Japanese base titles and semicolon-separated primary artists; original-arrangement lyrics remain explicit candidates with a warning. A live QQ lookup recovered 72 lines for stb《アーカイブ - Piano Ver.》, with no timeline and no automatic adoption. Ambient 0% retains artwork; increasing diffusion softens it without increasing opacity. Classic split layout uses spacing instead of a vertical divider. See [verification report](work/experience-restoration/search-ambient-correction-report.md). Native feel still awaits user feedback; this is not a release or main merge.
+V3 主播放页、桌面歌词、全屏歌词、歌词版本管理、手动编辑、共享歌词时间、复制、收听记录等已存在。详见 README 的功能表。此前 A–H 曾被撤回部分验收，不在此恢复成“全部通过”。
 
-Library preview: per-version local names and notes can be edited for lyrics, translations, readings and timing. Original labels remain visible; Restore Default clears only local presentation metadata. Metadata does not travel in asset exports.
+歌词源匹配仍可能返回不同录音；Piano/Live 等变体尤其需要核对。逐行时间不一致不能靠统一 offset 掩盖。网络源、读音生成、单双行显示等实际质量仍随数据和运行环境变化。
 
-Production database upgrade repaired: existing v5 databases now advance to v8 after a consistent backup; library/history/statistics verified against the real database and after restart. See [upgrade audit](work/experience-restoration/production-database-upgrade-report.md).
+## 本轮审查范围
 
-Main V3 utility shortcuts: 我的歌词库、最近播放、听歌统计 now have direct toolbar buttons, using the existing shared library window and selecting its matching tab. Existing Settings entries remain available.
+- 应用级菜单仅注册一次，窗口命令并入系统 Window 菜单；Release 不包含 DEBUG 调试菜单。
+- 将用户指定图片作为应用图标资源；不替换歌曲封面。
+- 首页直接嵌入截图，移除“全部稳定”式表述和本机路径，补充已实现入口及限制。
+- 测试包须记录源码、构建配置、架构和散列；ad-hoc 签名不是 Developer ID 或公证。
+- 只运行菜单/资源定向检查、Debug 与 Release 构建、文档链接及打包校验；不重跑歌词全量回归。具体结果以发布附件 BUILD_INFO 为准。
 
-Main V3 preview update: long original lyrics now use measured balanced wrapping, replacing the earlier approximate character-count breaker. Screenshot phrases pass five width checks; plain/timed ranges agree. Inline ruby remains separate. See [balanced lyric breaks report](work/experience-restoration/balanced-lyric-breaks-report.md).
+## 历史资料
 
-This file describes what is present in the repository and how mature it is. It is not a release promise. The authoritative hierarchy is: (1) 用户明确指令, (2) Obsidian Current 的 Spotify Lyrics `README.md`、`Decisions.md`、活动 `Handoff.md`, (3) Git `HEAD` 与真实运行证据. Craft 已弃用，不得用于当前方向、优先级、阶段或项目状态判断. Git identifies the exact source.
-
-## Canonical engineering SOT baseline
-
-- **Canonical engineering SOT**: fresh remote `origin/main`
-- **Latest product-code-changing merge**: `b16caee38eb4bb1d02d30c2971437d39ed59eb93` (C5)
-- **Status-convergence docs-only merge**: `54ab96226fb62064e6dad7f6d888dc47cdbd28b9` (PR #20)
-- Other Windows C1–C5 全部完成并合入主线，状态均为 `CLOSED / FROZEN / MERGED`:
-  - **C1**: 独立歌词库窗口（PR #15）
-  - **C2**: 独立最近播放窗口（PR #16）
-  - **C3**: 统一“歌词库与收听记录”工具窗口与路由（PR #17）
-  - **C4**: 听歌统计完善（PR #18：3张统计卡片、7天每日观察播放趋势柱状图、Top 5 歌曲/歌手收敛）
-  - **C5**: MenuBar Quick Glance / Transport 补齐（PR #19：封面、原生三键、主窗口/歌词库/设置/退出4项入口）
-
-## Released internal builds
-
-- `v0.1.0`: 源提交 `910df5dc55e44a19144be0b6ccf79a3145a67943`
-- `v0.1.1`: 源提交 `9e65fbbe13b82626bfb5d9bc36f2620a44dd2762`
-- **版本边界明确**:
-  - `v0.1.1` 属于 internal/test prerelease，包含 C3。
-  - **不包含后续完成的 C4 与 C5**。
-  - 不是当前 `main` 的完整体验包。
-  - 已发布的 `v0.1.1` 保持冻结，不覆盖、不重新打 tag 或重新发布。
-
-## Dirty checkout warning
-
-- 本地主目录 `/Users/apple/backup/sptifylyrics` **不是 canonical main**。
-- 该目录包含用户未提交的资产与本地工具脚本。
-- **严禁**执行 `git reset --hard`、`git clean`、`git restore`、`git pull` 或分支检出覆盖。
-- 所有后续新任务必须从 fresh `origin/main` 建立全新的 isolated worktree。
-
-## Current phase & next steps
-
-- 用户于 2026-09-05 明确授权修复可靠性问题，恢复灵动岛、完善桌面歌词和三种封面风格，并自主迭代。该范围重新开放；历史 C1–C5 合并记录与冻结 release 不改写。
-- 工作分支 `codex/experience-restoration`，从 `fb95a9e` 建立；未合入 main。
-- 预览候选采用路由、菜单栏设置入口、历史/统计读取错误表达已修复；五项定向合同与独立审查通过。实际 SQLite 锁读取失败会报错，界面保留上次结果并支持重试。
-- 灵动岛已恢复为默认，桌面歌词采用独立的大字描边/单双行/配色方案，三种风格完成原生迭代；用户进一步确认封面必须完整：舞台保留原图居中等比适配、不裁切，采用镜像边缘延展并向外柔化；窗口自由缩放，禁止锁比例或自动改尺寸，歌词布局暂不调整。定向测试、独立复核及生产 Debug/Release 构建通过；作为独立预览交付，未合入 main 或发布新版本。
-- 原生生成夹具验证包括封面比例、桌面明暗背景与最小布局、逐字时间高亮和灵动岛更多菜单。物理刘海屏、多屏切换、系统 Reduce Motion 与长期真实 Spotify 播放未作最终实机验收。
-- 标题/手动歌词恢复已修复：保留无艺人搜索、LRCLIB 全文查询和候选展示；真实 Marigold 查询可返回 Aimyon 候选，自动跨艺人保护保留。专项检查及 Debug/Release 通过，新预览已打开；Marigold 原生选词待再次播放确认。旧 real_track 综合脚本存在依赖缺失，未通过。详见 `docs/work/experience-restoration/title-only-recovery-report.md`。
-- V3 右上角工具栏收敛为窗口、搜索、更多三个入口；更多中保留歌词操作、外观、设置和来源恢复；窗口仍自由缩放。新增悬停保持显示，弹出面板保持可见。
-- 主窗口长歌词保持字号并按阅读宽度换行；翻译、假名和罗马音移除两行截断。复用现有 CoreText/SwiftUI 排版与逐字时间映射，不拆分歌词记录。
-- statistics contract 午夜日期夹具稳定性仍为既有 Deferred。
-
-## Implemented in the repository
-
-- Spotify Desktop current-track observation and basic playback commands.
-- Main, floating, fullscreen, and capsule lyrics presentations.
-- MenuBar Quick Glance / Transport popover (AppKit `NSStatusItem` + `NSPopover`).
-- Unified "歌词库与收听记录" window with tabs for 我的歌词库, 最近播放, and 听歌统计.
-- Synchronized lyrics rendering, progress tracking, search/recovery states, and presentation settings.
-- Local LRC/TXT import and paste, a lyrics editor, versioned SQLite persistence, and local-file lookup.
-- LRCLIB lookup plus experimental NetEase and QQ provider implementations.
-- Japanese reading/ruby generation, romanization and translation companion-layer infrastructure, including local correction data.
-- Optional Spotify Web Catalog integration with credentials stored outside the repository.
-- Focused shell/Swift contract tests for major UI, persistence, provider, reading, and alignment boundaries.
-
-## How to verify the current truth
-
-```sh
-git status
-git branch --show-current
-git rev-parse HEAD
-git log -5 --oneline
-git rev-parse '@{upstream}'
-```
-
-If the worktree is dirty, describe the version as `base HEAD + uncommitted changes`. Do not infer freshness from `.app` files, DerivedData, `.local/`, screenshots, backups, or modification times.
-
-## 2026-09-06 Library content revisions preview
-
-- 歌词库可编辑原文/开始时间并保存独立修订版，原版保留；保存后可用“设为当前”切换新旧版。schema9 显式采用选择、资产包往返及原始数据保留已通过隔离验证。
-- Debug/Release与相关持久化、编辑器、迁移检查通过；新版已启动，原生编辑弹窗完整验收因 CUA 失效仍待验证。详见 `docs/work/experience-restoration/library-content-revisions-report.md`。
-
-## 2026-09-06 User feedback preview
-
-- 右上角合并曲库/历史/统计入口，新增歌词显示开关；观察到的单曲循环独立落库，历史/统计显示可用专辑封面并接受延迟封面补齐。
-- 环境光和远处歌词降低模糊，透明桌面歌词移除整窗阴影与叠加光晕，胶囊缩短悬停等待并使用弹簧几何动画。窗口自由缩放保留。
-- 相关回归、Debug/Release通过，原生历史/统计封面可见；动态残影/胶囊手感及自动隐藏工具栏的直接交互仍待实机验收。详见 `docs/work/experience-restoration/experience-feedback-report.md`。
-
-- 2026-09-06 feature-branch preview: clickable kana correction saves a new song-scoped manual reading version; lyric version/edit entry consolidated, ellipsis opens Settings. Recent plays use occurrence start/time listened, stats show 20 with expansion to 50. Library groups safe fractional-duration identity duplicates preserving all versions and searches saved lyric/reading/romaji/translation content. Focused contracts and integrated Debug pass; visual/copy/portrait follow-up pending. See `docs/work/experience-restoration/ruby-correction-and-library-followups.md`.
-
-- 2026-09-06 preview follow-up: ambient/classic portrait composition and bounded background sizing; cohesive metadata/transport surfaces for all3styles; right-click lyric copy (line/all/passages), selectable layer preview; optional Stage bright-cover contrast veil. Debug/Release, geometry/readability/scroll/copy checks and native menu/portrait/white-cover inspection pass. macOS capped requested900×1400 at1325height; combined140% long-line native fixture remains unverified. Feature branch only; report `docs/work/experience-restoration/portrait-controls-copy-report.md`.
+[此前状态快照](archive/status-before-preview-20260907.md)仅供追溯，不覆盖本页或用户最新反馈。
+[截图与体验报告](work/experience-restoration/experience-feedback-report.md)记录当时的场景，不是当前测试版的全量验收证明。
+旧版本 v0.1.0、v0.1.1 保持不变，不覆盖已有资产。

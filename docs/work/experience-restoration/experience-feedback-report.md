@@ -1,5 +1,7 @@
 # Experience feedback — 2026-09-06
 
+> 历史体验记录与截图集，不是当前版本的全量验收证明。当前状态见 [STATUS](../../STATUS.md)：AI、自动排轴与顶部胶囊仍为 Bug / 不可用。新下载仅为预发布测试版，不是正式发布版。
+
 User-authorized work follows the supplied preview screenshots: reading controls, unified navigation, observed repeat counts, ambient/floating clarity, capsule responsiveness, history/statistics covers.
 
 ## Changes and causes
