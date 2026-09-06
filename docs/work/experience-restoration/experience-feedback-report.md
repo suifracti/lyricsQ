@@ -1,6 +1,6 @@
 # Experience feedback — 2026-09-06
 
-User-authorized work follows the seven screenshots: reading controls, unified navigation, observed repeat counts, ambient/floating clarity, capsule responsiveness, history/statistics covers.
+User-authorized work follows the supplied preview screenshots: reading controls, unified navigation, observed repeat counts, ambient/floating clarity, capsule responsiveness, history/statistics covers.
 
 ## Changes and causes
 
@@ -22,7 +22,41 @@ User-authorized work follows the seven screenshots: reading controls, unified na
 - Native Release launched, loaded live Spotify, unified library/history/statistics navigated. Screenshots confirmed actual artwork in both history and Top Songs and preserved historical statistics (43 observations across approximately two hours at check time). No synthetic user data or deliberate test seeks/switches were performed.
 - Dynamic Lyrics reference app was opened and its main UI read. Its capsule motion was not measured. CUA could not reliably reveal the auto-hidden toolbar, so direct popover interaction and dynamic floating/capsule visual acceptance remain unverified. Static screenshots cannot prove the user's live compositing complaint resolved. Do not claim parity with Dynamic Lyrics or full runtime visual acceptance.
 
+## GitHub screenshot evidence
+
+### V3 主窗口预览
+
+![V3 环境光设置](../../evidence/experience-feedback-20260906/v3-ambient-settings.png)
+
+![V3 舞台模式完整封面](../../evidence/experience-feedback-20260906/v3-stage-full-cover-01.png)
+
+![V3 舞台模式歌词衔接](../../evidence/experience-feedback-20260906/v3-stage-full-cover-02.png)
+
+![V3 经典布局](../../evidence/experience-feedback-20260906/v3-classic-layout.png)
+
+![V3 环境光歌词](../../evidence/experience-feedback-20260906/v3-ambient-lyrics.png)
+
+![V3 环境光紧凑布局](../../evidence/experience-feedback-20260906/v3-ambient-compact.png)
+
+### 歌词库、最近播放与听歌统计
+
+![我的歌词库](../../evidence/experience-feedback-20260906/library-my-lyrics.png)
+
+![最近播放中的重复记录](../../evidence/experience-feedback-20260906/library-recent-plays-repeat.png)
+
+![听歌统计](../../evidence/experience-feedback-20260906/library-listening-statistics.png)
+
+### 为什么截图里主要是这一首歌
+
+截图里反复出现《アーカイブ - Piano Ver.》，原因是这次验收期间一直在循环播放它，不是应用只能识别或只保存这一首歌。
+
+- “我的歌词库”截图仍然列出了其它歌曲，说明歌曲和歌词版本并未被过滤成单曲。
+- “最近播放”里同一首歌出现多条不同时间的记录，是因为每次从接近结尾回到开头都会被本地识别为一次新的观测播放。
+- “听歌统计”按本地观测到的播放记录聚合，因此持续循环的歌曲自然会占据当前统计窗口的首位。
+
+这些数字是 lyricsQ 自己观察到的播放会话，不代表 Spotify 的完整历史播放次数；截图也没有合成其它歌曲的播放数据。
+
 ## Delivery
 
 Preview: `/Users/apple/Downloads/LyricsQ-experience-feedback-20260906/SpotifyLyrics-experience-feedback.app`.
-Formal dirty root `/Users/apple/backup/sptifylyrics` untouched. Work is on `codex/experience-restoration`, isolated worktree `/private/tmp/spotifylyrics-experience-restoration-20260905`, not merged to main. BUILD_INFO and evidence accompany preview; user visual acceptance pending.
+Formal dirty root `/Users/apple/backup/sptifylyrics` untouched. Work is on `codex/lyrics-search-ambient-fix`, isolated worktree `/private/tmp/spotifylyrics-experience-restoration-20260905`, not merged to main. BUILD_INFO and evidence accompany preview; user visual acceptance pending.
