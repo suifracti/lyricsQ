@@ -54,6 +54,7 @@ struct LyricLineView: View {
     let language: String?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.lyricAgentPresentationMap) private var agentPresentationMap
+    @Environment(\.rubyCorrectionAction) private var correctRuby
 
     init(
         line: LyricLine,
@@ -154,8 +155,23 @@ struct LyricLineView: View {
     }
 
     private var isPinyinProjection: Bool {
-        guard let representation = line.readingRepresentationID else { return false }
-        return representation.hasPrefix("readingRepresentation.pinyin")
+        if let representation = line.readingRepresentationID, representation.hasPrefix("readingRepresentation.pinyin") {
+            return true
+        }
+        let text = effectiveOriginalText
+        guard LyricsLanguageGate.containsHan(text) && !LyricsLanguageGate.containsKana(text) else {
+            return false
+        }
+        if let lang = language?.lowercased().trimmingCharacters(in: .whitespacesAndNewlines), !lang.isEmpty {
+            if lang.hasPrefix("ja") { return false }
+            return true
+        }
+        return true
+    }
+
+    private var pinyinPresentation: JapaneseRubyPresentation? {
+        guard isPinyinProjection else { return nil }
+        return V3ChinesePinyinCache.presentation(for: effectiveOriginalText)
     }
 
     /// A few older/provider payloads accidentally put the confirmed kana in
@@ -164,8 +180,10 @@ struct LyricLineView: View {
     /// the same after katakana-to-hiragana normalization.
     private var distinctRomaji: String? {
         if isPinyinProjection {
-            guard settingsShowPinyin, let pinyin = line.romajiText,
-                  !pinyin.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+            guard settingsShowPinyin,
+                  preferences.kanaDisplayMode != .inlineRuby,
+                  let pinyin = (line.romajiText ?? pinyinPresentation?.romajiText)?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !pinyin.isEmpty else { return nil }
             return pinyin
         }
         guard preferences.showRomaji,
@@ -238,27 +256,35 @@ struct LyricLineView: View {
                                 .transition(.opacity)
                         }
                     } else if preferences.kanaDisplayMode == .inlineRuby,
-                              LyricsLanguageGate.allowsJapaneseReadings(language: language, text: line.originalText),
-                              shouldShowAuxiliary,
-                              let kana = displayKanaText,
-                              !kana.isEmpty {
-                        RubyLineView(
-                            originalText: line.originalText,
-                            kanaText: kana,
-                            tokens: line.rubyTokens,
-                            baseFont: .system(
-                                size: primaryFontSize,
-                                weight: fontWeight,
-                                design: .rounded
-                            ),
-                            rubyFont: .system(
-                                size: rubyFontSize,
-                                weight: fontWeight,
-                                design: .rounded
-                            ),
-                            baseColor: LyricsDesignTokens.primaryText.opacity(effectiveOpacity),
-                            rubyColor: LyricsDesignTokens.secondaryText.opacity(rubyOpacity)
-                        )
+                              (LyricsLanguageGate.allowsJapaneseReadings(language: language, text: line.originalText) || (isPinyinProjection && settingsShowPinyin)),
+                              shouldShowAuxiliary {
+                        let kana = displayKanaText ?? ""
+                        let tokens = line.rubyTokens ?? (isPinyinProjection ? pinyinPresentation?.rubyTokens : nil)
+                        if (displayKanaText != nil && !kana.isEmpty) || (isPinyinProjection && tokens != nil) {
+                            RubyLineView(
+                                originalText: effectiveOriginalText,
+                                kanaText: kana,
+                                tokens: tokens,
+                                baseFont: .system(
+                                    size: primaryFontSize,
+                                    weight: fontWeight,
+                                    design: .rounded
+                                ),
+                                rubyFont: .system(
+                                    size: rubyFontSize,
+                                    weight: fontWeight,
+                                    design: .rounded
+                                ),
+                                baseColor: LyricsDesignTokens.primaryText.opacity(effectiveOpacity),
+                                rubyColor: LyricsDesignTokens.secondaryText.opacity(rubyOpacity)
+                            )
+                            .environment(\.rubyCorrectionAction, isPinyinProjection ? nil : correctRuby)
+                        } else {
+                            Text(effectiveOriginalText)
+                                .font(.system(size: primaryFontSize, weight: fontWeight, design: .rounded))
+                                .foregroundStyle(LyricsDesignTokens.primaryText.opacity(effectiveOpacity))
+                                .lineSpacing(isActive ? 3 : 2)
+                        }
                     } else {
                         Text(effectiveOriginalText)
                                 .font(.system(size: primaryFontSize, weight: fontWeight, design: .rounded))
@@ -572,6 +598,7 @@ struct RubyLineView: View {
                                 unplayedOpacity: unplayedOpacity,
                                 showsRuby: showsRuby
                             )
+                            .equatable()
                         }
                     }
                     .padding(.horizontal, groupEdgeReserve)
@@ -600,6 +627,7 @@ struct RubyLineView: View {
                                 unplayedOpacity: unplayedOpacity,
                                 showsRuby: showsRuby
                             )
+                            .equatable()
                         }
                     }
                     .padding(.horizontal, groupEdgeReserve)
@@ -673,7 +701,21 @@ private func rubyTimedTokenGroups(_ tokens: [TimedRubyToken]) -> [[TimedRubyToke
     return groups
 }
 
-private struct RubyTokenBlock: View {
+private struct RubyTokenBlock: View, Equatable {
+    static func == (lhs: RubyTokenBlock, rhs: RubyTokenBlock) -> Bool {
+        lhs.token == rhs.token
+            && lhs.timedToken == rhs.timedToken
+            && lhs.currentTime == rhs.currentTime
+            && lhs.baseColor == rhs.baseColor
+            && lhs.rubyColor == rhs.rubyColor
+            && lhs.rubySpacing == rhs.rubySpacing
+            && lhs.annotationOverhang == rhs.annotationOverhang
+            && lhs.highlightColor == rhs.highlightColor
+            && lhs.outlineColor == rhs.outlineColor
+            && lhs.outlineWidth == rhs.outlineWidth
+            && lhs.unplayedOpacity == rhs.unplayedOpacity
+            && lhs.showsRuby == rhs.showsRuby
+    }
     @Environment(\.rubyCorrectionAction) private var correctRuby
     let token: LyricRubyToken?
     let timedToken: TimedRubyToken?
@@ -730,11 +772,16 @@ private struct RubyTokenBlock: View {
 
     @ViewBuilder private func annotation(_ ruby: String) -> some View {
         if let correctRuby {
-            Button { correctRuby(surface, ruby) } label: { renderedText(ruby, font: rubyNSFont, fill: rubyColor) }
-                .buttonStyle(.plain)
-                .help("点击修改「\(surface)」的读音")
-                .accessibilityLabel("修改\(surface)的读音：\(ruby)")
-        } else { renderedText(ruby, font: rubyNSFont, fill: rubyColor) }
+            renderedText(ruby, font: rubyNSFont, fill: rubyColor)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    correctRuby(surface, ruby)
+                }
+                .accessibilityLabel("修改「\(surface)」的读音：\(ruby)")
+        } else {
+            renderedText(ruby, font: rubyNSFont, fill: rubyColor)
+                .accessibilityLabel("「\(surface)」读音：\(ruby)")
+        }
     }
 
     var body: some View {

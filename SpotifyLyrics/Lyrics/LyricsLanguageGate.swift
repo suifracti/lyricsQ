@@ -9,7 +9,9 @@ public enum LyricsLanguageGate {
     /// unknown because it is also valid Chinese. This hint never rewrites
     /// stored language metadata.
     public static func inferredLanguage(text: String) -> String? {
-        containsKana(text) ? "ja" : nil
+        if containsKana(text) { return "ja" }
+        if containsHan(text) { return "zh" }
+        return nil
     }
 
     /// Unknown language is deliberately conservative. A line with Japanese
@@ -39,18 +41,22 @@ public enum LyricsLanguageGate {
         return containsKana(trimmed)
     }
 
-    private static func containsJapaneseSurface(_ text: String) -> Bool {
-        containsKana(text) || text.unicodeScalars.contains { scalar in
-            (0x3400...0x4DBF).contains(scalar.value)
-                || (0x4E00...0x9FFF).contains(scalar.value)
-                || (0xF900...0xFAFF).contains(scalar.value)
-        }
+    public static func containsJapaneseSurface(_ text: String) -> Bool {
+        containsKana(text) || containsHan(text)
     }
 
-    private static func containsKana(_ text: String) -> Bool {
+    public static func containsKana(_ text: String) -> Bool {
         text.unicodeScalars.contains { scalar in
             (0x3040...0x309F).contains(scalar.value)
                 || (0x30A0...0x30FF).contains(scalar.value)
+        }
+    }
+
+    public static func containsHan(_ text: String) -> Bool {
+        text.unicodeScalars.contains { scalar in
+            (0x3400...0x4DBF).contains(scalar.value)
+                || (0x4E00...0x9FFF).contains(scalar.value)
+                || (0xF900...0xFAFF).contains(scalar.value)
         }
     }
 }

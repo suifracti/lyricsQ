@@ -19,8 +19,13 @@ if grep -Eq '^[[:space:]]*LazyVStack' <<<"$viewport"; then
   exit 1
 fi
 
-grep -Eq '^[[:space:]]*VStack\(alignment: .*spacing: rowSpacing\(synchronized: synchronized\)\)' <<<"$viewport" || {
-  echo 'FAIL: V3 lyric viewport must use an eager stack with the shared row spacing' >&2
+grep -q 'AppleMusicImmersiveV3LyricsDocumentView' <<<"$viewport" || {
+  echo 'FAIL: V3 lyric viewport must host an eager document subtree' >&2
+  exit 1
+}
+
+grep -Eq 'VStack\(alignment: .*spacing: rowSpacing\)' "$V3" || {
+  echo 'FAIL: V3 lyric document must use an eager stack with the shared row spacing' >&2
   exit 1
 }
 

@@ -28,17 +28,17 @@ import Combine
   let defaults = UserDefaults(suiteName: name)!
   defer { defaults.removePersistentDomain(forName: name) }
   let settings = AppSettingsStore(defaults: defaults)
-  precondition(settings.menuBarLyricsEnabled)
+  precondition(!settings.menuBarLyricsEnabled)
   let controller = MenuBarLyricsController(settings: settings)
-  precondition(controller.statusItemTitle == "Lyric Island")
+  precondition(controller.statusItemTitle.isEmpty)
   let unchangedSnapshot = controller.currentSnapshot
-  controller.menuBarLyricsEnabled = false
-  precondition(controller.statusItemTitle.isEmpty, "must repaint without a playback event")
-  precondition(controller.currentSnapshot == unchangedSnapshot, "popover content remains available")
-  precondition(!AppSettingsStore(defaults: defaults).menuBarLyricsEnabled)
-  settings.menuBarLyricsEnabled = true
+  controller.menuBarLyricsEnabled = true
   precondition(controller.statusItemTitle == "Lyric Island", "external setting changes must repaint")
+  precondition(controller.currentSnapshot == unchangedSnapshot, "popover content remains available")
   precondition(AppSettingsStore(defaults: defaults).menuBarLyricsEnabled)
+  settings.menuBarLyricsEnabled = false
+  precondition(controller.statusItemTitle.isEmpty, "must repaint without a playback event")
+  precondition(!AppSettingsStore(defaults: defaults).menuBarLyricsEnabled)
   let state = PlaybackState()
   state.hasLiveTrack = true
   state.currentTrack.title = "Song"

@@ -308,8 +308,23 @@ private struct ServicesAndSourcesSettingsView: View {
         Form {
             SettingsPageHeader(
                 title: "服务与来源",
-                detail: "管理 Spotify 播放控制、在线曲库授权与多源歌词检索。"
+                detail: "管理音乐播放源（Spotify / Apple Music）、在线曲库授权与多源歌词检索。"
             )
+
+            Section("播放源 (Playback Source)") {
+                Picker("播放源模式", selection: $settings.playbackSourceMode) {
+                    ForEach(PlaybackSourceMode.allCases) { mode in
+                        Text(mode.title).tag(mode)
+                    }
+                }
+                .pickerStyle(.radioGroup)
+
+                Text(settings.playbackSourceMode.detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                LabeledContent("当前状态", value: playbackState.providerStatusMessage)
+            }
 
             Section("Spotify Desktop") {
                 LabeledContent("连接状态", value: playbackState.providerStatus.userFacingMessage)

@@ -76,6 +76,7 @@ public enum ReadingLanguageGate {
             if normalized.contains("zh") || normalized.contains("hans") || normalized.contains("cn") { return .simplifiedChinese }
             if traditionalMarkers.contains(value) { return .traditionalChinese }
             if simplifiedMarkers.contains(value) { return .simplifiedChinese }
+            if normalized.isEmpty || normalized == "zh" { return .simplifiedChinese }
             return .unknown
         }
         if (0x0041...0x005A).contains(value) || (0x0061...0x007A).contains(value) || (0x0030...0x0039).contains(value) {

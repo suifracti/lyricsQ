@@ -8,14 +8,37 @@ public struct ReadingUserDictionaryStore {
         self.defaults = defaults
     }
 
+    private static let cacheLock = NSLock()
+    private static var cachedData: Data?
+    private static var cachedEntries: [ReadingDictionaryEntry] = []
+    private static var revision: Int = 0
+
+    public static var currentRevision: Int {
+        cacheLock.lock()
+        defer { cacheLock.unlock() }
+        return revision
+    }
+
     public func load() -> [ReadingDictionaryEntry] {
-        guard let data = defaults.data(forKey: Self.userDefaultsKey),
-              let entries = try? JSONDecoder().decode([ReadingDictionaryEntry].self, from: data) else { return [] }
+        guard let data = defaults.data(forKey: Self.userDefaultsKey) else { return [] }
+        Self.cacheLock.lock()
+        defer { Self.cacheLock.unlock() }
+        if let cachedData = Self.cachedData, cachedData == data {
+            return Self.cachedEntries
+        }
+        guard let entries = try? JSONDecoder().decode([ReadingDictionaryEntry].self, from: data) else { return [] }
+        Self.cachedData = data
+        Self.cachedEntries = entries
         return entries
     }
 
     public func save(_ entries: [ReadingDictionaryEntry]) {
         guard let data = try? JSONEncoder().encode(entries) else { return }
+        Self.cacheLock.lock()
+        Self.cachedData = data
+        Self.cachedEntries = entries
+        Self.revision += 1
+        Self.cacheLock.unlock()
         defaults.set(data, forKey: Self.userDefaultsKey)
     }
 

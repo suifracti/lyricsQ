@@ -27,7 +27,15 @@ public final class ArtworkImageLoader {
 
     public func cachedImage(for url: URL?) -> NSImage? {
         guard let url else { return nil }
-        return cache.object(forKey: url as NSURL)
+        let key = url as NSURL
+        if let cached = cache.object(forKey: key) {
+            return cached
+        }
+        if url.isFileURL, let image = NSImage(contentsOf: url) {
+            cache.setObject(image, forKey: key)
+            return image
+        }
+        return nil
     }
 
     public func image(for url: URL?) async -> NSImage? {
@@ -39,6 +47,23 @@ public final class ArtworkImageLoader {
 
         if let existingTask = inFlightTasks[url] {
             return await existingTask.value
+        }
+
+        if url.isFileURL {
+            let task = Task<NSImage?, Never>.detached { [cache] in
+                guard let data = try? Data(contentsOf: url),
+                      let image = NSImage(data: data) else {
+                    return nil
+                }
+                await MainActor.run {
+                    cache.setObject(image, forKey: key)
+                }
+                return image
+            }
+            inFlightTasks[url] = task
+            let image = await task.value
+            inFlightTasks.removeValue(forKey: url)
+            return image
         }
 
         let task = Task<NSImage?, Never>.detached { [session, cache] in

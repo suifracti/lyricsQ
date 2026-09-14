@@ -211,9 +211,9 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
             button.target = self
             button.action = #selector(statusItemClicked(_:))
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])
-            button.imagePosition = .imageLeft
+            button.imagePosition = settings.menuBarLyricsEnabled ? .imageLeft : .imageOnly
             button.image = NSImage(systemSymbolName: "music.note", accessibilityDescription: "Lyric Island")
-            button.title = "Lyric Island"
+            button.title = settings.menuBarLyricsEnabled ? "Lyric Island" : ""
         }
         self.statusItem = item
         updateStatusItemButton(lyricsEnabled: settings.menuBarLyricsEnabled)

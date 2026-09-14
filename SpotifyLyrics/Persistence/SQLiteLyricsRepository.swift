@@ -1211,8 +1211,43 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
             let lines = try fetchLines(versionID: record.id)
             guard !lines.isEmpty else { return nil }
             let readings = try fetchReadingLayers(versionID: record.id).filter(\.isLocked)
+            let sourceContentHash = LyricsSourceContentHasher.hash(
+                isSynchronized: record.isSynced,
+                lines: lines
+            )
+            let timingRecord = try? fetchBestTimingVersion(
+                lyricsVersionID: record.id,
+                sourceContentHash: sourceContentHash
+            )
+            let timingMap = timingRecord.flatMap { DocumentTimingPayload.decode($0.spansPayload) }
+            var baseDoc = LyricsPersistenceMapper.document(identity: identity, track: trackRecord, version: record, lines: lines)
+            if let timingMap, !timingMap.isEmpty {
+                var updatedLines = baseDoc.lines
+                for i in updatedLines.indices {
+                    if let timing = timingMap[i] {
+                        updatedLines[i].performerID = timing.performerID
+                        updatedLines[i].timedSpans = timing.spans
+                    }
+                }
+                baseDoc = LyricsDocument(
+                    identity: baseDoc.identity,
+                    title: baseDoc.title,
+                    artist: baseDoc.artist,
+                    album: baseDoc.album,
+                    duration: baseDoc.duration,
+                    lines: updatedLines,
+                    isSynchronized: baseDoc.isSynchronized,
+                    source: baseDoc.source,
+                    confidence: baseDoc.confidence,
+                    providerSourceID: baseDoc.providerSourceID,
+                    spotifyTrackID: baseDoc.spotifyTrackID,
+                    isrc: baseDoc.isrc,
+                    language: baseDoc.language,
+                    timingVersionID: timingRecord?.id
+                )
+            }
             let document = applyingLockedReadings(
-                to: LyricsPersistenceMapper.document(identity: identity, track: trackRecord, version: record, lines: lines),
+                to: baseDoc,
                 readings: readings
             )
             _ = track
@@ -1233,8 +1268,43 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         let lines = try fetchLines(versionID: versionID)
         guard !lines.isEmpty else { return nil }
         let readings = try fetchReadingLayers(versionID: versionID).filter(\.isLocked)
+        let sourceContentHash = LyricsSourceContentHasher.hash(
+            isSynchronized: record.isSynced,
+            lines: lines
+        )
+        let timingRecord = try? fetchBestTimingVersion(
+            lyricsVersionID: record.id,
+            sourceContentHash: sourceContentHash
+        )
+        let timingMap = timingRecord.flatMap { DocumentTimingPayload.decode($0.spansPayload) }
+        var baseDoc = LyricsPersistenceMapper.document(identity: identity, track: trackRecord, version: record, lines: lines)
+        if let timingMap, !timingMap.isEmpty {
+            var updatedLines = baseDoc.lines
+            for i in updatedLines.indices {
+                if let timing = timingMap[i] {
+                    updatedLines[i].performerID = timing.performerID
+                    updatedLines[i].timedSpans = timing.spans
+                }
+            }
+            baseDoc = LyricsDocument(
+                identity: baseDoc.identity,
+                title: baseDoc.title,
+                artist: baseDoc.artist,
+                album: baseDoc.album,
+                duration: baseDoc.duration,
+                lines: updatedLines,
+                isSynchronized: baseDoc.isSynchronized,
+                source: baseDoc.source,
+                confidence: baseDoc.confidence,
+                providerSourceID: baseDoc.providerSourceID,
+                spotifyTrackID: baseDoc.spotifyTrackID,
+                isrc: baseDoc.isrc,
+                language: baseDoc.language,
+                timingVersionID: timingRecord?.id
+            )
+        }
         let document = applyingLockedReadings(
-            to: LyricsPersistenceMapper.document(identity: identity, track: trackRecord, version: record, lines: lines),
+            to: baseDoc,
             readings: readings
         )
         _ = track
@@ -2399,12 +2469,37 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         )
     }
 
+    private func hasValidWordTiming(version: DatabaseLyricsVersionRecord) throws -> Bool {
+        let checkStmt = try prepare("SELECT 1 FROM lyrics_timing_versions WHERE lyrics_version_id = ? LIMIT 1;")
+        defer { sqlite3_finalize(checkStmt) }
+        try bindText(version.id.uuidString, at: 1, to: checkStmt)
+        guard sqlite3_step(checkStmt) == SQLITE_ROW else { return false }
+
+        let lines = try fetchLines(versionID: version.id)
+        guard !lines.isEmpty else { return false }
+        let sourceContentHash = LyricsSourceContentHasher.hash(
+            isSynchronized: version.isSynced,
+            lines: lines
+        )
+        guard let timingRecord = try fetchBestTimingVersion(
+            lyricsVersionID: version.id,
+            sourceContentHash: sourceContentHash
+        ) else {
+            return false
+        }
+        guard let timingMap = DocumentTimingPayload.decode(timingRecord.spansPayload),
+              !timingMap.isEmpty else {
+            return false
+        }
+        return timingMap.values.contains { !$0.spans.isEmpty }
+    }
+
     private func fetchBestVersion(stableKey: String) throws -> DatabaseLyricsVersionRecord? {
         let family = try resolvedIdentityFamily(stableKey: stableKey)
         let statement = try prepare("""
             SELECT id, track_stable_key, source, provider_source_id, language,
                    parent_version_id, is_synced, raw_text, content_hash, created_at, updated_at,
-                   is_machine_generated, is_manually_edited, is_locked, confidence
+                   is_machine_generated, is_manually_edited, is_locked, confidence, is_preferred
             FROM lyrics_versions
             WHERE track_stable_key IN (\(placeholders(count: family.count)))
               AND (is_preferred = 1 OR is_locked = 1 OR confidence >= ?)
@@ -2414,42 +2509,64 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
             ORDER BY is_preferred DESC, is_locked DESC,
                      CASE WHEN source = 'automaticAlignment' THEN 1 ELSE 0 END DESC,
                      updated_at DESC,
-                     confidence DESC
-            LIMIT 1;
+                     confidence DESC;
         """)
         defer { sqlite3_finalize(statement) }
         for (index, key) in family.enumerated() {
             try bindText(key, at: Int32(index + 1), to: statement)
         }
         try bindDouble(LyricsMatcher.highConfidenceThreshold, at: Int32(family.count + 1), to: statement)
-        guard sqlite3_step(statement) == SQLITE_ROW else { return nil }
-        guard let idText = columnText(statement, index: 0),
-              let id = UUID(uuidString: idText),
-              let key = columnText(statement, index: 1),
-              let source = columnText(statement, index: 2),
-              let provider = columnText(statement, index: 3),
-              let language = columnText(statement, index: 4),
-              let rawText = columnText(statement, index: 7),
-              let contentHash = columnText(statement, index: 8) else {
-            throw LyricsRepositoryError.invalidData("LyricsVersionRecord 字段缺失")
+
+        var candidates: [(record: DatabaseLyricsVersionRecord, isPreferred: Bool)] = []
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard let idText = columnText(statement, index: 0),
+                  let id = UUID(uuidString: idText),
+                  let key = columnText(statement, index: 1),
+                  let source = columnText(statement, index: 2),
+                  let provider = columnText(statement, index: 3),
+                  let language = columnText(statement, index: 4),
+                  let rawText = columnText(statement, index: 7),
+                  let contentHash = columnText(statement, index: 8) else {
+                throw LyricsRepositoryError.invalidData("LyricsVersionRecord 字段缺失")
+            }
+            let record = DatabaseLyricsVersionRecord(
+                id: id,
+                trackStableKey: key,
+                parentVersionID: columnText(statement, index: 5).flatMap(UUID.init(uuidString:)),
+                source: source,
+                providerSourceID: provider,
+                language: language,
+                isSynced: sqlite3_column_int(statement, 6) != 0,
+                rawText: rawText,
+                contentHash: contentHash,
+                createdAt: Date(timeIntervalSince1970: sqlite3_column_double(statement, 9)),
+                updatedAt: Date(timeIntervalSince1970: sqlite3_column_double(statement, 10)),
+                isMachineGenerated: sqlite3_column_int(statement, 11) != 0,
+                isManuallyEdited: sqlite3_column_int(statement, 12) != 0,
+                isLocked: sqlite3_column_int(statement, 13) != 0,
+                confidence: sqlite3_column_double(statement, 14)
+            )
+            let isPreferred = sqlite3_column_int(statement, 15) != 0
+            candidates.append((record, isPreferred))
         }
-        return DatabaseLyricsVersionRecord(
-            id: id,
-            trackStableKey: key,
-            parentVersionID: columnText(statement, index: 5).flatMap(UUID.init(uuidString:)),
-            source: source,
-            providerSourceID: provider,
-            language: language,
-            isSynced: sqlite3_column_int(statement, 6) != 0,
-            rawText: rawText,
-            contentHash: contentHash,
-            createdAt: Date(timeIntervalSince1970: sqlite3_column_double(statement, 9)),
-            updatedAt: Date(timeIntervalSince1970: sqlite3_column_double(statement, 10)),
-            isMachineGenerated: sqlite3_column_int(statement, 11) != 0,
-            isManuallyEdited: sqlite3_column_int(statement, 12) != 0,
-            isLocked: sqlite3_column_int(statement, 13) != 0,
-            confidence: sqlite3_column_double(statement, 14)
-        )
+
+        guard !candidates.isEmpty else { return nil }
+        if candidates.count == 1 { return candidates[0].record }
+
+        // User explicit preference or locked status takes top priority
+        if candidates[0].isPreferred || candidates[0].record.isLocked {
+            return candidates[0].record
+        }
+
+        // Reuse the exact timing loading validity rules (matching content hash & decoded word spans).
+        // A version with verified word-level timing takes precedence over plain line-timed versions.
+        for candidate in candidates {
+            if try hasValidWordTiming(version: candidate.record) {
+                return candidate.record
+            }
+        }
+
+        return candidates[0].record
     }
 
     private func fetchLines(versionID: UUID) throws -> [DatabaseLyricLineRecord] {

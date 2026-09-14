@@ -80,9 +80,13 @@ struct FloatingLyricsContract {
         precondition(FloatingDesktopTypography.companion(mode: .single, translation: "译文", next: "next") == nil)
         precondition(FloatingDesktopTypography.companion(mode: .double, translation: "译文", next: "next") == "译文")
         precondition(FloatingDesktopTypography.companion(mode: .double, translation: "  ", next: "next") == "next")
-        precondition(FloatingDesktopTypography.selectedCompanion(mode: .double, selection: "next", translation: "译文", next: "下一句", kana: "かな", reading: "kana") == "下一句")
+        precondition(FloatingDesktopTypography.selectedCompanion(mode: .double, selection: "next", translation: "译文", next: "下一句", kana: "かな", reading: "kana") == "译文")
+        precondition(FloatingDesktopTypography.selectedCompanion(mode: .double, selection: "next", translation: "", next: "下一句", kana: "かな", reading: "kana") == "下一句")
         precondition(FloatingDesktopTypography.selectedCompanion(mode: .double, selection: "kana", translation: "译文", next: "下一句", kana: "かな", reading: "kana") == "かな")
-        precondition(FloatingDesktopTypography.selectedCompanion(mode: .double, selection: "translation", translation: "", next: "下一句", kana: "かな", reading: "kana") == nil)
+        precondition(FloatingDesktopTypography.selectedCompanion(mode: .double, selection: "translation", translation: "译文", next: "下一句", kana: "かな", reading: "kana") == "译文")
+        precondition(FloatingDesktopTypography.selectedCompanion(mode: .double, selection: "translation", translation: "", next: "下一句", kana: "かな", reading: "kana") == "下一句")
+        precondition(FloatingDesktopTypography.selectedCompanion(mode: .double, selection: "translation", translation: nil, next: "下一句", kana: "かな", reading: "kana") == "下一句")
+        precondition(FloatingDesktopTypography.selectedCompanion(mode: .double, selection: "translation", translation: nil, next: nil, kana: "かな", reading: "kana") == nil)
         let untimed = FloatingDesktopTypography.segments(line: lines[0], currentTime: 5)
         precondition(untimed == nil, "Line timestamps must never synthesize word progress")
         var timed = LyricLine(timestamp: 0, originalText: "你好")
@@ -131,6 +135,19 @@ struct FloatingLyricsContract {
         let rubyHeight = FloatingDesktopTypography.ribbonHeight(fontSize: rubySize, hasRuby: true, outlineWidth: 1.25)
         let auxiliaryHeight = FloatingDesktopTypography.ribbonHeight(fontSize: rubySize * 0.66, hasRuby: false, outlineWidth: 1.25)
         precondition(rubyHeight + auxiliaryHeight + 23 <= 84.01, "Minimum desktop must contain top ruby and outline as well as both lines")
+
+        let shortTextSize = FloatingDesktopTypography.fittedFontSize(requested: 34, height: 160, doubleLine: false, width: 600, text: "短歌词")
+        precondition(shortTextSize == 34, "Short text should retain requested font size")
+
+        let longLyricText = "这是一首非常非常长并且需要单行展示的中文歌词测试文本"
+        let longTextSize = FloatingDesktopTypography.fittedFontSize(requested: 34, height: 160, doubleLine: false, width: 400, text: longLyricText)
+        precondition(longTextSize < 34 && longTextSize >= 14, "Long text should shrink to fit within width")
+        let longWidth = FloatingDesktopTypography.estimatedLineWidth(text: longLyricText, fontSize: longTextSize)
+        precondition(longWidth <= 400, "Estimated line width after shrinkage must fit within available width")
+
+        let superLongText = String(repeating: "这是一句超级超级长的歌词用于测试达到合理最小字号兜底", count: 4)
+        let minBoundSize = FloatingDesktopTypography.fittedFontSize(requested: 34, height: 160, doubleLine: false, width: 400, text: superLongText, minFontSize: 14)
+        precondition(minBoundSize == 14, "Extremely long text must stop at minimum font size for horizontal scrolling fallback")
 
         let lyricsFrame = CGRect(x: 482, y: 1163, width: 620, height: 220)
         let visibleFrame = CGRect(x: 0, y: 23, width: 1920, height: 1394)

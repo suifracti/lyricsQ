@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(AppKit)
+import AppKit
+#endif
 
 /// Stable identifiers for the two renderers that can be selected for the
 /// single retained floating lyrics panel.
@@ -264,16 +267,177 @@ public enum FloatingDesktopTypography {
             + (hasRuby ? ceil(fontSize * 0.45 * 1.3) + inset + 2 : 0)
     }
 
-    public static func fittedFontSize(requested: Double, height: Double, doubleLine: Bool, hasRuby: Bool = false, outlineWidth: Double = 0) -> Double {
+    private static let estimatedLineWidthCache: NSCache<NSString, NSNumber> = {
+        let cache = NSCache<NSString, NSNumber>()
+        cache.countLimit = 512
+        return cache
+    }()
+
+    private static let fittedFontSizeCache: NSCache<NSString, NSNumber> = {
+        let cache = NSCache<NSString, NSNumber>()
+        cache.countLimit = 256
+        return cache
+    }()
+
+    public static func estimatedLineWidth(
+        text: String?,
+        rubyTokens: [LyricRubyToken]? = nil,
+        hasRuby: Bool = false,
+        fontSize: Double,
+        outlineWidth: Double = 0
+    ) -> Double {
+        let cacheKey = "\(text ?? "")-\(hasRuby)-\(fontSize)-\(outlineWidth)-\(rubyTokens?.count ?? 0)" as NSString
+        if let cached = estimatedLineWidthCache.object(forKey: cacheKey) {
+            return cached.doubleValue
+        }
+
+        let inset = max(1, Self.outlineWidth(outlineWidth) + 1)
+        #if canImport(AppKit)
+        let baseFont = NSFont.systemFont(ofSize: CGFloat(fontSize), weight: .bold)
+        let rubyFont = NSFont.systemFont(ofSize: CGFloat(fontSize * 0.45), weight: .medium)
+
+        if hasRuby {
+            let tokens: [LyricRubyToken] = {
+                if let rubyTokens, !rubyTokens.isEmpty { return rubyTokens }
+                if let text, !text.isEmpty { return [LyricRubyToken(id: 0, surface: text, ruby: nil)] }
+                return []
+            }()
+
+            var total: Double = 0
+            var currentKey: Int?
+            var groupTokenCount = 0
+            var groupTokensWithRuby = 0
+
+            for token in tokens {
+                let key = token.id / 10_000
+                if currentKey != key {
+                    if groupTokenCount > 1 && groupTokensWithRuby == 1 {
+                        total += 10
+                    }
+                    currentKey = key
+                    groupTokenCount = 0
+                    groupTokensWithRuby = 0
+                }
+                groupTokenCount += 1
+
+                let rubyText: String? = {
+                    if let ruby = token.ruby, !ruby.isEmpty { return ruby }
+                    if token.surface.unicodeScalars.contains(where: { (0x30A1...0x30FA).contains($0.value) }) {
+                        return token.surface
+                    }
+                    return nil
+                }()
+                if rubyText != nil { groupTokensWithRuby += 1 }
+
+                let surfaceWidth = token.surface.isEmpty ? 0 : (ceil(Double((token.surface as NSString).size(withAttributes: [.font: baseFont]).width)) + inset * 2)
+                let rubyWidth: Double = {
+                    guard let rubyText, !rubyText.isEmpty else { return 0 }
+                    return ceil(Double((rubyText as NSString).size(withAttributes: [.font: rubyFont]).width)) + inset * 2
+                }()
+                total += max(surfaceWidth, rubyWidth)
+            }
+            if groupTokenCount > 1 && groupTokensWithRuby == 1 {
+                total += 10
+            }
+            let result = total + 8
+            estimatedLineWidthCache.setObject(NSNumber(value: result), forKey: cacheKey)
+            return result
+        }
+
+        guard let text, !text.isEmpty else {
+            estimatedLineWidthCache.setObject(NSNumber(value: 0), forKey: cacheKey)
+            return 0
+        }
+        let result = ceil(Double((text as NSString).size(withAttributes: [.font: baseFont]).width)) + inset * 2 + 8
+        estimatedLineWidthCache.setObject(NSNumber(value: result), forKey: cacheKey)
+        return result
+        #else
+        if hasRuby {
+            let tokens = rubyTokens ?? (text.map { [LyricRubyToken(id: 0, surface: $0, ruby: nil)] } ?? [])
+            var total: Double = 0
+            for token in tokens {
+                let sWidth = Double(token.surface.count) * fontSize + inset * 2
+                let rWidth = Double(token.ruby?.count ?? 0) * (fontSize * 0.45) + inset * 2
+                total += max(sWidth, rWidth)
+            }
+            return total + 8
+        }
+        guard let text, !text.isEmpty else { return 0 }
+        return Double(text.count) * fontSize + inset * 2 + 8
+        #endif
+    }
+
+    public static func fittedFontSize(
+        requested: Double,
+        height: Double,
+        doubleLine: Bool,
+        hasRuby: Bool = false,
+        outlineWidth: Double = 0,
+        width: Double? = nil,
+        text: String? = nil,
+        rubyTokens: [LyricRubyToken]? = nil,
+        companionText: String? = nil,
+        minFontSize: Double = 14
+    ) -> Double {
+        let cacheKey = "\(requested)-\(height)-\(doubleLine)-\(hasRuby)-\(outlineWidth)-\(width ?? 0)-\(text ?? "")-\(companionText ?? "")-\(minFontSize)-\(rubyTokens?.count ?? 0)" as NSString
+        if let cached = fittedFontSizeCache.object(forKey: cacheKey) {
+            return cached.doubleValue
+        }
+
         var size = fontSize(requested)
-        let available = height.isFinite ? max(1, height) : 84
+        let availableHeight = height.isFinite ? max(1, height) : 84
         while size > 12 {
             let primary = ribbonHeight(fontSize: size, hasRuby: hasRuby, outlineWidth: outlineWidth)
             let companion = doubleLine ? ribbonHeight(fontSize: size * 0.66, hasRuby: false, outlineWidth: outlineWidth) + 7 : 0
-            if primary + companion + 16 <= available { break }
+            if primary + companion + 16 <= availableHeight { break }
             size -= 0.25
         }
-        return max(12, size)
+        size = max(12, size)
+
+        if let width, width.isFinite, width > 0 {
+            let targetWidth = max(1, width - 8)
+            let minWidthSize = min(size, max(12, minFontSize))
+            func neededWidth(at testSize: Double) -> Double {
+                let primaryWidth = estimatedLineWidth(
+                    text: text,
+                    rubyTokens: rubyTokens,
+                    hasRuby: hasRuby,
+                    fontSize: testSize,
+                    outlineWidth: outlineWidth
+                )
+                let companionWidth = (doubleLine && companionText != nil)
+                    ? estimatedLineWidth(
+                        text: companionText,
+                        rubyTokens: nil,
+                        hasRuby: false,
+                        fontSize: testSize * 0.66,
+                        outlineWidth: outlineWidth
+                    )
+                    : 0
+                return max(primaryWidth, companionWidth)
+            }
+
+            if neededWidth(at: size) > targetWidth {
+                if neededWidth(at: minWidthSize) > targetWidth {
+                    size = minWidthSize
+                } else {
+                    var low = minWidthSize
+                    var high = size
+                    while high - low > 0.5 {
+                        let mid = floor((low + high) / 2 * 2) / 2
+                        if neededWidth(at: mid) <= targetWidth {
+                            low = mid
+                        } else {
+                            high = mid - 0.5
+                        }
+                    }
+                    size = low
+                }
+            }
+        }
+        let result = max(12, size)
+        fittedFontSizeCache.setObject(NSNumber(value: result), forKey: cacheKey)
+        return result
     }
 
     /// Spatial reveal only: never used as word highlighting or a playback clock.
@@ -355,10 +519,22 @@ public enum FloatingDesktopTypography {
         guard mode == .double else { return nil }
         let value: String?
         switch selection {
-        case "next": value = next
         case "kana": value = kana
         case "reading": value = reading
-        default: value = translation
+        case "next", "translation":
+            let trimmedTranslation = translation?.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let trimmedTranslation, !trimmedTranslation.isEmpty {
+                value = trimmedTranslation
+            } else {
+                value = next
+            }
+        default:
+            let trimmedTranslation = translation?.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let trimmedTranslation, !trimmedTranslation.isEmpty {
+                value = trimmedTranslation
+            } else {
+                value = next
+            }
         }
         let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed?.isEmpty == false ? trimmed : nil

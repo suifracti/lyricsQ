@@ -45,12 +45,15 @@ require "$CANVAS" '\.id\(line\.id\)' 'stable lyric line identity'
 
 # V3 uses the same policy and resets the scroll surface by shared session
 # revision so a fast track switch cannot animate old rows into the new track.
-require "$V3" 'LyricsTransitionPolicy\.perform' 'V3 shared transition policy'
+# Wrap interpolation is forbidden: layoutSignature may exist, but it must not
+# drive a non-nil animation. Follow motion is owned by V3LyricMotionPolicy.
+require "$TOKENS" 'enum V3LyricMotionPolicy' 'V3 isolated motion policy'
+require "$V3" 'V3LyricMotionPolicy' 'V3 uses isolated follow/layout policy'
 require "$V3" 'lyrics-document-' 'V3 session-bound scroll identity'
 require "$V3" 'onChange\(of: currentIndex\)' 'V3 scrolls only on index change'
 require "$V3" 'state\.currentLineIndex' 'V3 uses published boundary index'
 require "$V3" 'layoutSignature' 'V3 row layout signature'
-require "$V3" 'value: layoutSignature' 'V3 layout signature animation value'
+require "$V3" '\.animation\(nil, value: layoutSignature\)' 'V3 does not interpolate wrap'
 
 # Compatibility/focus, fullscreen and floating surfaces use the same policy;
 # none of them may introduce a playback timer or a currentTime-driven layout

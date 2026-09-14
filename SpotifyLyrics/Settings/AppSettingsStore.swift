@@ -77,6 +77,31 @@ public enum V3ArtworkPresentation: String, CaseIterable, Codable, Identifiable, 
     }
 }
 
+/// Active playback provider source mode.
+public enum PlaybackSourceMode: String, CaseIterable, Codable, Identifiable, Sendable {
+    case auto = "auto"
+    case spotify = "spotify"
+    case appleMusic = "appleMusic"
+
+    public var id: String { rawValue }
+
+    public var title: String {
+        switch self {
+        case .auto: return "自动检测 (推荐)"
+        case .spotify: return "Spotify Desktop"
+        case .appleMusic: return "Apple Music (音乐)"
+        }
+    }
+
+    public var detail: String {
+        switch self {
+        case .auto: return "自动检测当前正在播放的播放器（Spotify 或 Apple Music 优先）"
+        case .spotify: return "仅连接 Spotify Desktop 桌面客户端"
+        case .appleMusic: return "仅连接系统自带 Apple Music (音乐.app)"
+        }
+    }
+}
+
 /// The single UserDefaults boundary for user-facing configuration. Views bind
 /// to this object; PlaybackState mirrors the display value and turns provider
 /// IDs into the existing provider instances.
@@ -89,6 +114,7 @@ public final class AppSettingsStore: ObservableObject {
         public static let automaticCompactLyricsFocus = "general.automaticCompactLyricsFocus"
         public static let menuBarLyricsEnabled = "menuBar.lyricsEnabled"
         public static let connectSpotifyOnLaunch = "general.connectSpotifyOnLaunch"
+        public static let playbackSourceMode = "playback.sourceMode"
         public static let autoSearchLyricsOnTrackChange = "general.autoSearchLyricsOnTrackChange"
         /// Product zero-operation automatic alignment (default off).
         public static let automaticAlignmentEnabled = "automaticAlignment.enabled.v1"
@@ -208,6 +234,10 @@ public final class AppSettingsStore: ObservableObject {
 
     @Published public var connectSpotifyOnLaunch: Bool {
         didSet { defaults.set(connectSpotifyOnLaunch, forKey: Key.connectSpotifyOnLaunch) }
+    }
+
+    @Published public var playbackSourceMode: PlaybackSourceMode {
+        didSet { defaults.set(playbackSourceMode.rawValue, forKey: Key.playbackSourceMode) }
     }
 
     @Published public var autoSearchLyricsOnTrackChange: Bool {
@@ -496,8 +526,14 @@ public final class AppSettingsStore: ObservableObject {
         mainWindowLayoutStyleRawValue = layout
         classicCompanionPresentationRawValue = classicPresentation
         automaticCompactLyricsFocus = defaults.object(forKey: Key.automaticCompactLyricsFocus) as? Bool ?? false
-        menuBarLyricsEnabled = defaults.object(forKey: Key.menuBarLyricsEnabled) as? Bool ?? true
+        menuBarLyricsEnabled = defaults.object(forKey: Key.menuBarLyricsEnabled) as? Bool ?? false
         connectSpotifyOnLaunch = defaults.object(forKey: Key.connectSpotifyOnLaunch) as? Bool ?? true
+        if let rawMode = defaults.string(forKey: Key.playbackSourceMode),
+           let mode = PlaybackSourceMode(rawValue: rawMode) {
+            playbackSourceMode = mode
+        } else {
+            playbackSourceMode = .auto
+        }
         autoSearchLyricsOnTrackChange = defaults.object(forKey: Key.autoSearchLyricsOnTrackChange) as? Bool ?? true
         automaticAlignmentEnabled = defaults.object(forKey: Key.automaticAlignmentEnabled) as? Bool ?? false
         // Keep the normal window behavior by default. Users can opt into
@@ -513,7 +549,8 @@ public final class AppSettingsStore: ObservableObject {
         floatingDesktopFontSize = FloatingDesktopTypography.fontSize(defaults.object(forKey: Key.floatingDesktopFontSize) as? Double ?? 34)
         floatingDesktopLineMode = defaults.string(forKey: Key.floatingDesktopLineMode) ?? "double"
         floatingDesktopTheme = defaults.string(forKey: Key.floatingDesktopTheme) ?? "mint"
-        floatingDesktopCompanion = defaults.string(forKey: Key.floatingDesktopCompanion) ?? "translation"
+        let savedCompanion = defaults.string(forKey: Key.floatingDesktopCompanion) ?? "translation"
+        floatingDesktopCompanion = savedCompanion == "next" ? "translation" : savedCompanion
         floatingDesktopOriginalColorHex = defaults.object(forKey: Key.floatingDesktopOriginalColorHex) as? String ?? ""
         floatingDesktopHighlightColorHex = defaults.object(forKey: Key.floatingDesktopHighlightColorHex) as? String ?? ""
         floatingDesktopRubyColorHex = defaults.object(forKey: Key.floatingDesktopRubyColorHex) as? String ?? ""

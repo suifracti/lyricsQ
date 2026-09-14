@@ -49,16 +49,20 @@ struct FloatingLyricsView: View {
     private var toolbar: some View {
         HStack(spacing: 8) {
             Button { state.previousTrack() } label: { Image(systemName: "backward.fill").frame(width: 24, height: 26) }
+                .help("上一首")
                 .accessibilityLabel("上一首")
             Button { state.togglePlayPause() } label: { Image(systemName: state.isPlaying ? "pause.fill" : "play.fill").frame(width: 24, height: 26) }
+                .help(state.isPlaying ? "暂停" : "播放")
                 .accessibilityLabel(state.isPlaying ? "暂停" : "播放")
             Button { state.nextTrack() } label: { Image(systemName: "forward.fill").frame(width: 24, height: 26) }
+                .help("下一首")
                 .accessibilityLabel("下一首")
             Text(windowController.interactionMode == .locked ? "已锁定" : "拖动移动")
                 .font(.system(size: 10, weight: .medium))
                 .lineLimit(1)
             Spacer(minLength: 4)
             Button { windowController.toggleStylePanel(settings: settings) } label: { Image(systemName: "textformat.size").frame(width: 26, height: 26) }
+                .help("桌面歌词样式")
                 .accessibilityLabel("桌面歌词样式")
                 .accessibilityValue(windowController.isStylePanelVisible ? "已打开" : "已关闭")
 
@@ -168,16 +172,51 @@ struct FloatingLyricsView: View {
             artistDisplay: state.currentTrack.artist
         )
         let kana = japanese && preferences.showKana ? presentation.kanaText : nil
-        let isPinyin = line.readingRepresentationID?.hasPrefix("readingRepresentation.pinyin") == true
+        let isPinyin: Bool = {
+            if line.readingRepresentationID?.hasPrefix("readingRepresentation.pinyin") == true {
+                return true
+            }
+            if let lang = state.liveLyricsLanguage?.lowercased().trimmingCharacters(in: .whitespacesAndNewlines), !lang.isEmpty {
+                if lang.hasPrefix("ja") { return false }
+                if lang.hasPrefix("zh") { return true }
+            }
+            return LyricsLanguageGate.containsHan(line.originalText) && !LyricsLanguageGate.containsKana(line.originalText)
+        }()
         let reading = (isPinyin ? preferences.showPinyin : japanese && preferences.showRomaji)
             ? (presentation.romajiText ?? line.romajiText) : nil
-        let original = presentation.originalText
+        let conversion = settings.readingPreferences.scriptConversion
+        let original: String = {
+            let base = presentation.originalText
+            guard conversion != .none else { return base }
+            return ReadingScriptConverter.convert(base, using: conversion)
+        }()
+        let rubyTokens: [LyricRubyToken]? = {
+            guard let tokens = presentation.rubyTokens else { return nil }
+            guard conversion != .none else { return tokens }
+            return ReadingScriptConverter.convertRubyTokens(
+                tokens,
+                originalText: presentation.originalText,
+                convertedText: original,
+                using: conversion
+            ) ?? tokens
+        }()
+        let effectivePresentation: JapaneseRubyPresentation = {
+            guard conversion != .none else { return presentation }
+            return JapaneseRubyPresentation(
+                originalText: original,
+                reading: nil,
+                preferredRubyTokens: rubyTokens,
+                kanaText: presentation.kanaText,
+                romajiText: presentation.romajiText
+            )
+        }()
         let primary = FloatingDesktopTypography.firstVisible([
             preferences.showOriginal ? original : nil,
             preferences.showTranslation ? line.translationText : nil, kana, reading
         ]) ?? ""
         let primaryIsOriginal = preferences.showOriginal && primary == original
-        let hasRuby = primaryIsOriginal && preferences.showKana && japanese && presentation.hasRuby
+        let showRuby = (japanese && preferences.showKana) || (isPinyin && preferences.showPinyin)
+        let hasRuby = primaryIsOriginal && showRuby && presentation.hasRuby
         let next = preferences.showOriginal && rows.indices.contains(index + 1) ? rows[index + 1].originalText : nil
         let chosen: String? = {
             switch settings.floatingDesktopCompanion {
@@ -196,18 +235,54 @@ struct FloatingLyricsView: View {
             kana: kana,
             reading: reading
         )
-        let fontSize = FloatingDesktopTypography.fittedFontSize(requested: settings.floatingDesktopFontSize,
-            height: height, doubleLine: companion != nil, hasRuby: hasRuby, outlineWidth: palette.outlineWidth)
-        let presentedTime = state.presentationClock.presentationTime(at: ProcessInfo.processInfo.systemUptime)
-        let elapsed = reduceMotion || activeIndex == nil ? 0 : max(0, presentedTime - line.timestamp)
+        let effectiveCompanion = (companion != nil && companion != primary) ? companion : nil
+        let fontSize = FloatingDesktopTypography.fittedFontSize(
+            requested: settings.floatingDesktopFontSize,
+            height: height,
+            doubleLine: effectiveCompanion != nil,
+            hasRuby: hasRuby,
+            outlineWidth: palette.outlineWidth,
+            width: Double(width),
+            text: primary,
+            rubyTokens: hasRuby ? rubyTokens : nil,
+            companionText: effectiveCompanion
+        )
+        let minFontSize = 14.0
+        let primaryWidth = FloatingDesktopTypography.estimatedLineWidth(
+            text: primary,
+            rubyTokens: hasRuby ? rubyTokens : nil,
+            hasRuby: hasRuby,
+            fontSize: fontSize,
+            outlineWidth: palette.outlineWidth
+        )
+        let allowsPrimaryMotion = fontSize <= minFontSize + 0.01 && primaryWidth > Double(width)
+
+        let companionWidth: Double = {
+            guard let effectiveCompanion else { return 0 }
+            return FloatingDesktopTypography.estimatedLineWidth(
+                text: effectiveCompanion,
+                rubyTokens: nil,
+                hasRuby: false,
+                fontSize: fontSize * 0.66,
+                outlineWidth: palette.outlineWidth
+            )
+        }()
+        let allowsCompanionMotion = effectiveCompanion != nil && fontSize <= minFontSize + 0.01 && companionWidth > Double(width)
+
         let end = line.endTime ?? (rows.indices.contains(index + 1) ? rows[index + 1].timestamp : state.currentTrack.duration)
         let duration = max(1, end - line.timestamp)
+        let effectiveSpans = ReadingScriptConverter.convertSpans(
+            line.timedSpans ?? [],
+            originalText: line.originalText,
+            convertedText: original,
+            using: conversion
+        ) ?? (line.timedSpans ?? [])
         let timedLayout = primaryIsOriginal && activeIndex != nil
-            ? presentation.timedLayout(spans: line.timedSpans ?? [], fontSize: fontSize, weight: NSFont.Weight.bold.rawValue, showsRuby: hasRuby, design: "default") : nil
+            ? effectivePresentation.timedLayout(spans: effectiveSpans, fontSize: fontSize, weight: NSFont.Weight.bold.rawValue, showsRuby: hasRuby, design: "default") : nil
         let baseColor = timedLayout != nil || activeIndex == nil ? palette.original : palette.highlight
         let originalView: (TimeInterval?) -> RubyLineView = { time in
             RubyLineView(originalText: original, kanaText: hasRuby ? (presentation.kanaText ?? "") : "",
-                         tokens: hasRuby ? presentation.rubyTokens : nil,
+                         tokens: hasRuby ? rubyTokens : nil,
                          timedLayout: timedLayout, currentTime: time,
                          baseFont: .system(size: fontSize, weight: .bold),
                          rubyFont: .system(size: fontSize * 0.45, weight: .medium),
@@ -219,45 +294,73 @@ struct FloatingLyricsView: View {
                          rubyNSFont: .systemFont(ofSize: fontSize * 0.45, weight: .medium),
                          unplayedOpacity: 1, showsRuby: hasRuby)
         }
+        let hasTimelineMotion = (allowsPrimaryMotion || allowsCompanionMotion || timedLayout != nil) && !reduceMotion && state.isPlaying
         let primaryColor = primary == line.translationText ? palette.translation : palette.ruby
         let companionColor = companion == next ? palette.original
             : (settings.floatingDesktopCompanion == "kana" || settings.floatingDesktopCompanion == "reading" ? palette.ruby : palette.translation)
-        return VStack(spacing: 7) {
-            FloatingDesktopRibbon(label: primary, width: width,
-                height: FloatingDesktopTypography.ribbonHeight(fontSize: fontSize, hasRuby: hasRuby, outlineWidth: palette.outlineWidth),
-                elapsed: elapsed, duration: duration) {
-                if primaryIsOriginal {
-                    if timedLayout != nil {
-                        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !state.isPlaying || reduceMotion)) { _ in
-                            originalView(state.presentationClock.presentationTime(at: ProcessInfo.processInfo.systemUptime))
+
+        return Group {
+            if hasTimelineMotion {
+                TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !state.isPlaying || reduceMotion)) { _ in
+                    let presentedTime = state.presentationClock.presentationTime(at: ProcessInfo.processInfo.systemUptime)
+                    let elapsed = reduceMotion || activeIndex == nil ? 0 : max(0, presentedTime - line.timestamp)
+                    VStack(spacing: 7) {
+                        FloatingDesktopRibbon(label: primary, width: width,
+                            height: FloatingDesktopTypography.ribbonHeight(fontSize: fontSize, hasRuby: hasRuby, outlineWidth: palette.outlineWidth),
+                            elapsed: elapsed, duration: duration, allowsMotion: allowsPrimaryMotion) {
+                            if primaryIsOriginal {
+                                originalView(timedLayout != nil ? presentedTime : nil)
+                            } else {
+                                OutlinedLyricText(text: primary, font: .systemFont(ofSize: fontSize, weight: .bold),
+                                                  fill: primaryColor, outline: palette.outline, width: palette.outlineWidth)
+                            }
                         }
-                    } else {
-                        originalView(nil)
+                        if let companion, companion != primary {
+                            FloatingDesktopRibbon(label: companion, width: width,
+                                height: FloatingDesktopTypography.ribbonHeight(fontSize: fontSize * 0.66, hasRuby: false, outlineWidth: palette.outlineWidth),
+                                elapsed: elapsed, duration: duration, allowsMotion: allowsCompanionMotion) {
+                                OutlinedLyricText(text: companion, font: .systemFont(ofSize: fontSize * 0.66, weight: .bold),
+                                                  fill: companionColor, outline: palette.outline, width: palette.outlineWidth)
+                            }
+                        }
                     }
-                } else {
-                    OutlinedLyricText(text: primary, font: .systemFont(ofSize: fontSize, weight: .bold),
-                                      fill: primaryColor, outline: palette.outline, width: palette.outlineWidth)
+                    .frame(width: width, alignment: .center)
+                    .padding(.horizontal, 16).padding(.vertical, 8)
+                    .frame(maxHeight: .infinity, alignment: .center)
+                    .transaction { transaction in
+                        transaction.animation = nil
+                    }
                 }
-            }
-            if let companion, companion != primary {
-                FloatingDesktopRibbon(label: companion, width: width,
-                    height: FloatingDesktopTypography.ribbonHeight(fontSize: fontSize * 0.66, hasRuby: false, outlineWidth: palette.outlineWidth),
-                    elapsed: elapsed, duration: duration) {
-                    OutlinedLyricText(text: companion, font: .systemFont(ofSize: fontSize * 0.66, weight: .semibold),
-                                      fill: companionColor, outline: palette.outline, width: palette.outlineWidth)
+            } else {
+                VStack(spacing: 7) {
+                    FloatingDesktopRibbon(label: primary, width: width,
+                        height: FloatingDesktopTypography.ribbonHeight(fontSize: fontSize, hasRuby: hasRuby, outlineWidth: palette.outlineWidth),
+                        elapsed: 0, duration: duration, allowsMotion: false) {
+                        if primaryIsOriginal {
+                            originalView(nil)
+                        } else {
+                            OutlinedLyricText(text: primary, font: .systemFont(ofSize: fontSize, weight: .bold),
+                                              fill: primaryColor, outline: palette.outline, width: palette.outlineWidth)
+                        }
+                    }
+                    if let companion, companion != primary {
+                        FloatingDesktopRibbon(label: companion, width: width,
+                            height: FloatingDesktopTypography.ribbonHeight(fontSize: fontSize * 0.66, hasRuby: false, outlineWidth: palette.outlineWidth),
+                            elapsed: 0, duration: duration, allowsMotion: false) {
+                            OutlinedLyricText(text: companion, font: .systemFont(ofSize: fontSize * 0.66, weight: .bold),
+                                              fill: companionColor, outline: palette.outline, width: palette.outlineWidth)
+                        }
+                    }
+                }
+                .frame(width: width, alignment: .center)
+                .padding(.horizontal, 16).padding(.vertical, 8)
+                .frame(maxHeight: .infinity, alignment: .center)
+                .transaction { transaction in
+                    transaction.animation = nil
                 }
             }
         }
-        .frame(width: width, alignment: .center)
-        .padding(.horizontal, 16).padding(.vertical, 8)
-        .frame(maxHeight: .infinity, alignment: .center)
-        // The active line is a presentation-state handoff, not a relayout
-        // animation.  In particular, do not let the window hover animation
-        // animate the new line's insertion or its first width measurement.
-        .transaction { transaction in
-            transaction.animation = nil
-        }
-        .id("desktop-\(state.liveLyricsSessionRevision)-\(index)-\(settings.floatingDesktopLineMode)-\(settings.floatingDesktopCompanion)")
+        .id("desktop-\(state.liveLyricsSessionRevision)-\(index)-\(settings.floatingDesktopLineMode)-\(settings.floatingDesktopCompanion)-\(preferences.showPinyin)-\(preferences.showKana)-\(conversion.rawValue)")
     }
 
     @ViewBuilder
@@ -411,11 +514,10 @@ struct FloatingLyricsStylePanelView: View {
                 FloatingDesktopColorControls(settings: settings)
                 Picker("第二行", selection: $settings.floatingDesktopCompanion) {
                     Text("译文 / 下一句").tag("translation")
-                    Text("下一句").tag("next")
                     Text("假名").tag("kana")
                     Text("罗马音 / 拼音").tag("reading")
                 }
-                Text("第二行按此处选择显示；所选歌词层为空时保持单行。")
+                Text("第二行按此处选择显示；无译文时默认显示下一句。")
                     .font(.caption).foregroundStyle(.secondary)
                 LyricsPresentationOffsetControl(settings: settings)
                 Divider()
@@ -425,7 +527,19 @@ struct FloatingLyricsStylePanelView: View {
                 Toggle("罗马音", isOn: $settings.displayPreferences.showRomaji)
                 Toggle("拼音", isOn: $settings.displayPreferences.showPinyin)
                 Toggle("假名", isOn: $settings.displayPreferences.showKana)
-                Text("假名显示在原文上方；第二行可独立显示译文或其他读音。")
+                Picker("繁简转换", selection: Binding(
+                    get: { settings.readingPreferences.scriptConversionID },
+                    set: { value in
+                        var next = settings.readingPreferences
+                        next.scriptConversionID = value
+                        settings.readingPreferences = next
+                    }
+                )) {
+                    Text("不转换").tag(ScriptConversionID.none.rawValue)
+                    Text("繁体转简体").tag(ScriptConversionID.traditionalToSimplified.rawValue)
+                    Text("简体转繁体").tag(ScriptConversionID.simplifiedToTraditional.rawValue)
+                }
+                Text("假名与拼音显示在原文上方；第二行可独立显示译文或其他读音。")
                     .font(.caption).foregroundStyle(.secondary)
                 Text("逐字变色仅用于带真实逐字时间的歌词；单行时间不模拟逐字进度。")
                     .font(.caption).foregroundStyle(.secondary)
@@ -448,23 +562,20 @@ private struct FloatingDesktopRibbon<Content: View>: View {
     let height: CGFloat
     let elapsed: Double
     let duration: Double
+    var allowsMotion: Bool = true
     @ViewBuilder let content: () -> Content
     @State private var measuredWidth: CGFloat?
     @State private var manualOffset: CGFloat?
     @State private var dragOrigin: CGFloat?
 
     private var frameAlignment: Alignment {
-        switch FloatingDesktopTypography.ribbonAlignment(
-            measuredWidth: measuredWidth.map(Double.init),
-            viewport: Double(width)
-        ) {
-        case .center: return .center
-        case .leading: return .leading
-        }
+        guard allowsMotion else { return .center }
+        return .leading
     }
 
     private var automaticOffset: CGFloat {
-        CGFloat(FloatingDesktopTypography.ribbonPlacementOffset(
+        guard allowsMotion else { return 0 }
+        return CGFloat(FloatingDesktopTypography.ribbonPlacementOffset(
             measuredWidth: measuredWidth.map(Double.init),
             viewport: Double(width),
             elapsed: elapsed,
@@ -472,6 +583,7 @@ private struct FloatingDesktopRibbon<Content: View>: View {
         ))
     }
     private var offset: CGFloat {
+        guard allowsMotion else { return 0 }
         guard let measuredWidth, measuredWidth > 0 else { return 0 }
         guard measuredWidth > width else { return 0 }
         let overflow = measuredWidth - width
@@ -495,12 +607,13 @@ private struct FloatingDesktopRibbon<Content: View>: View {
             }
             .gesture(DragGesture(minimumDistance: 4)
                 .onChanged { value in
+                    guard allowsMotion else { return }
                     if dragOrigin == nil { dragOrigin = manualOffset ?? max(0, -automaticOffset) }
                     let overflow = max(0, (measuredWidth ?? 0) - width)
                     manualOffset = min(overflow, max(0, (dragOrigin ?? 0) - value.translation.width))
                 }
                 .onEnded { _ in dragOrigin = nil })
-            .help("长句可左右拖动查看")
+            .help(allowsMotion ? "长句可左右拖动查看" : "")
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(label)
     }

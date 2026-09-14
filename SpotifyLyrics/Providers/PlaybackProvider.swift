@@ -11,23 +11,27 @@ public enum PlaybackProviderState: Equatable, Sendable {
     case unavailable(String)
 
     public var userFacingMessage: String {
+        userFacingMessage(for: "Spotify Desktop")
+    }
+
+    public func userFacingMessage(for providerName: String) -> String {
         switch self {
         case .mockPreview:
             return "Mock 预览"
         case .connecting:
-            return "正在连接 Spotify Desktop"
+            return "正在连接 \(providerName)"
         case .ready:
-            return "Spotify Desktop 已连接"
+            return "\(providerName) 已连接"
         case .notInstalled:
-            return "未安装 Spotify.app"
+            return "未安装 \(providerName)"
         case .notRunning:
-            return "Spotify.app 未运行"
+            return "\(providerName) 未运行"
         case .permissionDenied:
-            return "未获得控制 Spotify 的权限"
+            return "未获得控制 \(providerName) 的权限"
         case .noTrack:
-            return "Spotify 当前没有播放歌曲"
+            return "\(providerName) 当前没有播放歌曲"
         case .unavailable(let message):
-            return "Spotify 不可用：\(message)"
+            return "\(providerName) 不可用：\(message)"
         }
     }
 

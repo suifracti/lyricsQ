@@ -64,12 +64,26 @@ public struct ReadingProjection: Equatable, Sendable {
                 case .pinyinToneMarks, .pinyinToneNumbers, .pinyinPlain:
                     line.romajiText = reading.readingText
                     line.readingRepresentationID = representationID
+                    let tokens = reading.tokens.map {
+                        LyricRubyToken(id: $0.id, surface: $0.surface, ruby: $0.reading)
+                    }
+                    if tokens.map(\.surface).joined() == line.originalText {
+                        line.rubyTokens = tokens
+                    }
                 case nil:
                     break
                 }
             }
             if let converted = convertedText(source.originalText, using: scriptConversion), converted != source.originalText {
                 line.readingSurfaceText = converted
+                if let spans = source.timedSpans {
+                    line.timedSpans = ReadingScriptConverter.convertSpans(
+                        spans,
+                        originalText: source.originalText,
+                        convertedText: converted,
+                        using: scriptConversion
+                    )
+                }
             } else {
                 line.readingSurfaceText = nil
             }
@@ -601,6 +615,10 @@ public final class ReadingSessionController: ObservableObject {
 
     private var isChineseSource: Bool {
         let hint = sourceLanguage?.lowercased() ?? ""
-        return hint.contains("zh") || hint.contains("hans") || hint.contains("hant") || hint == "cn"
+        if hint.contains("zh") || hint.contains("hans") || hint.contains("hant") || hint == "cn" {
+            return true
+        }
+        let allText = sourceLines.map(\.originalText).joined()
+        return LyricsLanguageGate.containsHan(allText) && !LyricsLanguageGate.containsKana(allText)
     }
 }

@@ -124,6 +124,22 @@ struct ReadingEnginesContract {
         )
         precondition(plain.lines[0].readingText?.contains("1") == false)
 
+        let realChinese = try await ChinesePinyinReadingEngine().generate(
+            ReadingGenerationRequest(
+                lyricsVersionID: UUID(),
+                sourceContentHash: "fixture-real",
+                lines: [
+                    ReadingInputLine(lineIndex: 0, originalText: "說不出你的輪廓"),
+                    ReadingInputLine(lineIndex: 1, originalText: "好陌生的一句話，你看著我說話")
+                ],
+                languageHint: "zh-Hant",
+                representationID: .pinyinToneMarks
+            )
+        )
+        precondition(realChinese.lines[0].readingText?.contains("shuō") == true)
+        precondition(realChinese.lines[0].tokens.map(\.surface).joined() == "說不出你的輪廓")
+        precondition(realChinese.lines[1].tokens.map(\.surface).joined() == "好陌生的一句話，你看著我說話")
+
         precondition(ReadingScriptConverter.convert("銀行行長", using: .traditionalToSimplified) == "银行行长")
         precondition(ReadingScriptConverter.convert("银行行长", using: .simplifiedToTraditional) == "銀行行長")
         precondition(ReadingScriptConverter.convert("A🙂1", using: .traditionalToSimplified) == "A🙂1")

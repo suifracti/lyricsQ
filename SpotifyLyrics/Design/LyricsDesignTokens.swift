@@ -48,6 +48,19 @@ struct LyricsLayoutSignature: Equatable {
     let kanaMode: KanaDisplayMode
 }
 
+/// Main-window follow motion is isolated from wrap/layout. Wrap points use a
+/// single reading weight so becoming the current line cannot reflow the row.
+enum V3LyricMotionPolicy {
+    static let followDuration: Double = 0.40
+    static let layoutWeight: Font.Weight = .semibold
+    /// Matches `Font.Weight.semibold` in the V3 row renderer.
+    static let layoutNSWeight: CGFloat = 0.3
+
+    static func followAnimation(reduceMotion: Bool) -> Animation? {
+        reduceMotion ? nil : .easeInOut(duration: followDuration)
+    }
+}
+
 enum LyricsTransitionPolicy {
     static var activeStyle: LyricsTransitionStyle { LyricsTransitionStyle.active }
 

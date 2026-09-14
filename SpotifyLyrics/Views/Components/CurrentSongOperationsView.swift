@@ -7,6 +7,7 @@ import AppKit
 struct CurrentSongOperationsView: View {
     @ObservedObject var state: PlaybackState
     var versionShortcutOnly = false
+    var iconOnly = false
     var onVersionPickerPresentationChange: (Bool) -> Void = { _ in }
     var onOpenEditor: (() -> Void)? = nil
     @ObservedObject private var autoAlign = AutomaticAlignmentJobController.shared
@@ -43,12 +44,20 @@ struct CurrentSongOperationsView: View {
         Group {
             if versionShortcutOnly {
                 Button { openLyricsVersionPicker() } label: {
-                    Label("歌词版本", systemImage: "text.badge.checkmark")
-                        .font(.system(size: 12, weight: .medium))
-                        .padding(.horizontal, 8)
-                        .frame(height: 32)
+                    if iconOnly {
+                        Image(systemName: "text.badge.checkmark")
+                            .font(.system(size: 15, weight: .medium))
+                            .frame(width: 36, height: 36)
+                            .contentShape(Rectangle())
+                            .accessibilityLabel("歌词版本")
+                    } else {
+                        Label("歌词版本", systemImage: "text.badge.checkmark")
+                            .font(.system(size: 12, weight: .medium))
+                            .padding(.horizontal, 8)
+                            .frame(height: 32)
+                            .help("歌词版本")
+                    }
                 }
-                .help("切换、编辑或复制当前歌词")
                 .contextMenu {
                     Button("复制整首原文", systemImage: "doc.on.doc") {
                         LyricsCopyText.copy(LyricsCopyText.format(state.liveLyrics))
@@ -240,6 +249,12 @@ struct CurrentSongOperationsView: View {
                         state.selectNoLyricsVersion()
                     }
                     .disabled(state.isLyricsSelectionEmpty)
+                    Divider()
+                    Button("在 YouTube 查找 MV", systemImage: "play.rectangle") {
+                        guard let searchURLSnapshot = youtubeMVSearchURL else { return }
+                        openYouTubeMVSearch(searchURLSnapshot)
+                    }
+                    .disabled(youtubeMVSearchURL == nil)
                 } label: {
                     Image(systemName: "ellipsis")
                         .frame(width: 28, height: 28)
@@ -903,6 +918,30 @@ struct CurrentSongOperationsView: View {
                 settings.displayPreferences = next
             }
         )
+    }
+
+    private var youtubeMVSearchURL: URL? {
+        guard state.liveTrackIdentity != nil else { return nil }
+
+        let artist = state.currentTrack.artist.trimmingCharacters(in: .whitespacesAndNewlines)
+        let title = state.currentTrack.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !artist.isEmpty, !title.isEmpty else { return nil }
+
+        var components = URLComponents()
+        components.scheme = "https"
+        components.host = "www.youtube.com"
+        components.path = "/results"
+        components.queryItems = [
+            URLQueryItem(
+                name: "search_query",
+                value: "\(artist) \(title) official music video"
+            )
+        ]
+        return components.url
+    }
+
+    private func openYouTubeMVSearch(_ url: URL) {
+        NSWorkspace.shared.open(url)
     }
 }
 

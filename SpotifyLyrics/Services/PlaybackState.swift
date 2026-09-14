@@ -133,7 +133,7 @@ public final class PlaybackState: ObservableObject {
         let resolvedSettings = settings ?? AppSettingsStore()
         self.settingsStore = resolvedSettings
         self.preferences = resolvedSettings.displayPreferences
-        let resolvedProvider = provider ?? SpotifyDesktopProvider()
+        let resolvedProvider = provider ?? ActivePlaybackProvider(settings: resolvedSettings)
         self.provider = resolvedProvider
         let sharedIndex = LocalLyricsIndex.shared
         let authorizationManager = SpotifyAuthorizationManager()
@@ -299,6 +299,13 @@ public final class PlaybackState: ObservableObject {
             .dropFirst()
             .sink { [weak self] shouldConnect in
                 guard let self, shouldConnect else { return }
+                self.reconnectSpotify()
+            }
+            .store(in: &self.settingsCancellables)
+        resolvedSettings.$playbackSourceMode
+            .dropFirst()
+            .sink { [weak self] _ in
+                guard let self else { return }
                 self.reconnectSpotify()
             }
             .store(in: &self.settingsCancellables)
@@ -781,10 +788,11 @@ public final class PlaybackState: ObservableObject {
         if isMockPreviewMode {
             return "Mock Preview"
         }
+        let message = providerStatus.userFacingMessage(for: provider.displayName)
         if providerStatus.isReady, hasLiveTrack {
-            return providerStatus.userFacingMessage
+            return message
         }
-        return "\(providerStatus.userFacingMessage) · 未进入 Mock Preview"
+        return "\(message) · 未进入 Mock Preview"
     }
 
     public var lyricsStatusMessage: String {
@@ -1136,6 +1144,10 @@ public final class PlaybackState: ObservableObject {
         providerRefreshTask = Task { @MainActor [weak self] in
             await self?.refreshProvider()
         }
+    }
+
+    public func reconnectProvider() {
+        reconnectSpotify()
     }
 
     public func enterMockPreview() {
@@ -2041,7 +2053,11 @@ public final class PlaybackState: ObservableObject {
             // the state permanently disconnected.
             isRefreshingProvider = false
         }
+        let refreshStart = ProcessInfo.processInfo.systemUptime
         let snapshot = await provider.refresh()
+        let refreshEnd = ProcessInfo.processInfo.systemUptime
+        let rtt = refreshEnd - refreshStart
+        let latencyCompensatedMonotonic = refreshStart + min(rtt * 0.5, 0.15)
         // Throttle from the end of every bounded attempt, including an
         // unavailable/timeout result. Do not start a new task every timer tick
         // while a previous Apple Events request is unwinding.
@@ -2049,7 +2065,7 @@ public final class PlaybackState: ObservableObject {
 
         let shouldApply = !Task.isCancelled && generation == providerRefreshGeneration && !isMockPreviewMode
         if shouldApply {
-            synchronize(with: snapshot)
+            synchronize(with: snapshot, observedAtMonotonic: latencyCompensatedMonotonic)
         }
 
         let shouldQueueRefresh = refreshRequestedWhileBusy
@@ -2061,7 +2077,7 @@ public final class PlaybackState: ObservableObject {
         }
     }
 
-    private func synchronize(with snapshot: PlaybackSnapshot) {
+    private func synchronize(with snapshot: PlaybackSnapshot, observedAtMonotonic: TimeInterval? = nil) {
         // A refresh that was already in flight when Mock Preview was entered
         // must not be allowed to resurrect a real Spotify session.
         guard !isMockPreviewMode else { return }
@@ -2158,7 +2174,8 @@ public final class PlaybackState: ObservableObject {
         resetPlaybackAnchor(
             to: snapshot.position,
             source: anchorSource,
-            previousTime: previousPosition
+            previousTime: previousPosition,
+            observedAtMonotonic: observedAtMonotonic
         )
         if let session = listeningHistorySession,
            session.stableKey == nextIdentity.stableKey {
@@ -2370,17 +2387,18 @@ public final class PlaybackState: ObservableObject {
     private func resetPlaybackAnchor(
         to position: TimeInterval,
         source: LineIndexSource,
-        previousTime: TimeInterval? = nil
+        previousTime: TimeInterval? = nil,
+        observedAtMonotonic: TimeInterval? = nil
     ) {
         let previous = previousTime ?? currentTime
         playbackAnchorPosition = max(0, min(position, currentTrack.duration))
         playbackAnchorDate = Date()
-        playbackAnchorMonotonic = ProcessInfo.processInfo.systemUptime
+        playbackAnchorMonotonic = observedAtMonotonic ?? ProcessInfo.processInfo.systemUptime
         currentTime = playbackAnchorPosition
         syncPublishedLineIndex(
             source: source,
             previousTime: previous,
-            incomingTime: playbackAnchorPosition
+            incomingTime: presentationTimeNow
         )
     }
 

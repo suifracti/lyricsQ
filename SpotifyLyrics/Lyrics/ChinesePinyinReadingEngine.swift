@@ -74,7 +74,7 @@ public struct ChinesePinyinReadingEngine: ReadingEngine, Sendable {
                 hanOrdinal += 1
                 if let entry {
                     output.append((format(entry, representation: representation), true))
-                    tokens.append(ReadingToken(id: tokens.count, surface: surface, reading: format(entry, representation: .pinyinToneMarks), startOffset: offset, endOffset: offset + surface.count, source: .pinyinDictionary, confidence: entry.isAmbiguous ? 0.65 : 0.92, needsConfirmation: entry.isAmbiguous))
+                    tokens.append(ReadingToken(id: tokens.count, surface: surface, reading: format(entry, representation: representation), startOffset: offset, endOffset: offset + surface.count, source: .pinyinDictionary, confidence: entry.isAmbiguous ? 0.65 : 0.95, needsConfirmation: entry.isAmbiguous))
                     if entry.isAmbiguous { warnings.append(.ambiguousReading) }
                 } else {
                     tokens.append(ReadingToken(id: tokens.count, surface: surface, reading: nil, startOffset: offset, endOffset: offset + surface.count, source: .unknown, confidence: 0, needsConfirmation: true))
@@ -82,21 +82,27 @@ public struct ChinesePinyinReadingEngine: ReadingEngine, Sendable {
                 }
             } else if !output.isEmpty, isPunctuation(surface) {
                 output.append((surface, false))
+                tokens.append(ReadingToken(id: tokens.count, surface: surface, reading: nil, startOffset: offset, endOffset: offset + surface.count, source: .unknown, confidence: 1.0, needsConfirmation: false))
             } else if surface.rangeOfCharacter(from: .whitespacesAndNewlines) != nil {
                 output.append((surface, false))
+                tokens.append(ReadingToken(id: tokens.count, surface: surface, reading: nil, startOffset: offset, endOffset: offset + surface.count, source: .unknown, confidence: 1.0, needsConfirmation: false))
             } else if surface.unicodeScalars.allSatisfy({ $0.value < 128 }) {
                 if let last = output.last, !last.isPinyin, !last.text.isEmpty {
                     output[output.count - 1] = (last.text + surface, false)
                 } else {
                     output.append((surface, false))
                 }
+                tokens.append(ReadingToken(id: tokens.count, surface: surface, reading: nil, startOffset: offset, endOffset: offset + surface.count, source: .unknown, confidence: 1.0, needsConfirmation: false))
             } else {
                 output.append((surface, false))
+                tokens.append(ReadingToken(id: tokens.count, surface: surface, reading: nil, startOffset: offset, endOffset: offset + surface.count, source: .unknown, confidence: 1.0, needsConfirmation: false))
             }
             offset += surface.count
         }
 
-        let hasMissing = tokens.contains { $0.reading == nil }
+        let hasMissing = tokens.contains { token in
+            ChinesePinyinTable.isHan(token.surface.unicodeScalars.first?.value ?? 0) && token.reading == nil
+        }
         let reading: String?
         if hasMissing {
             reading = nil
@@ -195,17 +201,44 @@ private enum ChinesePinyinTable {
             "音": [s("yin1")], "乐": normalizedLine == "音乐使人快乐" ? [s("yue4"), s("le4")] : [s("le4", ambiguous: true)],
             "使": [s("shi3")], "人": [s("ren2")], "快": [s("kuai4")]
         ]
-        guard let options = fixture[normalizedSurface], !options.isEmpty else { return nil }
-        if normalizedSurface == "乐", normalizedLine == "音乐使人快乐" {
-            return hanOrdinal == 1 ? options[0] : options[1]
-        }
-        if normalizedSurface == "行", normalizedLine == "银行行长" {
+        if let options = fixture[normalizedSurface], !options.isEmpty {
+            if normalizedSurface == "乐", normalizedLine == "音乐使人快乐" {
+                return hanOrdinal == 1 ? options[0] : options[1]
+            }
+            if normalizedSurface == "行", normalizedLine == "银行行长" {
+                return options[min(hanOrdinal, options.count - 1)]
+            }
+            if normalizedSurface == "重", normalizedLine == "重庆重新开始" {
+                return options[min(hanOrdinal, options.count - 1)]
+            }
             return options[min(hanOrdinal, options.count - 1)]
         }
-        if normalizedSurface == "重", normalizedLine == "重庆重新开始" {
-            return options[min(hanOrdinal, options.count - 1)]
-        }
-        return options[min(hanOrdinal, options.count - 1)]
+        return nativeSyllable(for: surface)
+    }
+
+    private static func nativeSyllable(for surface: String) -> ChinesePinyinSyllable? {
+        let mutable = NSMutableString(string: surface) as CFMutableString
+        guard CFStringTransform(mutable, nil, kCFStringTransformMandarinLatin, false) else { return nil }
+        let marked = (mutable as String).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !marked.isEmpty else { return nil }
+
+        let mutablePlain = NSMutableString(string: marked) as CFMutableString
+        CFStringTransform(mutablePlain, nil, kCFStringTransformStripDiacritics, false)
+        let plain = (mutablePlain as String).trimmingCharacters(in: .whitespacesAndNewlines)
+
+        var tone = 5
+        let tone1 = ["ā", "ē", "ī", "ō", "ū", "ǖ"]
+        let tone2 = ["á", "é", "í", "ó", "ú", "ǘ"]
+        let tone3 = ["ǎ", "ě", "ǐ", "ǒ", "ǔ", "ǚ"]
+        let tone4 = ["à", "è", "ì", "ò", "ù", "ǜ"]
+
+        for c in tone1 { if marked.contains(c) { tone = 1; break } }
+        if tone == 5 { for c in tone2 { if marked.contains(c) { tone = 2; break } } }
+        if tone == 5 { for c in tone3 { if marked.contains(c) { tone = 3; break } } }
+        if tone == 5 { for c in tone4 { if marked.contains(c) { tone = 4; break } } }
+
+        let numbered = "\(plain)\(tone)"
+        return ChinesePinyinSyllable(marked: marked, numbered: numbered, plain: plain, isAmbiguous: false)
     }
 
     private static func s(_ value: String, ambiguous: Bool = false) -> ChinesePinyinSyllable {

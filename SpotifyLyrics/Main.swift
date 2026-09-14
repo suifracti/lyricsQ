@@ -31,6 +31,10 @@ struct SpotifyLyricsApp: App {
         _directionDMainWindowAdapter = StateObject(wrappedValue: DirectionDProductStateAdapter())
 
         MenuBarLyricsController.shared.bind(playbackState: playback)
+        if let iconUrl = Bundle.main.url(forResource: "SpotifyLyrics", withExtension: "icns"),
+           let icon = NSImage(contentsOf: iconUrl) {
+            NSApplication.shared.applicationIconImage = icon
+        }
 #if DEBUG
         DirectionDMainWindowDebugDelegate.configure(
             playbackState: playback,
@@ -214,52 +218,60 @@ struct SpotifyLyricsApp: App {
             }
         }
 #if DEBUG
-        CommandMenu("胶囊锚点（调试）") {
-            Button("左上") {
-                WindowManager.shared.setCapsuleDebugAnchor(.topLeft)
+        if Self.shouldShowDebugMenus {
+            CommandMenu("胶囊锚点（调试）") {
+                Button("左上") {
+                    WindowManager.shared.setCapsuleDebugAnchor(.topLeft)
+                }
+                Button("顶部居中") {
+                    WindowManager.shared.setCapsuleDebugAnchor(.topCenter)
+                }
+                Button("右上") {
+                    WindowManager.shared.setCapsuleDebugAnchor(.topRight)
+                }
             }
-            Button("顶部居中") {
-                WindowManager.shared.setCapsuleDebugAnchor(.topCenter)
+            CommandMenu("胶囊呈现（调试）") {
+                Button("验证 v4 外壳与尺寸") {
+                    activateDebugCapsuleV4()
+                }
+                Button("恢复当前正式呈现") {
+                    WindowManager.shared.setCapsuleDebugPresentation(
+                        nil,
+                        state: playbackState
+                    )
+                }
             }
-            Button("右上") {
-                WindowManager.shared.setCapsuleDebugAnchor(.topRight)
-            }
-        }
-        CommandMenu("胶囊呈现（调试）") {
-            Button("验证 v4 外壳与尺寸") {
-                activateDebugCapsuleV4()
-            }
-            Button("恢复当前正式呈现") {
-                WindowManager.shared.setCapsuleDebugPresentation(
-                    nil,
-                    state: playbackState
-                )
-            }
-        }
-        CommandMenu("排轴捕获 Spike（调试）") {
-            Button("开始 Spotify 音频 Spike (S1)") {
-                Task { await SpotifyScreenCaptureAudioSpike.shared.start(autoStopAfter: 25) }
-            }
-            Button("停止 Spotify 音频 Spike (S1)") {
-                Task { await SpotifyScreenCaptureAudioSpike.shared.stop(reason: "menu") }
-            }
-            Divider()
-            Button("开始 Live Capture (S2)") {
-                LiveCaptureCoordinator.shared.bind(playback: playbackState)
-                Task { await LiveCaptureCoordinator.shared.start(autoStopAfter: 90, runPartialAlignment: false) }
-            }
-            Button("开始 Partial 对齐 (S3A)") {
-                LiveCaptureCoordinator.shared.bind(playback: playbackState)
-                Task { await LiveCaptureCoordinator.shared.start(autoStopAfter: 75, runPartialAlignment: true) }
-            }
-            Button("停止 Live Capture / S3A") {
-                Task { await LiveCaptureCoordinator.shared.stop(reason: .userStop) }
+            CommandMenu("排轴捕获 Spike（调试）") {
+                Button("开始 Spotify 音频 Spike (S1)") {
+                    Task { await SpotifyScreenCaptureAudioSpike.shared.start(autoStopAfter: 25) }
+                }
+                Button("停止 Spotify 音频 Spike (S1)") {
+                    Task { await SpotifyScreenCaptureAudioSpike.shared.stop(reason: "menu") }
+                }
+                Divider()
+                Button("开始 Live Capture (S2)") {
+                    LiveCaptureCoordinator.shared.bind(playback: playbackState)
+                    Task { await LiveCaptureCoordinator.shared.start(autoStopAfter: 90, runPartialAlignment: false) }
+                }
+                Button("开始 Partial 对齐 (S3A)") {
+                    LiveCaptureCoordinator.shared.bind(playback: playbackState)
+                    Task { await LiveCaptureCoordinator.shared.start(autoStopAfter: 75, runPartialAlignment: true) }
+                }
+                Button("停止 Live Capture / S3A") {
+                    Task { await LiveCaptureCoordinator.shared.stop(reason: .userStop) }
+                }
             }
         }
 #endif
     }
 
 #if DEBUG
+    static var shouldShowDebugMenus: Bool {
+        ProcessInfo.processInfo.arguments.contains("--debug-menus")
+            || ProcessInfo.processInfo.environment["SHOW_DEBUG_MENUS"] == "1"
+            || UserDefaults.standard.bool(forKey: "debug.showMenus")
+    }
+
     private func activateDebugCapsuleV4() {
         if let refusal = DebugDatabaseSafety.menuActivationRefusalMessage() {
             let alert = NSAlert()
@@ -284,19 +296,21 @@ private struct PresentationPreviewCommands: Commands {
     @Environment(\.openWindow) private var openWindow
 
     var body: some Commands {
-        CommandMenu("预览实验室") {
-            Button("打开 Presentation Preview Lab") {
-                openWindow(id: "presentation-preview-lab")
+        if SpotifyLyricsApp.shouldShowDebugMenus {
+            CommandMenu("预览实验室") {
+                Button("打开 Presentation Preview Lab") {
+                    openWindow(id: "presentation-preview-lab")
+                }
+                .keyboardShortcut("p", modifiers: [.command, .option])
+                Button("打开 Direction D 矩阵") {
+                    openWindow(id: "direction-d-preview-matrix")
+                }
+                .keyboardShortcut("d", modifiers: [.command, .option])
+                Button("打开 Direction D Experimental Host") {
+                    openWindow(id: "direction-d-experimental-host")
+                }
+                .keyboardShortcut("e", modifiers: [.command, .option])
             }
-            .keyboardShortcut("p", modifiers: [.command, .option])
-            Button("打开 Direction D 矩阵") {
-                openWindow(id: "direction-d-preview-matrix")
-            }
-            .keyboardShortcut("d", modifiers: [.command, .option])
-            Button("打开 Direction D Experimental Host") {
-                openWindow(id: "direction-d-experimental-host")
-            }
-            .keyboardShortcut("e", modifiers: [.command, .option])
         }
     }
 }

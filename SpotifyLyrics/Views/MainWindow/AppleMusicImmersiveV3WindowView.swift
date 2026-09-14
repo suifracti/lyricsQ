@@ -62,6 +62,10 @@ enum MainWindowResponsiveThresholds {
     static let toolbarRevealHeight: CGFloat = 96
 }
 
+private final class V3PointerLocationBox {
+    var location: CGPoint?
+}
+
 /// Independent Apple Music-inspired main canvas. V2 and Lyrics Focus remain
 /// separate layouts; this view owns only the V3 canvas and its transient tools.
 struct AppleMusicImmersiveV3WindowView: View {
@@ -79,16 +83,17 @@ struct AppleMusicImmersiveV3WindowView: View {
     @State private var isVersionPickerPresented = false
     @State private var isAppearancePresented = false
     @State private var isLyricsTimePresented = false
+    @State private var hoveredToolbarItem: String? = nil
     // The canvas starts clean. Controls reveal only when the pointer reaches
     // the top edge, so playback remains content-first without sacrificing
     // access to search, layout, and settings.
-    @State private var toolsVisible = true
+    @State private var toolsVisible = false
     @State private var isPointerInToolbarRegion = false
     @State private var interactionToken = 0
     @State private var isAlignmentDetailsPresented = false
     @State private var isPointerInsideCanvas = false
     @State private var isPointerInsidePlaybackRegion = false
-    @State private var pointerLocation: CGPoint?
+    @State private var pointerLocationBox = V3PointerLocationBox()
     @State private var playbackRegion = CGRect.null
     @State private var isPlaybackInteracting = false
 
@@ -181,8 +186,10 @@ struct AppleMusicImmersiveV3WindowView: View {
             .onContinuousHover(coordinateSpace: .local) { phase in
                 switch phase {
                 case .active(let location):
-                    pointerLocation = location
-                    isPointerInsideCanvas = true
+                    pointerLocationBox.location = location
+                    if !isPointerInsideCanvas {
+                        isPointerInsideCanvas = true
+                    }
                     let pointerInRegion: Bool
                     if settings.v3ArtworkPresentation == .stage {
                         pointerInRegion = V3ResponsiveGeometry.stagePlaybackDetailsVisible(
@@ -196,19 +203,34 @@ struct AppleMusicImmersiveV3WindowView: View {
                             canvas: CGRect(origin: .zero, size: geometry.size)
                         ).contains(location)
                     }
-                    isPointerInsidePlaybackRegion = pointerInRegion
-                    isPointerInToolbarRegion = location.y <= MainWindowResponsiveThresholds.toolbarRevealHeight
-                    if isPointerInToolbarRegion || toolbarPanelIsPresented {
-                        revealTools()
+                    if isPointerInsidePlaybackRegion != pointerInRegion {
+                        isPointerInsidePlaybackRegion = pointerInRegion
+                    }
+                    let inToolbar = location.y <= MainWindowResponsiveThresholds.toolbarRevealHeight
+                    if isPointerInToolbarRegion != inToolbar {
+                        isPointerInToolbarRegion = inToolbar
+                    }
+                    if inToolbar || toolbarPanelIsPresented {
+                        if !toolsVisible {
+                            revealTools()
+                        }
                     } else if !toolbarPanelIsPresented {
-                        toolsVisible = false
+                        if toolsVisible {
+                            toolsVisible = false
+                        }
                     }
                 case .ended:
-                    pointerLocation = nil
-                    isPointerInsideCanvas = false
-                    isPointerInsidePlaybackRegion = false
-                    isPointerInToolbarRegion = false
-                    if !toolbarPanelIsPresented {
+                    pointerLocationBox.location = nil
+                    if isPointerInsideCanvas {
+                        isPointerInsideCanvas = false
+                    }
+                    if isPointerInsidePlaybackRegion {
+                        isPointerInsidePlaybackRegion = false
+                    }
+                    if isPointerInToolbarRegion {
+                        isPointerInToolbarRegion = false
+                    }
+                    if !toolbarPanelIsPresented && toolsVisible {
                         toolsVisible = false
                     }
                 }
@@ -232,14 +254,19 @@ struct AppleMusicImmersiveV3WindowView: View {
             .onPreferenceChange(V3PlaybackRegionPreferenceKey.self) { region in
                 playbackRegion = region
                 guard settings.v3ArtworkPresentation != .stage else { return }
-                guard let pointerLocation else {
-                    isPointerInsidePlaybackRegion = false
+                guard let pointerLocation = pointerLocationBox.location else {
+                    if isPointerInsidePlaybackRegion {
+                        isPointerInsidePlaybackRegion = false
+                    }
                     return
                 }
-                isPointerInsidePlaybackRegion = V3ResponsiveGeometry.playbackRevealRect(
+                let inRegion = V3ResponsiveGeometry.playbackRevealRect(
                     region: region,
                     canvas: CGRect(origin: .zero, size: geometry.size)
                 ).contains(pointerLocation)
+                if isPointerInsidePlaybackRegion != inRegion {
+                    isPointerInsidePlaybackRegion = inRegion
+                }
             }
         }
         .frame(
@@ -798,6 +825,7 @@ struct AppleMusicImmersiveV3WindowView: View {
             Button { isWindowMenuPresented.toggle() } label: {
                 iconLabel("macwindow", description: "窗口模式")
             }
+            .toolbarTooltip("窗口模式", current: $hoveredToolbarItem, panelPresented: toolbarPanelIsPresented)
             .popover(isPresented: $isWindowMenuPresented, arrowEdge: .top) {
                 windowModePanel
             }
@@ -811,64 +839,66 @@ struct AppleMusicImmersiveV3WindowView: View {
                 if liveOnly { MenuBarLyricsController.shared.openLibrary() }
                 else { openWindow(id: "personal-library-activity") }
             } label: {
-                iconLabel("books.vertical", description: "歌词库与收听记录")
+                iconLabel("books.vertical", description: "歌词库")
             }
-            CurrentSongOperationsView(state: state, versionShortcutOnly: true,
+            .toolbarTooltip("歌词库", current: $hoveredToolbarItem, panelPresented: toolbarPanelIsPresented)
+            CurrentSongOperationsView(state: state, versionShortcutOnly: true, iconOnly: true,
                 onVersionPickerPresentationChange: { isVersionPickerPresented = $0 },
                 onOpenEditor: liveOnly ? { MenuBarLyricsController.shared.openEditor() } : nil)
                 .environmentObject(settings)
+                .toolbarTooltip("歌词版本", current: $hoveredToolbarItem, panelPresented: toolbarPanelIsPresented)
             Button { isLyricsTimePresented.toggle() } label: {
-                Label(lyricsTimeToolbarLabel, systemImage: "clock.arrow.2.circlepath")
-                    .font(.system(size: 12, weight: .medium))
-                    .padding(.horizontal, 8)
-                    .frame(height: 32)
+                iconLabel("clock.arrow.2.circlepath", description: lyricsTimeToolbarLabel)
             }
             .accessibilityIdentifier("lyrics.time")
-            .help(lyricsTimeToolbarLabel)
+            .toolbarTooltip("歌词时间", current: $hoveredToolbarItem, panelPresented: toolbarPanelIsPresented)
             .popover(isPresented: $isLyricsTimePresented, arrowEdge: .top) {
                 V3LyricsTimePopover(settings: settings)
             }
             Button { isAppearancePresented.toggle() } label: {
-                Label("外观背景", systemImage: "slider.horizontal.3")
-                    .font(.system(size: 12, weight: .medium))
-                    .padding(.horizontal, 8)
-                    .frame(height: 32)
+                iconLabel("slider.horizontal.3", description: "外观背景")
             }
-            .help("调整外观、封面与环境光")
             .accessibilityIdentifier("appearance.shortcut")
+            .toolbarTooltip("外观背景", current: $hoveredToolbarItem, panelPresented: toolbarPanelIsPresented)
             .popover(isPresented: $isAppearancePresented, arrowEdge: .top) {
                 V3VisualTuningPopoverView(settings: settings, layoutStyleRawValue: $layoutStyleRawValue)
             }
             Button { isDisplayPresented.toggle() } label: {
                 iconLabel("character.bubble", description: "歌词显示")
             }
-            .help(lyricsDisplayToolbarHelp)
-            .accessibilityValue(lyricsPresentationOffsetLabel)
+            .toolbarTooltip("歌词显示", current: $hoveredToolbarItem, panelPresented: toolbarPanelIsPresented)
             .popover(isPresented: $isDisplayPresented, arrowEdge: .top) {
                 VStack(alignment: .leading, spacing: 12) {
                     Text("歌词显示").font(.headline)
                     Toggle("显示假名", isOn: displayBinding(\.showKana))
                     Toggle("显示罗马音", isOn: displayBinding(\.showRomaji))
+                    Toggle("显示拼音", isOn: displayBinding(\.showPinyin))
                     Toggle("显示翻译", isOn: displayBinding(\.showTranslation))
-                    if settings.displayPreferences.showKana {
-                        Picker("假名排版", selection: displayBinding(\.kanaDisplayMode)) {
+                    if settings.displayPreferences.showKana || settings.displayPreferences.showPinyin {
+                        Picker("注音排版", selection: displayBinding(\.kanaDisplayMode)) {
                             Text("汉字上方注音").tag(KanaDisplayMode.inlineRuby)
-                            Text("独立假名行").tag(KanaDisplayMode.independentLine)
-                            Text("假名替换").tag(KanaDisplayMode.kanaReplacement)
+                            Text("独立注音行").tag(KanaDisplayMode.independentLine)
+                            Text("注音替换").tag(KanaDisplayMode.kanaReplacement)
                         }
                     }
                     Divider()
-                    LyricsPresentationOffsetControl(settings: settings)
+                    Picker("繁简转换", selection: readingBinding(\.scriptConversionID)) {
+                        Text("不转换").tag(ScriptConversionID.none.rawValue)
+                        Text("繁体转简体").tag(ScriptConversionID.traditionalToSimplified.rawValue)
+                        Text("简体转繁体").tag(ScriptConversionID.simplifiedToTraditional.rawValue)
+                    }
                 }
                 .padding(18)
-                .frame(width: 340)
+                .frame(width: 300)
             }
             if liveOnly {
                 Button { MenuBarLyricsController.shared.openSettings() } label: {
-                    iconLabel("ellipsis", description: "打开设置")
+                    iconLabel("ellipsis", description: "设置")
                 }
+                .toolbarTooltip("设置", current: $hoveredToolbarItem, panelPresented: toolbarPanelIsPresented)
             } else {
-                SettingsLink { iconLabel("ellipsis", description: "打开设置") }
+                SettingsLink { iconLabel("ellipsis", description: "设置") }
+                    .toolbarTooltip("设置", current: $hoveredToolbarItem, panelPresented: toolbarPanelIsPresented)
             }
 
         }
@@ -889,24 +919,16 @@ struct AppleMusicImmersiveV3WindowView: View {
         })
     }
 
-    private var lyricsPresentationOffsetLabel: String {
-        let offset = settings.lyricsPresentationOffset
-        if abs(offset) < 0.005 { return "歌词时间 0.00s" }
-        return offset < 0
-            ? "歌词时间 提前 \(String(format: "%.2f", abs(offset)))s"
-            : "歌词时间 延后 \(String(format: "%.2f", offset))s"
+    private func readingBinding<Value>(_ keyPath: WritableKeyPath<ReadingPreferences, Value>) -> Binding<Value> {
+        Binding(get: { settings.readingPreferences[keyPath: keyPath] }, set: { value in
+            var next = settings.readingPreferences
+            next[keyPath: keyPath] = value
+            settings.readingPreferences = next
+        })
     }
 
     private var lyricsTimeToolbarLabel: String {
-        let offset = settings.lyricsPresentationOffset
-        if abs(offset) < 0.005 { return "歌词时间" }
-        return offset < 0
-            ? "歌词时间 · 提前 \(String(format: "%.2f", abs(offset)))s"
-            : "歌词时间 · 延后 \(String(format: "%.2f", offset))s"
-    }
-
-    private var lyricsDisplayToolbarHelp: String {
-        "歌词显示与\(lyricsPresentationOffsetLabel)"
+        "歌词时间"
     }
 
     private var windowModePanel: some View {
@@ -962,12 +984,13 @@ struct AppleMusicImmersiveV3WindowView: View {
 
     @ViewBuilder private var searchButton: some View {
         if !liveOnly {
-        Button { isSearchPresented.toggle() } label: {
-            iconLabel("magnifyingglass", description: "搜索歌曲")
-        }
-        .popover(isPresented: $isSearchPresented, arrowEdge: .top) {
-            SongSearchPopover(manager: state.songSearchManager, playbackState: state)
-        }
+            Button { isSearchPresented.toggle() } label: {
+                iconLabel("magnifyingglass", description: "搜索")
+            }
+            .toolbarTooltip("搜索", current: $hoveredToolbarItem, panelPresented: toolbarPanelIsPresented)
+            .popover(isPresented: $isSearchPresented, arrowEdge: .top) {
+                SongSearchPopover(manager: state.songSearchManager, playbackState: state)
+            }
         }
     }
 
@@ -982,7 +1005,6 @@ struct AppleMusicImmersiveV3WindowView: View {
             .font(.system(size: 15, weight: .medium))
             .frame(width: 36, height: 36)
             .contentShape(Rectangle())
-            .help(description)
             .accessibilityLabel(description)
     }
 
@@ -1006,6 +1028,48 @@ private struct QuietToolbarButtonStyle: ButtonStyle {
             .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             .onHover { hovering = $0 }
             .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: hovering)
+    }
+}
+
+private struct ToolbarTooltipModifier: ViewModifier {
+    let title: String
+    @Binding var currentHovered: String?
+    let panelPresented: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .onHover { hovering in
+                if hovering {
+                    currentHovered = title
+                } else if currentHovered == title {
+                    currentHovered = nil
+                }
+            }
+            .overlay(alignment: .bottom) {
+                if currentHovered == title && !panelPresented {
+                    Text(title)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.black.opacity(0.85), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .stroke(Color.white.opacity(0.18), lineWidth: 0.5)
+                        )
+                        .shadow(color: .black.opacity(0.35), radius: 6, y: 3)
+                        .fixedSize()
+                        .offset(y: 32)
+                        .allowsHitTesting(false)
+                        .zIndex(100)
+                }
+            }
+    }
+}
+
+private extension View {
+    func toolbarTooltip(_ title: String, current: Binding<String?>, panelPresented: Bool) -> some View {
+        modifier(ToolbarTooltipModifier(title: title, currentHovered: current, panelPresented: panelPresented))
     }
 }
 
@@ -1059,7 +1123,9 @@ private struct AppleMusicImmersiveV3PlaybackProgress: View {
     }
 
     private var visiblePosition: Double {
-        let rawValue = draftPosition ?? state.currentTime
+        let rawValue = draftPosition ?? state.presentationClock.presentationTime(
+            at: ProcessInfo.processInfo.systemUptime
+        )
         return min(max(rawValue, 0), duration)
     }
 
@@ -1081,6 +1147,15 @@ private struct AppleMusicImmersiveV3PlaybackProgress: View {
     }
 
     var body: some View {
+        TimelineView(.animation(
+            minimumInterval: 1.0 / 30.0,
+            paused: !state.isPlaying || isEditing || reduceMotion
+        )) { _ in
+            progressRail
+        }
+    }
+
+    private var progressRail: some View {
         GeometryReader { geometry in
             let width = max(1, geometry.size.width)
             let trackHeight = isEmphasized
@@ -1264,7 +1339,7 @@ private struct AppleMusicImmersiveV3TransportControls: View {
             )
 
             HStack {
-                Text(formatTime(state.currentTime))
+                V3PresentationClockLabel(clock: state.presentationClock, isPlaying: state.isPlaying)
                 Spacer()
                 Text(formatTime(state.currentTrack.duration))
             }
@@ -1280,6 +1355,23 @@ private struct AppleMusicImmersiveV3TransportControls: View {
     }
 
     private func formatTime(_ seconds: TimeInterval) -> String {
+        let minutes = Int(seconds) / 60
+        let remainder = Int(seconds) % 60
+        return String(format: "%02d:%02d", minutes, remainder)
+    }
+}
+
+private struct V3PresentationClockLabel: View {
+    let clock: LyricsPresentationClock
+    let isPlaying: Bool
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 0.25, paused: !isPlaying)) { _ in
+            Text(Self.formatTime(clock.presentationTime(at: ProcessInfo.processInfo.systemUptime)))
+        }
+    }
+
+    private static func formatTime(_ seconds: TimeInterval) -> String {
         let minutes = Int(seconds) / 60
         let remainder = Int(seconds) % 60
         return String(format: "%02d:%02d", minutes, remainder)
@@ -1320,7 +1412,7 @@ private struct StageHUDView: View {
             VStack(spacing: 0) {
                 AppleMusicImmersiveV3PlaybackProgress(state: state, density: .small, maxWidth: nil)
                 HStack {
-                    Text(formatTime(state.currentTime))
+                    V3PresentationClockLabel(clock: state.presentationClock, isPlaying: state.isPlaying)
                     Spacer()
                     Text(formatTime(state.currentTrack.duration))
                 }
@@ -1448,7 +1540,10 @@ private struct AppleMusicImmersiveV3FocusTransportControls: View {
                 maxWidth: nil
             )
 
-            Text("\(formatTime(state.currentTime)) / \(formatTime(state.currentTrack.duration))")
+            HStack(spacing: 4) {
+                V3PresentationClockLabel(clock: state.presentationClock, isPlaying: state.isPlaying)
+                Text("/ \(formatTime(state.currentTrack.duration))")
+            }
                 .font(.system(size: 11, weight: .medium, design: .rounded).monospacedDigit())
                 .foregroundStyle(.white.opacity(0.46))
         }
@@ -1537,10 +1632,11 @@ private struct AppleMusicImmersiveV3LyricsViewport: View {
     let stage: Bool
 
     /// The active index is already published by PlaybackState at the
-    /// presentation-clock boundary. Scrolling is only a short visual follow;
-    /// it must not delay the row handoff or inherit the 0.34s relayout motion.
+    /// presentation-clock boundary. Scrolling is only a visual follow; wrap
+    /// and row height stay frozen, so this animation must not share a
+    /// transaction with layout.
     private var v3LineFollowAnimation: Animation? {
-        reduceMotion ? nil : .easeOut(duration: 0.12)
+        V3LyricMotionPolicy.followAnimation(reduceMotion: reduceMotion)
     }
 
     private var isPreview: Bool { !liveOnly && state.isShowingSearchPreview }
@@ -1550,6 +1646,7 @@ private struct AppleMusicImmersiveV3LyricsViewport: View {
     private var documentTrack: Track { liveOnly ? state.currentTrack : state.displayedTrack }
     @EnvironmentObject private var settings: AppSettingsStore
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.lyricPresentationScale) private var presentationScale
 
     var body: some View {
         // PlaybackState publishes time at a high cadence. Resolve the active
@@ -1592,14 +1689,20 @@ private struct AppleMusicImmersiveV3LyricsViewport: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .sheet(item: $rubyCorrection) { request in
-            RubyCorrectionEditorView(state: state, request: request)
+        .background {
+            EmptyView()
+                .sheet(item: $rubyCorrection) { request in
+                    RubyCorrectionEditorView(state: state, request: request)
+                }
         }
-        .sheet(item: $copyRequest) { request in
-            LyricsCopyView(lines: request.lines, title: request.title,
-                trackStableKey: request.trackStableKey, artistDisplay: request.artistDisplay,
-                language: request.language, userEntries: settings.readingUserDictionary.load(),
-                initialSelectedIndex: request.index)
+        .background {
+            EmptyView()
+                .sheet(item: $copyRequest) { request in
+                    LyricsCopyView(lines: request.lines, title: request.title,
+                        trackStableKey: request.trackStableKey, artistDisplay: request.artistDisplay,
+                        language: request.language, userEntries: settings.readingUserDictionary.load(),
+                        initialSelectedIndex: request.index)
+                }
         }
         .onChange(of: state.currentTrackIdentity) { _, _ in rubyCorrection = nil; copyRequest = nil }
         .onChange(of: state.liveLyricsVersionID) { _, _ in rubyCorrection = nil; copyRequest = nil }
@@ -1670,33 +1773,55 @@ private struct AppleMusicImmersiveV3LyricsViewport: View {
                     // reflow (observed as a permanent 100% CPU hang). A song
                     // is a small, bounded document, so eager placement is the
                     // safer tradeoff for this primary reading surface.
-                    VStack(alignment: textAlignment.lyricHorizontalAlignment, spacing: rowSpacing(synchronized: synchronized)) {
-                        ForEach(Array(lines.enumerated()), id: \.element.id) { index, line in
-                            row(
-                                for: line,
+                    AppleMusicImmersiveV3LyricsDocumentView(
+                        lines: lines,
+                        currentIndex: currentIndex,
+                        synchronized: synchronized,
+                        language: language,
+                        trackStableKey: trackStableKey,
+                        artistDisplay: artistDisplay,
+                        title: documentTrack.title,
+                        duration: documentTrack.duration,
+                        availableWidth: availableWidth,
+                        compact: compact,
+                        preferences: state.preferences,
+                        presentationClock: state.presentationClock,
+                        documentRevision: documentRevision,
+                        verticalPadding: verticalPadding,
+                        isPreview: isPreview,
+                        onSeek: { timestamp in
+                            state.seek(to: timestamp, source: "v3-lyric-line")
+                        },
+                        onRuby: isPreview ? nil : { surface, reading in
+                            let trackKey = state.currentTrackIdentity?.stableKey
+                                ?? TrackIdentity(track: documentTrack).stableKey
+                            guard let versionID = state.liveLyricsVersionID
+                                ?? state.lyricsSession.activeLyricsVersionID else { return }
+                            if rubyCorrection == nil {
+                                rubyCorrection = RubyCorrectionRequest(
+                                    surface: surface,
+                                    reading: reading,
+                                    trackKey: trackKey,
+                                    lyricsVersionID: versionID,
+                                    readingVersionID: state.selectedReadingVersion?.record.id,
+                                    lines: state.liveLyrics
+                                )
+                            }
+                        },
+                        onCopyLine: { LyricsCopyText.copy($0) },
+                        onCopyAll: { LyricsCopyText.copy(LyricsCopyText.format(lines)) },
+                        onCopyPassage: { index in
+                            copyRequest = V3LyricsCopyRequest(
+                                lines: lines,
+                                title: documentTrack.title,
                                 index: index,
-                                currentIndex: currentIndex,
-                                synchronized: synchronized,
-                                language: language,
                                 trackStableKey: trackStableKey,
-                                artistDisplay: artistDisplay
+                                artistDisplay: artistDisplay,
+                                language: language
                             )
-                                .id(line.id)
                         }
-                    }
-                    .frame(maxWidth: .infinity, alignment: textAlignment.lyricFrameAlignment)
-                    .padding(.top, verticalPadding)
-                    .padding(.bottom, verticalPadding)
-                    .padding(.leading, textAlignment == .leading ? 0 : (compact ? 10 : 18) * (textAlignment == .center ? 0.5 : 1))
-                    .padding(.trailing, textAlignment == .trailing ? 0 : (compact ? 10 : 18) * (textAlignment == .center ? 0.5 : 1))
-                    .animation(
-                        LyricsTransitionPolicy.animation(reduceMotion: reduceMotion),
-                        value: rowSpacing(synchronized: synchronized)
                     )
-                    .animation(
-                        LyricsTransitionPolicy.animation(reduceMotion: reduceMotion),
-                        value: synchronized
-                    )
+                    .equatable()
                 }
                 .scrollIndicators(.hidden)
                 // A new active session is a direct document replacement. Its
@@ -1732,6 +1857,7 @@ private struct AppleMusicImmersiveV3LyricsViewport: View {
                         animated: false,
                         anchorY: scrollAnchor
                     )
+                    prewarmUpcoming(around: currentIndex, lines: lines, language: language, trackStableKey: trackStableKey, artistDisplay: artistDisplay)
                 }
                 .onChange(of: currentIndex) { _, newIndex in
                     scrollToCurrentLine(
@@ -1742,6 +1868,7 @@ private struct AppleMusicImmersiveV3LyricsViewport: View {
                         animated: true,
                         anchorY: scrollAnchor
                     )
+                    prewarmUpcoming(around: newIndex, lines: lines, language: language, trackStableKey: trackStableKey, artistDisplay: artistDisplay)
                 }
                 .onChange(of: documentRevision) { _, _ in
                     scrollToCurrentLine(
@@ -1752,6 +1879,7 @@ private struct AppleMusicImmersiveV3LyricsViewport: View {
                         animated: false,
                         anchorY: scrollAnchor
                     )
+                    prewarmUpcoming(around: 0, lines: lines, language: language, trackStableKey: trackStableKey, artistDisplay: artistDisplay)
                 }
                 .onChange(of: state.preferences) { _, _ in
                     scrollToCurrentLine(
@@ -1762,85 +1890,39 @@ private struct AppleMusicImmersiveV3LyricsViewport: View {
                         animated: true,
                         anchorY: scrollAnchor
                     )
+                    prewarmUpcoming(around: currentIndex, lines: lines, language: language, trackStableKey: trackStableKey, artistDisplay: artistDisplay)
                 }
             }
         }
     }
 
-    private func rowSpacing(synchronized: Bool) -> CGFloat {
-        let layerCount = (state.preferences.showRomaji ? 1 : 0)
-            + (state.preferences.showTranslation ? 1 : 0)
-        if !synchronized {
-            return max(18, (compact ? 21 : 24) - CGFloat(max(0, layerCount - 1)))
-        }
-        return max(20, (compact ? 24 : 28) - CGFloat(max(0, layerCount - 1)) * 2)
-    }
+    private func prewarmUpcoming(around index: Int?, lines: [LyricLine], language: String?, trackStableKey: String?, artistDisplay: String) {
+        guard !lines.isEmpty else { return }
+        let width = availableWidth
+        let isComp = compact
+        let scale = presentationScale
+        let prefs = state.preferences
+        let conversion = settings.readingPreferences.scriptConversion
+        let userEntries = settings.readingUserDictionary.load()
+        let currentIndex = index ?? 0
 
-    @ViewBuilder
-    private func row(
-        for line: LyricLine,
-        index: Int,
-        currentIndex: Int?,
-        synchronized: Bool,
-        language: String?,
-        trackStableKey: String?,
-        artistDisplay: String
-    ) -> some View {
-        let isActive = synchronized && currentIndex == index
-        let distance = synchronized && currentIndex != nil
-            ? abs(index - (currentIndex ?? index))
-            : 0
-        let content = AppleMusicImmersiveV3LyricRow(
-            line: line,
-            isActive: isActive,
-            distance: distance,
-            isSynchronized: synchronized,
-            availableWidth: availableWidth,
-            compact: compact,
-            preferences: state.preferences,
-            language: language,
-            trackStableKey: trackStableKey,
-            artistDisplay: artistDisplay,
-            presentationClock: state.presentationClock
-        )
-        .environmentObject(settings)
-        .environment(\.rubyCorrectionAction, isPreview ? nil : { surface, reading in
-            guard let trackKey = state.currentTrackIdentity?.stableKey,
-                  let versionID = state.liveLyricsVersionID else { return }
-            rubyCorrection = RubyCorrectionRequest(surface: surface, reading: reading,
-                trackKey: trackKey, lyricsVersionID: versionID,
-                readingVersionID: state.selectedReadingVersion?.record.id, lines: state.liveLyrics)
-        })
-        .contextMenu {
-            Button("复制这一行", systemImage: "doc.on.doc") {
-                LyricsCopyText.copy(line.originalText)
+        Task(priority: .utility) {
+            let start = max(0, currentIndex)
+            let end = min(lines.count, start + 3)
+            for i in start..<end {
+                V3LayoutPrewarmer.prewarm(
+                    line: lines[i],
+                    availableWidth: width,
+                    compact: isComp,
+                    presentationScale: scale,
+                    preferences: prefs,
+                    language: language,
+                    userEntries: userEntries,
+                    trackStableKey: trackStableKey,
+                    artistDisplay: artistDisplay,
+                    scriptConversion: conversion
+                )
             }
-            Button("复制整首歌词", systemImage: "doc.on.doc.fill") {
-                LyricsCopyText.copy(LyricsCopyText.format(documentLines))
-            }
-            Divider()
-            Button("选择段落复制…", systemImage: "checklist") {
-                copyRequest = V3LyricsCopyRequest(lines: documentLines, title: documentTrack.title,
-                    index: index, trackStableKey: trackStableKey, artistDisplay: artistDisplay, language: language)
-            }
-        }
-        if let timestamp = LyricsTimeline.validSeekTimestamp(
-            for: line,
-            isSynchronized: synchronized,
-            duration: documentTrack.duration
-        ) {
-            content
-                .contentShape(Rectangle())
-                .onTapGesture { state.seek(to: timestamp, source: "v3-lyric-line") }
-                .frame(maxWidth: .infinity, alignment: textAlignment.lyricFrameAlignment)
-                .accessibilityElement(children: .contain)
-                .accessibilityLabel(line.originalText)
-                .accessibilityAction(named: "跳转到歌词时间") {
-                    state.seek(to: timestamp, source: "v3-lyric-line")
-                }
-        } else {
-            content
-                .frame(maxWidth: .infinity, alignment: textAlignment.lyricFrameAlignment)
         }
     }
 
@@ -1866,10 +1948,192 @@ private struct AppleMusicImmersiveV3LyricsViewport: View {
 #endif
         let action = { proxy.scrollTo(id, anchor: UnitPoint(x: 0.5, y: anchorY)) }
         if animated {
-            withAnimation(v3LineFollowAnimation, action)
+            // Defer so wrap/opacity from this index change commit first.
+            // withAnimation around scrollTo otherwise interpolates layout.
+            DispatchQueue.main.async {
+                withAnimation(v3LineFollowAnimation, action)
+            }
         } else {
             action()
         }
+    }
+}
+
+private struct AppleMusicImmersiveV3LyricsDocumentView: View, Equatable {
+    @Environment(\.lyricTextAlignment) private var textAlignment
+    @EnvironmentObject private var settings: AppSettingsStore
+
+    let lines: [LyricLine]
+    let currentIndex: Int?
+    let synchronized: Bool
+    let language: String?
+    let trackStableKey: String?
+    let artistDisplay: String
+    let title: String
+    let duration: TimeInterval
+    let availableWidth: CGFloat
+    let compact: Bool
+    let preferences: DisplayPreferences
+    let presentationClock: LyricsPresentationClock
+    let documentRevision: UInt64
+    let verticalPadding: CGFloat
+    let isPreview: Bool
+    let onSeek: (TimeInterval) -> Void
+    let onRuby: ((String, String) -> Void)?
+    let onCopyLine: (String) -> Void
+    let onCopyAll: () -> Void
+    let onCopyPassage: (Int) -> Void
+
+    static func == (
+        lhs: AppleMusicImmersiveV3LyricsDocumentView,
+        rhs: AppleMusicImmersiveV3LyricsDocumentView
+    ) -> Bool {
+        lhs.lines == rhs.lines
+            && lhs.currentIndex == rhs.currentIndex
+            && lhs.synchronized == rhs.synchronized
+            && lhs.language == rhs.language
+            && lhs.trackStableKey == rhs.trackStableKey
+            && lhs.artistDisplay == rhs.artistDisplay
+            && lhs.title == rhs.title
+            && lhs.duration == rhs.duration
+            && lhs.availableWidth == rhs.availableWidth
+            && lhs.compact == rhs.compact
+            && lhs.preferences == rhs.preferences
+            && lhs.presentationClock == rhs.presentationClock
+            && lhs.documentRevision == rhs.documentRevision
+            && lhs.verticalPadding == rhs.verticalPadding
+            && lhs.isPreview == rhs.isPreview
+    }
+
+    private var rowSpacing: CGFloat {
+        let layerCount = (preferences.showRomaji ? 1 : 0)
+            + (preferences.showTranslation ? 1 : 0)
+        if !synchronized {
+            return max(18, (compact ? 21 : 24) - CGFloat(max(0, layerCount - 1)))
+        }
+        return max(20, (compact ? 24 : 28) - CGFloat(max(0, layerCount - 1)) * 2)
+    }
+
+    var body: some View {
+        VStack(alignment: textAlignment.lyricHorizontalAlignment, spacing: rowSpacing) {
+            ForEach(Array(lines.enumerated()), id: \.element.id) { index, line in
+                row(for: line, index: index)
+                    .id(line.id)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: textAlignment.lyricFrameAlignment)
+        .padding(.top, verticalPadding)
+        .padding(.bottom, verticalPadding)
+        .padding(.leading, textAlignment == .leading ? 0 : (compact ? 10 : 18) * (textAlignment == .center ? 0.5 : 1))
+        .padding(.trailing, textAlignment == .trailing ? 0 : (compact ? 10 : 18) * (textAlignment == .center ? 0.5 : 1))
+    }
+
+    @ViewBuilder
+    private func row(for line: LyricLine, index: Int) -> some View {
+        let isActive = synchronized && currentIndex == index
+        let distance = synchronized && currentIndex != nil
+            ? abs(index - (currentIndex ?? index))
+            : 0
+        let content = AppleMusicImmersiveV3LyricRow(
+            line: line,
+            isActive: isActive,
+            distance: distance,
+            isSynchronized: synchronized,
+            availableWidth: availableWidth,
+            compact: compact,
+            preferences: preferences,
+            language: language,
+            trackStableKey: trackStableKey,
+            artistDisplay: artistDisplay,
+            presentationClock: presentationClock
+        )
+        .equatable()
+        .environmentObject(settings)
+        .environment(\.rubyCorrectionAction, onRuby)
+        .contextMenu {
+            Button("复制这一行", systemImage: "doc.on.doc") {
+                onCopyLine(line.originalText)
+            }
+            Button("复制整首歌词", systemImage: "doc.on.doc.fill") {
+                onCopyAll()
+            }
+            Divider()
+            Button("选择段落复制…", systemImage: "checklist") {
+                onCopyPassage(index)
+            }
+        }
+        if let timestamp = LyricsTimeline.validSeekTimestamp(
+            for: line,
+            isSynchronized: synchronized,
+            duration: duration
+        ) {
+            content
+                .contentShape(Rectangle())
+                .onTapGesture { onSeek(timestamp) }
+                .frame(maxWidth: .infinity, alignment: textAlignment.lyricFrameAlignment)
+                .accessibilityElement(children: .contain)
+                .accessibilityLabel(line.originalText)
+                .accessibilityAction(named: "跳转到歌词时间") {
+                    onSeek(timestamp)
+                }
+        } else {
+            content
+                .frame(maxWidth: .infinity, alignment: textAlignment.lyricFrameAlignment)
+        }
+    }
+}
+
+enum V3ChinesePinyinCache {
+    private static let lock = NSLock()
+    private static var cache: [String: JapaneseRubyPresentation] = [:]
+
+    static func presentation(for text: String) -> JapaneseRubyPresentation {
+        guard !text.isEmpty else {
+            return JapaneseRubyPresentation(originalText: text, reading: nil)
+        }
+        lock.lock()
+        if let cached = cache[text] {
+            lock.unlock()
+            return cached
+        }
+        lock.unlock()
+
+        let characters = Array(text)
+        var tokens: [LyricRubyToken] = []
+        var pinyinWords: [String] = []
+        for char in characters {
+            let surface = String(char)
+            let value = char.unicodeScalars.first?.value ?? 0
+            if (0x3400...0x4DBF).contains(value) || (0x4E00...0x9FFF).contains(value) || (0xF900...0xFAFF).contains(value) {
+                let mutable = NSMutableString(string: surface) as CFMutableString
+                CFStringTransform(mutable, nil, kCFStringTransformMandarinLatin, false)
+                let marked = (mutable as String).trimmingCharacters(in: .whitespacesAndNewlines)
+                tokens.append(LyricRubyToken(id: tokens.count, surface: surface, ruby: marked.isEmpty ? nil : marked))
+                if !marked.isEmpty {
+                    pinyinWords.append(marked)
+                }
+            } else {
+                tokens.append(LyricRubyToken(id: tokens.count, surface: surface, ruby: nil))
+                if !surface.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    pinyinWords.append(surface)
+                }
+            }
+        }
+        let pinyinText = pinyinWords.joined(separator: " ")
+        let result = JapaneseRubyPresentation(
+            originalText: text,
+            reading: nil,
+            preferredRubyTokens: tokens.map(\.surface).joined() == text ? tokens : nil,
+            romajiText: pinyinText
+        )
+
+        lock.lock()
+        cache[text] = result
+        if cache.count > 512, let oldest = cache.keys.first {
+            cache.removeValue(forKey: oldest)
+        }
+        lock.unlock()
+        return result
     }
 }
 
@@ -1880,6 +2144,19 @@ enum V3JapaneseReadingCache {
     static func presentation(for line: LyricLine, language: String?, userEntries: [ReadingDictionaryEntry],
                              trackStableKey: String?, artistDisplay: String?) -> JapaneseRubyPresentation {
         let original = line.readingSurfaceText ?? line.originalText
+        if let pinyinTokens = line.rubyTokens,
+           line.readingRepresentationID?.hasPrefix("readingRepresentation.pinyin") == true {
+            return JapaneseRubyPresentation(originalText: original, reading: nil, preferredRubyTokens: pinyinTokens, romajiText: line.romajiText)
+        }
+        let lang = language?.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        let isChinese: Bool = {
+            if lang?.hasPrefix("ja") == true { return false }
+            if lang?.hasPrefix("zh") == true { return true }
+            return LyricsLanguageGate.containsHan(original) && !LyricsLanguageGate.containsKana(original)
+        }()
+        if isChinese {
+            return V3ChinesePinyinCache.presentation(for: original)
+        }
         guard LyricsLanguageGate.allowsJapaneseReadings(language: language, text: original) else {
             return JapaneseRubyPresentation(originalText: original, reading: nil)
         }
@@ -1944,6 +2221,70 @@ enum V3JapaneseReadingCache {
         lock.unlock()
         return result
     }
+
+    private static var resolvedCache: [String: JapaneseRubyPresentation] = [:]
+
+    static func resolvedPresentation(
+        for line: LyricLine,
+        language: String?,
+        userEntries: [ReadingDictionaryEntry],
+        trackStableKey: String?,
+        artistDisplay: String?,
+        scriptConversion: ScriptConversionID
+    ) -> JapaneseRubyPresentation {
+        let original = line.readingSurfaceText ?? line.originalText
+        guard !original.isEmpty else {
+            return JapaneseRubyPresentation(originalText: "", reading: nil)
+        }
+        let hash = "\(line.timestamp)-\(original)"
+        let key = "\(line.id.uuidString)-\(hash)-\(language ?? "")-\(scriptConversion.rawValue)-\(userEntries.count)-\(trackStableKey ?? "")"
+        lock.lock()
+        if let cached = resolvedCache[key] {
+            lock.unlock()
+            return cached
+        }
+        lock.unlock()
+
+        let base = presentation(
+            for: line,
+            language: language,
+            userEntries: userEntries,
+            trackStableKey: trackStableKey,
+            artistDisplay: artistDisplay
+        )
+        let resolved: JapaneseRubyPresentation
+        if scriptConversion != .none {
+            let convertedOriginal = ReadingScriptConverter.convert(base.originalText, using: scriptConversion)
+            let convertedTokens: [LyricRubyToken]?
+            if let tokens = base.rubyTokens {
+                convertedTokens = ReadingScriptConverter.convertRubyTokens(
+                    tokens,
+                    originalText: base.originalText,
+                    convertedText: convertedOriginal,
+                    using: scriptConversion
+                ) ?? tokens
+            } else {
+                convertedTokens = nil
+            }
+            resolved = JapaneseRubyPresentation(
+                originalText: convertedOriginal,
+                reading: nil,
+                preferredRubyTokens: convertedTokens,
+                kanaText: base.kanaText,
+                romajiText: base.romajiText
+            )
+        } else {
+            resolved = base
+        }
+
+        lock.lock()
+        resolvedCache[key] = resolved
+        if resolvedCache.count > 512, let oldest = resolvedCache.keys.first {
+            resolvedCache.removeValue(forKey: oldest)
+        }
+        lock.unlock()
+        return resolved
+    }
 }
 
 private final class V3TimedMultilineLayoutBox: NSObject {
@@ -1968,12 +2309,12 @@ private final class V3TimedRubyLayoutBox: NSObject {
 private enum V3TimedLayoutCache {
     private static let multilineCache: NSCache<NSString, V3TimedMultilineLayoutBox> = {
         let cache = NSCache<NSString, V3TimedMultilineLayoutBox>()
-        cache.countLimit = 128
+        cache.countLimit = 512
         return cache
     }()
     private static let rubyCache: NSCache<NSString, V3TimedRubyLayoutBox> = {
         let cache = NSCache<NSString, V3TimedRubyLayoutBox>()
-        cache.countLimit = 128
+        cache.countLimit = 512
         return cache
     }()
 
@@ -1983,7 +2324,8 @@ private enum V3TimedLayoutCache {
         fontSize: CGFloat,
         weight: CGFloat,
         availableWidth: CGFloat? = nil,
-        rubyTokens: [LyricRubyToken]? = nil
+        rubyTokens: [LyricRubyToken]? = nil,
+        scriptConversion: ScriptConversionID? = nil
     ) -> String {
         var hasher = Hasher()
         hasher.combine(kind)
@@ -1992,6 +2334,7 @@ private enum V3TimedLayoutCache {
         hasher.combine(weight)
         hasher.combine(availableWidth)
         hasher.combine(rubyTokens)
+        hasher.combine(scriptConversion)
         return "\(kind)-\(hasher.finalize())"
     }
 
@@ -2022,10 +2365,115 @@ private enum V3TimedLayoutCache {
     }
 }
 
+enum V3LayoutPrewarmer {
+    static func prewarm(
+        line: LyricLine,
+        availableWidth: CGFloat,
+        compact: Bool,
+        presentationScale: CGFloat,
+        preferences: DisplayPreferences,
+        language: String?,
+        userEntries: [ReadingDictionaryEntry],
+        trackStableKey: String?,
+        artistDisplay: String?,
+        scriptConversion: ScriptConversionID
+    ) {
+        let original = line.readingSurfaceText ?? line.originalText
+        guard !original.isEmpty else { return }
+
+        let presentation = V3JapaneseReadingCache.resolvedPresentation(
+            for: line,
+            language: language,
+            userEntries: userEntries,
+            trackStableKey: trackStableKey,
+            artistDisplay: artistDisplay,
+            scriptConversion: scriptConversion
+        )
+
+        let isPinyin = line.readingRepresentationID?.hasPrefix("readingRepresentation.pinyin") == true
+        let hasPinyin = isPinyin && preferences.showPinyin
+        let hasReading = hasPinyin ? true : preferences.showRomaji
+        let layerCount = 1 + (hasReading ? 1 : 0) + (preferences.showTranslation && line.translationText != nil ? 1 : 0)
+        let sizeScale = max(0.7, preferences.fontSize / 18)
+        let upperBound = (compact ? 34 : 42) * sizeScale
+        let lowerBound: CGFloat = compact ? 22 : 28
+        let layerPenalty = CGFloat(max(0, layerCount - 2)) * 1.7
+        let activeBaseSize = max(lowerBound, CGFloat(upperBound) - layerPenalty) * presentationScale
+        let readableLineWidth = min(max(240, availableWidth), LyricsDesignTokens.readableLyricLineMaxWidth * presentationScale)
+
+        let effectiveText = presentation.originalText
+        let hasRuby = preferences.showOriginal && presentation.hasRuby && (isPinyin ? preferences.showPinyin : true) && preferences.kanaDisplayMode == .inlineRuby
+
+        if let spans = line.timedSpans, !spans.isEmpty {
+            let effectiveSpans = ReadingScriptConverter.convertSpans(
+                spans,
+                originalText: line.originalText,
+                convertedText: effectiveText,
+                using: scriptConversion
+            ) ?? spans
+
+            if hasRuby {
+                let rubyTokens = presentation.rubyTokens
+                let key = V3TimedLayoutCache.key(
+                    kind: "ruby",
+                    line: line,
+                    fontSize: activeBaseSize,
+                    weight: Font.Weight.heavy.nsWeightValue,
+                    rubyTokens: rubyTokens,
+                    scriptConversion: scriptConversion
+                )
+                _ = V3TimedLayoutCache.ruby(for: key) {
+                    presentation.timedLayout(spans: effectiveSpans, fontSize: activeBaseSize, weight: Font.Weight.heavy.nsWeightValue)
+                }
+            } else if preferences.showOriginal {
+                let key = V3TimedLayoutCache.key(
+                    kind: "multiline",
+                    line: line,
+                    fontSize: activeBaseSize,
+                    weight: Font.Weight.heavy.nsWeightValue,
+                    availableWidth: readableLineWidth,
+                    scriptConversion: scriptConversion
+                )
+                _ = V3TimedLayoutCache.multiline(for: key) {
+                    TimedTextComposer.computeMultilineLayout(
+                        originalText: effectiveText,
+                        spans: effectiveSpans,
+                        fontSize: activeBaseSize,
+                        weight: Font.Weight.heavy.nsWeightValue,
+                        design: "rounded",
+                        availableWidth: readableLineWidth,
+                        balanced: true
+                    )
+                }
+            }
+        }
+
+        if !hasRuby {
+            let activeKey = V3TimedLayoutCache.key(
+                kind: "balancedPlain",
+                line: line,
+                fontSize: activeBaseSize,
+                weight: Font.Weight.heavy.nsWeightValue,
+                availableWidth: readableLineWidth,
+                scriptConversion: scriptConversion
+            )
+            if AppleMusicImmersiveV3LyricRowContent.balancedTextCache.object(forKey: activeKey as NSString) == nil {
+                let text = V3LyricDisplayLineBreaker.breakText(
+                    effectiveText,
+                    fontSize: activeBaseSize,
+                    weight: Font.Weight.heavy.nsWeightValue,
+                    availableWidth: readableLineWidth
+                )
+                AppleMusicImmersiveV3LyricRowContent.balancedTextCache.setObject(text as NSString, forKey: activeKey as NSString)
+            }
+        }
+    }
+}
+
 /// Adds presentation-only line breaks for long plain-text lyrics. Stored
 /// lyrics, translations, timing, search matching, and ruby tokens are never
 /// changed. Ruby rows already wrap at morphology-token boundaries.
-private struct AppleMusicImmersiveV3LyricRow: View {
+private struct AppleMusicImmersiveV3LyricRow: View, Equatable {
     @Environment(\.lyricPresentationScale) private var presentationScale
     @Environment(\.lyricTextAlignment) private var textAlignment
     let line: LyricLine
@@ -2042,6 +2490,136 @@ private struct AppleMusicImmersiveV3LyricRow: View {
     @EnvironmentObject private var settings: AppSettingsStore
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.lyricAgentPresentationMap) private var agentPresentationMap
+
+    static func == (lhs: AppleMusicImmersiveV3LyricRow, rhs: AppleMusicImmersiveV3LyricRow) -> Bool {
+        lhs.line == rhs.line
+            && lhs.isActive == rhs.isActive
+            && lhs.clampedDistance == rhs.clampedDistance
+            && lhs.isSynchronized == rhs.isSynchronized
+            && lhs.availableWidth == rhs.availableWidth
+            && lhs.compact == rhs.compact
+            && lhs.preferences == rhs.preferences
+            && lhs.language == rhs.language
+            && lhs.trackStableKey == rhs.trackStableKey
+            && lhs.artistDisplay == rhs.artistDisplay
+    }
+
+    private var clampedDistance: Int {
+        min(6, distance)
+    }
+
+    private var isPinyinProjection: Bool {
+        guard let representation = line.readingRepresentationID else { return false }
+        return representation.hasPrefix("readingRepresentation.pinyin")
+    }
+
+    private var layerCount: Int {
+        let hasPinyin = isPinyinProjection && preferences.showPinyin
+        let hasReading = hasPinyin ? true : preferences.showRomaji
+        return 1 + (hasReading ? 1 : 0) + (preferences.showTranslation && line.translationText != nil ? 1 : 0)
+    }
+
+    private var layoutSignature: LyricsLayoutSignature {
+        // Distance and active state are focus handoff state, not a layout
+        // reflow. Keep them out of the animation value so the new line's
+        // weight, opacity and blur change on the first frame. Preference and
+        // content changes still use the established soft relayout animation.
+        LyricsTransitionPolicy.signature(
+            line: line,
+            preferences: preferences,
+            availableWidth: availableWidth,
+            visibleLayerCount: layerCount,
+            isSynchronized: isSynchronized,
+            distance: 0
+        )
+    }
+
+    private var rowOpacity: Double {
+        guard isSynchronized else { return 1 }
+        let factor = max(0.15, min(1, preferences.opacity / 0.85))
+        if isActive { return 1 }
+        if clampedDistance <= 0 { return 0.58 }
+        switch clampedDistance {
+        case 1: return 0.44 * factor
+        case 2: return 0.24 * factor
+        default: return max(0.14, (0.22 - Double(clampedDistance - 3) * 0.025) * factor)
+        }
+    }
+
+    private var rowBlur: CGFloat {
+        guard isSynchronized, clampedDistance > 1 else { return 0 }
+        switch clampedDistance {
+        case 2: return 0.2
+        default: return min(0.6, 0.2 + CGFloat(clampedDistance - 2) * 0.1)
+        }
+    }
+
+    var body: some View {
+        AppleMusicImmersiveV3LyricRowContent(
+            line: line,
+            isActive: isActive,
+            isAdjacent: isSynchronized && distance == 1,
+            isNearActive: !isSynchronized || distance <= 1,
+            isSynchronized: isSynchronized,
+            availableWidth: availableWidth,
+            compact: compact,
+            preferences: preferences,
+            language: language,
+            trackStableKey: trackStableKey,
+            artistDisplay: artistDisplay,
+            presentationClock: presentationClock,
+            scriptConversion: settings.readingPreferences.scriptConversion,
+            dictionaryRevision: ReadingUserDictionaryStore.currentRevision,
+            presentationScale: presentationScale,
+            textAlignment: textAlignment
+        )
+        .equatable()
+        .offset(x: CGFloat(agentPresentationMap.horizontalOffset(for: line.performerID)))
+        .opacity(rowOpacity)
+        .blur(radius: reduceMotion ? 0 : rowBlur)
+        .animation(nil, value: isActive)
+        .animation(nil, value: layoutSignature)
+    }
+}
+
+private struct AppleMusicImmersiveV3LyricRowContent: View, Equatable {
+    let line: LyricLine
+    let isActive: Bool
+    let isAdjacent: Bool
+    let isNearActive: Bool
+    let isSynchronized: Bool
+    let availableWidth: CGFloat
+    let compact: Bool
+    let preferences: DisplayPreferences
+    let language: String?
+    let trackStableKey: String?
+    let artistDisplay: String?
+    var presentationClock: LyricsPresentationClock = LyricsPresentationClock()
+    let scriptConversion: ScriptConversionID
+    let dictionaryRevision: Int
+    let presentationScale: CGFloat
+    let textAlignment: TextAlignment
+    @EnvironmentObject private var settings: AppSettingsStore
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.rubyCorrectionAction) private var correctRuby
+
+    static func == (lhs: AppleMusicImmersiveV3LyricRowContent, rhs: AppleMusicImmersiveV3LyricRowContent) -> Bool {
+        lhs.line == rhs.line
+            && lhs.isActive == rhs.isActive
+            && lhs.isAdjacent == rhs.isAdjacent
+            && lhs.isNearActive == rhs.isNearActive
+            && lhs.isSynchronized == rhs.isSynchronized
+            && lhs.availableWidth == rhs.availableWidth
+            && lhs.compact == rhs.compact
+            && lhs.preferences == rhs.preferences
+            && lhs.language == rhs.language
+            && lhs.trackStableKey == rhs.trackStableKey
+            && lhs.artistDisplay == rhs.artistDisplay
+            && lhs.scriptConversion == rhs.scriptConversion
+            && lhs.dictionaryRevision == rhs.dictionaryRevision
+            && lhs.presentationScale == rhs.presentationScale
+            && lhs.textAlignment == rhs.textAlignment
+    }
 
     private var layerCount: Int {
         let hasPinyin = isPinyinProjection && preferences.showPinyin
@@ -2062,7 +2640,7 @@ private struct AppleMusicImmersiveV3LyricRow: View {
         guard isSynchronized else {
             return min((compact ? 30 : 36) * presentationScale, activeBaseSize)
         }
-        return isActive ? activeBaseSize : max(compact ? 20 : 24, activeBaseSize * (distance == 1 ? 0.93 : 0.88))
+        return activeBaseSize
     }
 
     private var rubySize: CGFloat {
@@ -2074,16 +2652,11 @@ private struct AppleMusicImmersiveV3LyricRow: View {
     }
 
     private var shouldShowRuby: Bool {
-        guard preferences.kanaDisplayMode == .inlineRuby else { return false }
-        guard isSynchronized else { return true }
-        return !preferences.hideDistantAuxiliary || distance <= 1
+        preferences.kanaDisplayMode == .inlineRuby
     }
 
     private var shouldShowKana: Bool {
-        guard preferences.kanaDisplayMode != .hidden,
-              displayKanaText?.isEmpty == false else { return false }
-        guard isSynchronized else { return true }
-        return distance <= 1
+        preferences.kanaDisplayMode != .hidden && displayKanaText?.isEmpty == false
     }
 
     private var storedKanaText: String? {
@@ -2095,33 +2668,54 @@ private struct AppleMusicImmersiveV3LyricRow: View {
     }
 
     private var rubyPresentation: JapaneseRubyPresentation {
-        V3JapaneseReadingCache.presentation(for: line, language: language,
-            userEntries: settings.readingUserDictionary.load(), trackStableKey: trackStableKey, artistDisplay: artistDisplay)
+        guard !effectiveOriginalText.isEmpty,
+              LyricsLanguageGate.containsJapaneseSurface(effectiveOriginalText) || isPinyinProjection else {
+            return JapaneseRubyPresentation(originalText: effectiveOriginalText, reading: nil)
+        }
+        return V3JapaneseReadingCache.resolvedPresentation(
+            for: line,
+            language: language,
+            userEntries: settings.readingUserDictionary.load(),
+            trackStableKey: trackStableKey,
+            artistDisplay: artistDisplay,
+            scriptConversion: scriptConversion
+        )
     }
 
     private var displayKanaText: String? { rubyPresentation.kanaText }
 
     private var effectiveOriginalText: String {
-        line.readingSurfaceText ?? line.originalText
+        let base = line.readingSurfaceText ?? line.originalText
+        if scriptConversion != .none {
+            return ReadingScriptConverter.convert(base, using: scriptConversion)
+        }
+        return base
     }
 
     private var readableLineWidth: CGFloat {
         min(max(240, availableWidth), LyricsDesignTokens.readableLyricLineMaxWidth * presentationScale)
     }
 
+    fileprivate static let balancedTextCache: NSCache<NSString, NSString> = {
+        let cache = NSCache<NSString, NSString>()
+        cache.countLimit = 1024
+        return cache
+    }()
+
     private var semanticDisplayText: String {
-        let key = V3TimedLayoutCache.key(kind: "balancedPlain", line: line, fontSize: baseSize, weight: rowWeight.nsWeightValue, availableWidth: readableLineWidth)
+        let key = V3TimedLayoutCache.key(
+            kind: "balancedPlain",
+            line: line,
+            fontSize: baseSize,
+            weight: V3LyricMotionPolicy.layoutNSWeight,
+            availableWidth: readableLineWidth,
+            scriptConversion: scriptConversion
+        )
         if let cached = Self.balancedTextCache.object(forKey: key as NSString) { return cached as String }
-        let text = V3LyricDisplayLineBreaker.breakText(effectiveOriginalText, fontSize: baseSize, weight: rowWeight.nsWeightValue, availableWidth: readableLineWidth)
+        let text = V3LyricDisplayLineBreaker.breakText(effectiveOriginalText, fontSize: baseSize, weight: V3LyricMotionPolicy.layoutNSWeight, availableWidth: readableLineWidth)
         Self.balancedTextCache.setObject(text as NSString, forKey: key as NSString)
         return text
     }
-
-    private static let balancedTextCache: NSCache<NSString, NSString> = {
-        let cache = NSCache<NSString, NSString>()
-        cache.countLimit = 256
-        return cache
-    }()
 
     private var isPinyinProjection: Bool {
         guard let representation = line.readingRepresentationID else { return false }
@@ -2131,20 +2725,21 @@ private struct AppleMusicImmersiveV3LyricRow: View {
     private var inlineRubyTokens: [LyricRubyToken]? { rubyPresentation.rubyTokens }
 
     private var shouldRenderInlineRuby: Bool {
-        preferences.showOriginal && shouldShowRuby && rubyPresentation.hasRuby
+        preferences.showOriginal && shouldShowRuby && rubyPresentation.hasRuby && (isPinyinProjection ? preferences.showPinyin : true)
     }
 
     private var distinctRomaji: String? {
         if isPinyinProjection {
             guard preferences.showPinyin,
-                  let pinyin = line.romajiText?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  preferences.kanaDisplayMode != .inlineRuby,
+                  let pinyin = (line.romajiText ?? rubyPresentation.romajiText)?.trimmingCharacters(in: .whitespacesAndNewlines),
                   !pinyin.isEmpty else { return nil }
             return pinyin
         }
 
         guard preferences.showRomaji,
               LyricsLanguageGate.allowsJapaneseReadings(language: language, text: effectiveOriginalText),
-              let romaji = line.romajiText?.trimmingCharacters(in: .whitespacesAndNewlines),
+              let romaji = (line.romajiText ?? rubyPresentation.romajiText)?.trimmingCharacters(in: .whitespacesAndNewlines),
               !romaji.isEmpty else { return nil }
         // A malformed provider payload sometimes repeats the kana layer in
         // `romajiText`. Do not show the same reading twice in independent-line
@@ -2163,68 +2758,27 @@ private struct AppleMusicImmersiveV3LyricRow: View {
     }
 
     private var shouldShowRomaji: Bool {
-        guard isPinyinProjection ? preferences.showPinyin : preferences.showRomaji else { return false }
-        guard isSynchronized else { return true }
-        return !preferences.hideDistantAuxiliary || distance <= 1
+        isPinyinProjection ? preferences.showPinyin : preferences.showRomaji
     }
 
     private var rubyOpacity: Double {
         let factor = max(0.15, min(1, preferences.opacity / 0.85))
+        if preferences.hideDistantAuxiliary && isSynchronized && !isNearActive { return 0 }
         if isActive { return 0.88 * factor }
-        if !isSynchronized || distance <= 1 { return 0.68 * factor }
+        if !isSynchronized || isAdjacent { return 0.68 * factor }
         return 0.48 * factor
     }
 
     private var romajiOpacity: Double {
         let factor = max(0.15, min(1, preferences.opacity / 0.85))
-        guard isSynchronized, distance == 1 else { return 0.65 * factor }
+        if preferences.hideDistantAuxiliary && isSynchronized && !isNearActive { return 0 }
+        guard isSynchronized, isAdjacent else { return 0.65 * factor }
         return 0.48 * factor
-    }
-
-    private var rowOpacity: Double {
-        guard isSynchronized else { return 1 }
-        let factor = max(0.15, min(1, preferences.opacity / 0.85))
-        if isActive { return 1 }
-        if distance <= 0 { return 0.58 }
-        switch distance {
-        case 1: return 0.44 * factor
-        case 2: return 0.24 * factor
-        default: return max(0.14, (0.22 - Double(distance - 3) * 0.025) * factor)
-        }
-    }
-
-    private var rowBlur: CGFloat {
-        guard isSynchronized, distance > 1 else { return 0 }
-        switch distance {
-        case 2: return 0.2
-        default: return min(0.6, 0.2 + CGFloat(distance - 2) * 0.1)
-        }
     }
 
     private var rowWeight: Font.Weight {
         guard isSynchronized else { return .regular }
-        if isActive { return .heavy }
-        if distance == 1 { return .semibold }
-        return .regular
-    }
-
-    private var layoutSignature: LyricsLayoutSignature {
-        // Distance and active state are focus handoff state, not a layout
-        // reflow. Keep them out of the animation value so the new line's
-        // weight, opacity and blur change on the first frame. Preference and
-        // content changes still use the established soft relayout animation.
-        LyricsTransitionPolicy.signature(
-            line: line,
-            preferences: preferences,
-            availableWidth: availableWidth,
-            visibleLayerCount: layerCount,
-            isSynchronized: isSynchronized,
-            distance: 0
-        )
-    }
-
-    private var transitionAnimation: Animation? {
-        LyricsTransitionPolicy.animation(reduceMotion: reduceMotion)
+        return V3LyricMotionPolicy.layoutWeight
     }
 
     private var isInstrumentalLine: Bool {
@@ -2263,29 +2817,15 @@ private struct AppleMusicImmersiveV3LyricRow: View {
                     layout: line.timedSpans.flatMap { precomputedTimedRubyLayout(for: line, spans: $0) }
                 )
                 #endif
-                if isActive, let timedSpans = line.timedSpans, !timedSpans.isEmpty,
+                if let timedSpans = line.timedSpans, !timedSpans.isEmpty,
                    let rubyLayout = precomputedTimedRubyLayout(for: line, spans: timedSpans) {
                     #if DEBUG
                     let _ = Self.logRowModeIfNeeded(mode: "timedRuby", width: readableLineWidth, lineWidth: 0)
                     #endif
-                    TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: !presentationClock.isPlaying)) { _ in
-                        let presentationTime = presentationClock.presentationTime(at: ProcessInfo.processInfo.systemUptime)
-                        RubyLineView(
-                            originalText: effectiveOriginalText,
-                            kanaText: kana,
-                            tokens: inlineRubyTokens,
-                            timedLayout: rubyLayout,
-                            currentTime: presentationTime,
-                            baseFont: .system(size: baseSize, weight: rowWeight, design: .rounded),
-                            rubyFont: .system(size: rubySize, weight: .regular, design: .rounded),
-                            baseColor: .white,
-                            rubyColor: .white.opacity(rubyOpacity),
-                            rubySpacing: 1,
-                            tokenVerticalSpacing: 3,
-                            maxWidth: readableLineWidth
-                        )
-                    }
-                    .fixedSize(horizontal: false, vertical: true)
+                    timedRubyView(
+                        kana: kana,
+                        rubyLayout: rubyLayout
+                    )
                 } else {
                     #if DEBUG
                     if isActive {
@@ -2304,6 +2844,7 @@ private struct AppleMusicImmersiveV3LyricRow: View {
                         tokenVerticalSpacing: 3,
                         maxWidth: readableLineWidth
                     )
+                    .environment(\.rubyCorrectionAction, isPinyinProjection ? nil : correctRuby)
                 }
             } else if preferences.showOriginal, preferences.kanaDisplayMode == .kanaReplacement, shouldShowKana,
                       let kana = displayKanaText {
@@ -2330,21 +2871,13 @@ private struct AppleMusicImmersiveV3LyricRow: View {
                     layout: nil
                 )
                 #endif
-                if isActive, let timedSpans = line.timedSpans, !timedSpans.isEmpty,
+                if let timedSpans = line.timedSpans, !timedSpans.isEmpty,
                    let layout = precomputedTimedMultilineLayout(for: line, spans: timedSpans) {
                     #if DEBUG
                     let modeName = layout.isSingleLine ? "fineTiming" : "fineTimingMultiline"
                     let _ = Self.logRowModeIfNeeded(mode: modeName, width: readableLineWidth, lineWidth: layout.maxLineWidth)
                     #endif
-                    TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: !presentationClock.isPlaying)) { _ in
-                        let presentationTime = presentationClock.presentationTime(at: ProcessInfo.processInfo.systemUptime)
-                        AppleMusicImmersiveV3TimedRowView(
-                            layout: layout,
-                            currentTime: presentationTime,
-                            font: .system(size: baseSize, weight: rowWeight, design: .rounded)
-                        )
-                    }
-                    .fixedSize(horizontal: false, vertical: true)
+                    timedOriginalView(layout: layout)
                 } else {
                     #if DEBUG
                     if isActive {
@@ -2394,31 +2927,100 @@ private struct AppleMusicImmersiveV3LyricRow: View {
         .multilineTextAlignment(textAlignment)
         .frame(width: readableLineWidth, alignment: textAlignment.lyricFrameAlignment)
         .fixedSize(horizontal: false, vertical: true)
-        .offset(x: CGFloat(agentPresentationMap.horizontalOffset(for: line.performerID)))
-        .opacity(rowOpacity)
-        .blur(radius: reduceMotion ? 0 : rowBlur)
-        .animation(nil, value: isActive)
-        .animation(
-            transitionAnimation,
-            value: layoutSignature
-        )
+    }
+
+    @ViewBuilder
+    private func timedOriginalView(layout: TimedMultilineLayout) -> some View {
+        let font = Font.system(size: baseSize, weight: rowWeight, design: .rounded)
+        if isActive {
+            TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: !presentationClock.isPlaying)) { _ in
+                let presentationTime = presentationClock.presentationTime(at: ProcessInfo.processInfo.systemUptime)
+                AppleMusicImmersiveV3TimedRowView(
+                    layout: layout,
+                    currentTime: presentationTime,
+                    font: font,
+                    showsFill: isActive
+                )
+            }
+            .fixedSize(horizontal: false, vertical: true)
+        } else {
+            AppleMusicImmersiveV3TimedRowView(
+                layout: layout,
+                currentTime: 0,
+                font: font,
+                showsFill: isActive
+            )
+            .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    @ViewBuilder
+    private func timedRubyView(kana: String, rubyLayout: TimedRubyLayout) -> some View {
+        let baseFont = Font.system(size: baseSize, weight: rowWeight, design: .rounded)
+        let rubyFont = Font.system(size: rubySize, weight: .regular, design: .rounded)
+        if isActive {
+            TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: !presentationClock.isPlaying)) { _ in
+                let presentationTime = presentationClock.presentationTime(at: ProcessInfo.processInfo.systemUptime)
+                RubyLineView(
+                    originalText: effectiveOriginalText,
+                    kanaText: kana,
+                    tokens: inlineRubyTokens,
+                    timedLayout: rubyLayout,
+                    currentTime: presentationTime,
+                    baseFont: baseFont,
+                    rubyFont: rubyFont,
+                    baseColor: .white,
+                    rubyColor: .white.opacity(rubyOpacity),
+                    rubySpacing: 1,
+                    tokenVerticalSpacing: 3,
+                    maxWidth: readableLineWidth
+                )
+                .environment(\.rubyCorrectionAction, isPinyinProjection ? nil : correctRuby)
+            }
+            .fixedSize(horizontal: false, vertical: true)
+        } else {
+            RubyLineView(
+                originalText: effectiveOriginalText,
+                kanaText: kana,
+                tokens: inlineRubyTokens,
+                timedLayout: rubyLayout,
+                currentTime: 0,
+                baseFont: baseFont,
+                rubyFont: rubyFont,
+                baseColor: .white,
+                rubyColor: .white.opacity(rubyOpacity),
+                rubySpacing: 1,
+                tokenVerticalSpacing: 3,
+                maxWidth: readableLineWidth,
+                unplayedOpacity: 1
+            )
+            .environment(\.rubyCorrectionAction, isPinyinProjection ? nil : correctRuby)
+            .fixedSize(horizontal: false, vertical: true)
+        }
     }
 
     private func precomputedTimedMultilineLayout(for line: LyricLine, spans: [TimedTextSpan]) -> TimedMultilineLayout? {
         let fontSize = baseSize
-        let weight = rowWeight.nsWeightValue
+        let weight = V3LyricMotionPolicy.layoutNSWeight
         let width = readableLineWidth
         let key = V3TimedLayoutCache.key(
             kind: "multiline",
             line: line,
             fontSize: fontSize,
             weight: weight,
-            availableWidth: width
+            availableWidth: width,
+            scriptConversion: scriptConversion
         )
         return V3TimedLayoutCache.multiline(for: key) {
-            TimedTextComposer.computeMultilineLayout(
+            let effectiveSpans = ReadingScriptConverter.convertSpans(
+                spans,
                 originalText: line.originalText,
-                spans: spans,
+                convertedText: effectiveOriginalText,
+                using: scriptConversion
+            ) ?? spans
+            return TimedTextComposer.computeMultilineLayout(
+                originalText: effectiveOriginalText,
+                spans: effectiveSpans,
                 fontSize: fontSize,
                 weight: weight,
                 design: "rounded",
@@ -2430,17 +3032,24 @@ private struct AppleMusicImmersiveV3LyricRow: View {
 
     private func precomputedTimedRubyLayout(for line: LyricLine, spans: [TimedTextSpan]) -> TimedRubyLayout? {
         let fontSize = baseSize
-        let weight = rowWeight.nsWeightValue
+        let weight = V3LyricMotionPolicy.layoutNSWeight
         let rubyTokens = inlineRubyTokens
         let key = V3TimedLayoutCache.key(
             kind: "ruby",
             line: line,
             fontSize: fontSize,
             weight: weight,
-            rubyTokens: rubyTokens
+            rubyTokens: rubyTokens,
+            scriptConversion: scriptConversion
         )
         return V3TimedLayoutCache.ruby(for: key) {
-            rubyPresentation.timedLayout(spans: spans, fontSize: fontSize, weight: weight)
+            let effectiveSpans = ReadingScriptConverter.convertSpans(
+                spans,
+                originalText: line.originalText,
+                convertedText: effectiveOriginalText,
+                using: scriptConversion
+            ) ?? spans
+            return rubyPresentation.timedLayout(spans: effectiveSpans, fontSize: fontSize, weight: weight)
         }
     }
 
@@ -2480,6 +3089,7 @@ private struct AppleMusicImmersiveV3TimedRowView: View {
     let layout: TimedMultilineLayout
     let currentTime: TimeInterval
     let font: Font
+    var showsFill: Bool = true
 
     var body: some View {
         #if DEBUG
@@ -2488,13 +3098,25 @@ private struct AppleMusicImmersiveV3TimedRowView: View {
         #endif
 
         if layout.isSingleLine, let singleLine = layout.lines.first {
-            let fraction = singleLine.fillFraction(at: currentTime)
-            Text(singleLine.text)
+            timedVisualLine(singleLine.text, fraction: singleLine.fillFraction(at: currentTime))
+        } else {
+            VStack(alignment: textAlignment.lyricHorizontalAlignment, spacing: 0) {
+                ForEach(layout.lines, id: \.lineIndex) { visualLine in
+                    timedVisualLine(visualLine.text, fraction: visualLine.fillFraction(at: currentTime))
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func timedVisualLine(_ text: String, fraction: Double) -> some View {
+        if showsFill {
+            Text(text)
                 .font(font)
                 .foregroundColor(.white.opacity(0.42))
                 .overlay(
                     GeometryReader { geo in
-                        Text(singleLine.text)
+                        Text(text)
                             .font(font)
                             .foregroundColor(.white)
                             .frame(width: geo.size.width, height: geo.size.height, alignment: .leading)
@@ -2508,29 +3130,9 @@ private struct AppleMusicImmersiveV3TimedRowView: View {
                     }
                 )
         } else {
-            VStack(alignment: textAlignment.lyricHorizontalAlignment, spacing: 0) {
-                ForEach(layout.lines, id: \.lineIndex) { visualLine in
-                    let fraction = visualLine.fillFraction(at: currentTime)
-                    Text(visualLine.text)
-                        .font(font)
-                        .foregroundColor(.white.opacity(0.42))
-                        .overlay(
-                            GeometryReader { geo in
-                                Text(visualLine.text)
-                                    .font(font)
-                                    .foregroundColor(.white)
-                                    .frame(width: geo.size.width, height: geo.size.height, alignment: .leading)
-                                    .mask(alignment: .leading) {
-                                        Rectangle()
-                                            .frame(
-                                                width: max(0, geo.size.width * CGFloat(fraction)),
-                                                height: geo.size.height
-                                            )
-                                    }
-                            }
-                        )
-                }
-            }
+            Text(text)
+                .font(font)
+                .foregroundColor(.white)
         }
     }
 
@@ -2561,56 +3163,22 @@ private extension Font.Weight {
 private struct V3LyricsTimePopover: View {
     @ObservedObject var settings: AppSettingsStore
 
-    private var offset: Double {
-        min(10, max(-10, settings.lyricsPresentationOffset))
-    }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("歌词时间")
                 .font(.headline)
 
-            HStack(spacing: 8) {
-                Button("提前 0.1s") {
-                    adjust(by: -0.1)
-                }
-                .accessibilityIdentifier("lyrics.time.advance")
-
-                Spacer(minLength: 4)
-
-                Text("当前 \(formattedOffset)")
-                    .font(.system(size: 12, design: .rounded).monospacedDigit())
-                    .foregroundStyle(.secondary)
-                    .accessibilityIdentifier("lyrics.time.current")
-
-                Spacer(minLength: 4)
-
-                Button("延后 0.1s") {
-                    adjust(by: 0.1)
-                }
-                .accessibilityIdentifier("lyrics.time.delay")
-            }
+            LyricsPresentationOffsetControl(settings: settings)
 
             Button("恢复默认") {
                 settings.lyricsPresentationOffset = 0
             }
             .accessibilityIdentifier("lyrics.time.reset")
-
-            Text("只影响歌词显示、自动滚动和逐字高亮，不改变播放进度。")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            .font(.system(size: 11, design: .rounded))
+            .foregroundStyle(.secondary)
         }
         .padding(18)
-        .frame(width: 320)
-    }
-
-    private var formattedOffset: String {
-        String(format: "%+.2f", offset) + "s"
-    }
-
-    private func adjust(by delta: Double) {
-        settings.lyricsPresentationOffset = min(10, max(-10, offset + delta))
+        .frame(width: 340)
     }
 }
 

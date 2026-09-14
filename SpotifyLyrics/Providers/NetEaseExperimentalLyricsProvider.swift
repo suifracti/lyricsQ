@@ -123,7 +123,8 @@ public final class NetEaseExperimentalLyricsProvider: LyricsProvider, @unchecked
             URLQueryItem(name: "id", value: String(songID)),
             URLQueryItem(name: "lv", value: "1"),
             URLQueryItem(name: "kv", value: "1"),
-            URLQueryItem(name: "tv", value: "-1")
+            URLQueryItem(name: "tv", value: "-1"),
+            URLQueryItem(name: "yv", value: "1")
         ]
         var request = URLRequest(url: components.url!)
         request.setValue("https://music.163.com/", forHTTPHeaderField: "Referer")
@@ -137,8 +138,13 @@ public final class NetEaseExperimentalLyricsProvider: LyricsProvider, @unchecked
         let decoded = try JSONDecoder().decode(NetEaseLyricResponse.self, from: data)
         let lrc = decoded.lrc?.lyric?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let tlyric = decoded.tlyric?.lyric?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        if lrc.isEmpty { return nil }
-        return NetEaseLyricPayload(lrc: lrc, tlyric: tlyric.isEmpty ? nil : tlyric)
+        let yrc = decoded.yrc?.lyric?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if lrc.isEmpty && yrc.isEmpty { return nil }
+        return NetEaseLyricPayload(
+            lrc: lrc,
+            tlyric: tlyric.isEmpty ? nil : tlyric,
+            yrc: yrc.isEmpty ? nil : yrc
+        )
     }
 
     private func parse(
@@ -147,6 +153,27 @@ public final class NetEaseExperimentalLyricsProvider: LyricsProvider, @unchecked
         song: NetEaseSong,
         identity: TrackIdentity
     ) -> LyricsDocument? {
+        if let yrcContent = lyric.yrc,
+           let yrcDoc = YRCParser.parse(yrcContent, identity: identity, source: .neteaseExperimental) {
+            let lines = TimedLyricsCompanionMerger.merge(
+                lyric.tlyric,
+                into: yrcDoc.lines,
+                layer: .translation
+            )
+            return LyricsDocument(
+                identity: identity,
+                title: song.name,
+                artist: song.artists.joined(separator: ", "),
+                album: song.album,
+                duration: song.duration,
+                lines: lines,
+                isSynchronized: yrcDoc.isSynchronized,
+                source: .neteaseExperimental,
+                confidence: score(song: song, track: track),
+                providerSourceID: "netease:\(song.id)"
+            )
+        }
+
         if let synced = LRCParser.parse(
             lyric.lrc,
             identity: identity,
@@ -224,6 +251,7 @@ private struct NetEaseSong {
 private struct NetEaseLyricPayload {
     let lrc: String
     let tlyric: String?
+    let yrc: String?
 }
 
 private struct NetEaseSearchResponse: Decodable {
@@ -258,6 +286,7 @@ private struct NetEaseAlbumDTO: Decodable { let name: String? }
 private struct NetEaseLyricResponse: Decodable {
     let lrc: NetEaseLyricLine?
     let tlyric: NetEaseLyricLine?
+    let yrc: NetEaseLyricLine?
 }
 
 private struct NetEaseLyricLine: Decodable {

@@ -24,22 +24,48 @@ require_file() {
   fi
 }
 
+forbid_view() {
+  local pattern="$1"
+  local label="$2"
+  if grep -Eq "$pattern" "$VIEW"; then
+    echo "FAIL: $label (found /$pattern/)" >&2
+    exit 1
+  fi
+}
+
 require_file "$TOKENS" 'enum LyricsTransitionStyle' 'shared lyric transition policy'
-require_view 'LyricsTransitionPolicy\.animation\(reduceMotion: reduceMotion\)' 'lyric animation source'
+require_file "$TOKENS" 'enum V3LyricMotionPolicy' 'V3 motion policy is explicit'
+require_file "$TOKENS" 'static let followDuration: Double = 0.40' 'V3 line follow is 0.40s'
+require_file "$TOKENS" 'static let layoutWeight: Font.Weight = \.semibold' 'V3 wrap weight is independent of the active row'
+require_file "$TOKENS" 'static func followAnimation' 'V3 follow animation is policy-owned'
 require_file "$TOKENS" 'smoothRelayoutV1' 'smooth lyric transition preset'
 require_file "$TOKENS" 'lyricDuration' 'dedicated lyric transition duration'
-require_view 'onChange\(of: currentIndex\)' 'current-line transition trigger'
-require_view 'private var v3LineFollowAnimation' 'V3 uses a dedicated short follow animation'
-require_view 'withAnimation\(v3LineFollowAnimation, action\)' 'scroll follows the already-published active line'
-require_view '\.easeOut\(duration: 0\.12\)' 'V3 line follow has no spring overshoot and stays short'
 
-if grep -q 'value: state\.liveCurrentLineIndex' "$VIEW"; then
+require_view 'onChange\(of: currentIndex\)' 'current-line transition trigger'
+require_view 'private var v3LineFollowAnimation' 'V3 uses a dedicated follow animation'
+require_view 'V3LyricMotionPolicy\.followAnimation' 'V3 follow uses the isolated motion policy'
+require_view 'DispatchQueue\.main\.async' 'scroll animation is deferred off the layout transaction'
+require_view 'withAnimation\(v3LineFollowAnimation' 'scroll follows the already-published active line'
+
+forbid_view '\.easeOut\(duration: 0\.12\)' 'V3 line follow must not use the old 0.12s easeOut yank'
+
+if grep -q 'value: state.liveCurrentLineIndex' "$VIEW"; then
   echo 'FAIL: V3 lyric stack still animates the entire document on every current-line update' >&2
   exit 1
 fi
 
 if ! grep -qF '.animation(nil, value: isActive)' "$VIEW"; then
-  echo 'FAIL: V3 active-line handoff must be immediate' >&2
+  echo 'FAIL: V3 active-line handoff must not interpolate layout' >&2
+  exit 1
+fi
+
+if ! grep -qF '.animation(nil, value: layoutSignature)' "$VIEW"; then
+  echo 'FAIL: V3 wrap/layout signature must not interpolate' >&2
+  exit 1
+fi
+
+if grep -qF '.animation(transitionAnimation, value: layoutSignature)' "$VIEW"; then
+  echo 'FAIL: V3 still interpolates wrap through layoutSignature' >&2
   exit 1
 fi
 
