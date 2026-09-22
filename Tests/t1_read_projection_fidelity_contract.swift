@@ -437,7 +437,14 @@ struct T1ReadProjectionFidelityContract {
         await MainActor.run {
             session.adoptPersisted(document: loaded.document, versionID: versionID, sourceContentHash: sourceHash)
         }
-        try await assertSessionOverlay(session, sourceHash: sourceHash, expectedSpans: spans, timingID: timingID)
+        try await assertSessionOverlay(
+            session,
+            track: track,
+            identity: identity,
+            sourceHash: sourceHash,
+            expectedSpans: spans,
+            timingID: timingID
+        )
 
         // Repeat repository loads and switch session identity through the
         // untimed sibling version before entering the editor draft.
@@ -456,7 +463,14 @@ struct T1ReadProjectionFidelityContract {
         await MainActor.run {
             session.adoptPersisted(document: loadedAgain.document, versionID: versionID, sourceContentHash: sourceHash)
         }
-        try await assertSessionOverlay(session, sourceHash: sourceHash, expectedSpans: spans, timingID: timingID)
+        try await assertSessionOverlay(
+            session,
+            track: track,
+            identity: identity,
+            sourceHash: sourceHash,
+            expectedSpans: spans,
+            timingID: timingID
+        )
 
         let editor = await makeEditor(
             repository: repository,
@@ -650,12 +664,23 @@ struct T1ReadProjectionFidelityContract {
 
     private static func assertSessionOverlay(
         _ session: LyricsSessionController,
+        track: Track,
+        identity: TrackIdentity,
         sourceHash: String,
         expectedSpans: [TimedTextSpan],
         timingID: UUID
     ) async throws {
         try await MainActor.run {
             guard let document = session.activeDocument,
+                  document.identity == identity,
+                  session.activeIdentity == identity,
+                  document.title == track.title,
+                  document.artist == track.artist,
+                  document.album == track.album,
+                  document.duration == track.duration,
+                  document.source == .neteaseExperimental,
+                  document.confidence == 1,
+                  document.providerSourceID == "t1-authoritative-provider-source",
                   document.lines.first?.originalText == "今日🌸今日",
                   document.lines.first?.timestamp == 0,
                   document.lines.first?.endTime == 4,
@@ -698,6 +723,7 @@ struct T1ReadProjectionFidelityContract {
                   draft.artist == track.artist,
                   draft.album == track.album,
                   draft.duration == track.duration,
+                  draft.source == .neteaseExperimental,
                   line.startTime == 0,
                   line.endTime == 4,
                   line.translationText == "同一版本译文",
