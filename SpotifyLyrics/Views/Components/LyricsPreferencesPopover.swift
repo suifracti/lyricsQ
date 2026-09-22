@@ -136,8 +136,8 @@ struct LyricsPresentationOffsetControl: View {
                     .foregroundStyle(LyricsDesignTokens.secondaryText)
             }
             HStack(spacing: 6) {
-                Button("提前 0.10s") { adjust(-0.1) }
-                Button("延后 0.10s") { adjust(0.1) }
+                Button("提前 0.10s") { adjust(0.1) }
+                Button("延后 0.10s") { adjust(-0.1) }
                 TextField("秒", text: $input)
                     .textFieldStyle(.roundedBorder)
                     .frame(width: 66)
@@ -146,7 +146,7 @@ struct LyricsPresentationOffsetControl: View {
                     .disabled(abs(offset) < 0.0001)
             }
             .font(.system(size: 11, design: .rounded))
-            Text("只影响当前歌词的显示、自动滚动和逐字高亮，不改变播放进度。")
+            Text("正值让歌词提前出现，负值让歌词延后出现；只影响歌词显示、自动滚动和逐字高亮，不改变播放进度。")
                 .font(.system(size: 10, design: .rounded))
                 .foregroundStyle(LyricsDesignTokens.mutedText)
                 .fixedSize(horizontal: false, vertical: true)
@@ -157,7 +157,7 @@ struct LyricsPresentationOffsetControl: View {
 
     private var label: String {
         if abs(offset) < 0.005 { return "0.00s" }
-        return offset < 0 ? "提前 \(String(format: "%.2f", abs(offset)))s" : "延后 \(String(format: "%.2f", offset))s"
+        return offset > 0 ? "提前 \(String(format: "%.2f", offset))s" : "延后 \(String(format: "%.2f", abs(offset)))s"
     }
 
     private func adjust(_ delta: Double) {

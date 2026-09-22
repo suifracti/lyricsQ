@@ -1122,15 +1122,15 @@ private struct AppleMusicImmersiveV3PlaybackProgress: View {
         max(0.1, state.currentTrack.duration)
     }
 
-    private var visiblePosition: Double {
-        let rawValue = draftPosition ?? state.presentationClock.presentationTime(
+    private var playbackPosition: Double {
+        let rawValue = draftPosition ?? state.presentationClock.playbackTime(
             at: ProcessInfo.processInfo.systemUptime
         )
         return min(max(rawValue, 0), duration)
     }
 
     private var progressFraction: Double {
-        min(max(visiblePosition / duration, 0), 1)
+        min(max(playbackPosition / duration, 0), 1)
     }
 
     private var isEmphasized: Bool { isHovered || isEditing }
@@ -1198,7 +1198,7 @@ private struct AppleMusicImmersiveV3PlaybackProgress: View {
                 // quiet without introducing a second seek implementation.
                 V3PlaybackInputSlider(
                     value: Binding(
-                        get: { visiblePosition },
+                        get: { playbackPosition },
                         set: { draftPosition = min(max($0, 0), duration) }
                     ),
                     duration: duration,
@@ -1339,7 +1339,7 @@ private struct AppleMusicImmersiveV3TransportControls: View {
             )
 
             HStack {
-                V3PresentationClockLabel(clock: state.presentationClock, isPlaying: state.isPlaying)
+                V3TransportClockLabel(clock: state.presentationClock, isPlaying: state.isPlaying)
                 Spacer()
                 Text(formatTime(state.currentTrack.duration))
             }
@@ -1361,13 +1361,13 @@ private struct AppleMusicImmersiveV3TransportControls: View {
     }
 }
 
-private struct V3PresentationClockLabel: View {
+private struct V3TransportClockLabel: View {
     let clock: LyricsPresentationClock
     let isPlaying: Bool
 
     var body: some View {
         TimelineView(.animation(minimumInterval: 0.25, paused: !isPlaying)) { _ in
-            Text(Self.formatTime(clock.presentationTime(at: ProcessInfo.processInfo.systemUptime)))
+            Text(Self.formatTime(clock.playbackTime(at: ProcessInfo.processInfo.systemUptime)))
         }
     }
 
@@ -1412,7 +1412,7 @@ private struct StageHUDView: View {
             VStack(spacing: 0) {
                 AppleMusicImmersiveV3PlaybackProgress(state: state, density: .small, maxWidth: nil)
                 HStack {
-                    V3PresentationClockLabel(clock: state.presentationClock, isPlaying: state.isPlaying)
+                    V3TransportClockLabel(clock: state.presentationClock, isPlaying: state.isPlaying)
                     Spacer()
                     Text(formatTime(state.currentTrack.duration))
                 }
@@ -1541,7 +1541,7 @@ private struct AppleMusicImmersiveV3FocusTransportControls: View {
             )
 
             HStack(spacing: 4) {
-                V3PresentationClockLabel(clock: state.presentationClock, isPlaying: state.isPlaying)
+                V3TransportClockLabel(clock: state.presentationClock, isPlaying: state.isPlaying)
                 Text("/ \(formatTime(state.currentTrack.duration))")
             }
                 .font(.system(size: 11, weight: .medium, design: .rounded).monospacedDigit())
@@ -1790,7 +1790,10 @@ private struct AppleMusicImmersiveV3LyricsViewport: View {
                         verticalPadding: verticalPadding,
                         isPreview: isPreview,
                         onSeek: { timestamp in
-                            state.seek(to: timestamp, source: "v3-lyric-line")
+                            state.seekFromDisplayedLyrics(
+                                to: timestamp,
+                                source: "v3-lyric-line"
+                            )
                         },
                         onRuby: isPreview ? nil : { surface, reading in
                             let trackKey = state.currentTrackIdentity?.stableKey

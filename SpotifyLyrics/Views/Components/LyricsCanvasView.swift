@@ -226,7 +226,10 @@ struct LyricsCanvasView: View {
                                     duration: state.displayedTrack.duration
                                 ) {
                                     Button {
-                                        state.seek(to: seekTimestamp, source: "lyric-line")
+                                        state.seekFromDisplayedLyrics(
+                                            to: seekTimestamp,
+                                            source: "lyric-line"
+                                        )
                                     } label: {
                                         lyricLineView(
                                             line: line,

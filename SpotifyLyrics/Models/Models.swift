@@ -1166,17 +1166,44 @@ public struct LyricsPresentationClock: Equatable, Sendable {
         self.presentationOffset = min(10, max(-10, presentationOffset.isFinite ? presentationOffset : 0))
     }
 
-    /// Pure monotonic extrapolation of playback position.
+    /// Raw playback-domain extrapolation without the lyrics presentation offset.
     /// Invariant 1: If isPlaying is false, returns authoritativePosition (frozen).
     /// Invariant 2: If isPlaying is true, advances linearly by (now - receivedAtMonotonicTime).
     /// Invariant 3: Clamped to [0, trackDuration] when duration is positive.
-    public func presentationTime(at monotonicNow: TimeInterval) -> TimeInterval {
-        let elapsed = isPlaying ? max(0, monotonicNow - receivedAtMonotonicTime) : 0
-        let estimated = authoritativePosition + elapsed + presentationOffset
+    public func playbackTime(at monotonicNow: TimeInterval) -> TimeInterval {
+        let estimated = estimatedPlaybackTime(at: monotonicNow)
         if trackDuration > 0 {
             return min(trackDuration, max(0, estimated))
         }
         return max(0, estimated)
+    }
+
+    /// Returns an equivalent clock with a different lyric-only offset.
+    /// The playback anchor and transport projection remain unchanged.
+    public func withPresentationOffset(_ offset: TimeInterval) -> LyricsPresentationClock {
+        LyricsPresentationClock(
+            authoritativePosition: authoritativePosition,
+            receivedAtMonotonicTime: receivedAtMonotonicTime,
+            isPlaying: isPlaying,
+            trackID: trackID,
+            trackDuration: trackDuration,
+            presentationOffset: offset
+        )
+    }
+
+    /// Lyric presentation time: raw playback estimate plus the lyric-only
+    /// offset, clamped only after the offset is applied.
+    public func presentationTime(at monotonicNow: TimeInterval) -> TimeInterval {
+        let estimated = estimatedPlaybackTime(at: monotonicNow) + presentationOffset
+        if trackDuration > 0 {
+            return min(trackDuration, max(0, estimated))
+        }
+        return max(0, estimated)
+    }
+
+    private func estimatedPlaybackTime(at monotonicNow: TimeInterval) -> TimeInterval {
+        let elapsed = isPlaying ? max(0, monotonicNow - receivedAtMonotonicTime) : 0
+        return authoritativePosition + elapsed
     }
 }
 

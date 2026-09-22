@@ -311,9 +311,15 @@ public final class PlaybackState: ObservableObject {
             .store(in: &self.settingsCancellables)
         resolvedSettings.$lyricsPresentationOffset
             .dropFirst()
-            .sink { [weak self] _ in
+            .sink { [weak self] newOffset in
                 guard let self else { return }
-                self.syncPublishedLineIndex(source: .presentationOffset)
+                // @Published invokes this closure during its will-set window;
+                // the settings getter may still expose the old value here.
+                // Carry the emitted value explicitly into the lyric projection.
+                self.syncPublishedLineIndex(
+                    source: .presentationOffset,
+                    presentationOffset: newOffset
+                )
                 self.objectWillChange.send()
             }
             .store(in: &self.settingsCancellables)
@@ -468,6 +474,27 @@ public final class PlaybackState: ObservableObject {
     public var currentTrackIdentity: TrackIdentity? {
         guard hasLiveTrack, !isMockPreviewMode else { return nil }
         return lyricsSession.activeIdentity
+    }
+
+    /// A lyric row may seek only when its displayed document belongs to the
+    /// current playback identity. Search preview remains displayable, but it
+    /// must not control another track that is currently playing.
+    public var canSeekDisplayedLyrics: Bool {
+        guard isShowingSearchPreview else { return true }
+        guard let liveTrackIdentity else { return false }
+        return TrackIdentity(track: displayedTrack) == liveTrackIdentity
+    }
+
+    /// Shared lyric-row seek boundary for V3 and the classic canvas. Ordinary
+    /// transport controls continue to use `seek(to:source:)` directly.
+    @discardableResult
+    public func seekFromDisplayedLyrics(
+        to position: TimeInterval,
+        source: String
+    ) -> Bool {
+        guard canSeekDisplayedLyrics else { return false }
+        seek(to: position, source: source)
+        return true
     }
 
     public var translationState: TranslationSessionState { translationSession.state }
@@ -2403,10 +2430,20 @@ public final class PlaybackState: ObservableObject {
     }
 
     private var presentationTimeNow: TimeInterval {
+        presentationTimeNow(usingPresentationOffset: nil)
+    }
+
+    private func presentationTimeNow(usingPresentationOffset offset: TimeInterval?) -> TimeInterval {
         if isMockPreviewMode {
             return currentTime
         }
-        return presentationClock.presentationTime(at: ProcessInfo.processInfo.systemUptime)
+        let clock = presentationClock
+        if let offset {
+            return clock
+                .withPresentationOffset(offset)
+                .presentationTime(at: ProcessInfo.processInfo.systemUptime)
+        }
+        return clock.presentationTime(at: ProcessInfo.processInfo.systemUptime)
     }
 
     private func cancelLineBoundaryWake() {
@@ -2429,11 +2466,12 @@ public final class PlaybackState: ObservableObject {
     private func syncPublishedLineIndex(
         source: LineIndexSource,
         previousTime: TimeInterval? = nil,
-        incomingTime: TimeInterval? = nil
+        incomingTime: TimeInterval? = nil,
+        presentationOffset: TimeInterval? = nil
     ) {
         let lines = liveLyrics
         let synchronized = liveLyricsAreSynchronized
-        let time = incomingTime ?? presentationTimeNow
+        let time = incomingTime ?? presentationTimeNow(usingPresentationOffset: presentationOffset)
         let newIndex = LyricsTimeline.activeLineIndex(
             lines: lines,
             time: time,
