@@ -217,8 +217,8 @@ not presented as human acceptance.
 The production/test change is isolated in commit
 `449df0a6446dd01f250ff84eec34ff87efccf70d`. Reverting that commit removes the
 computed DTO boundary, the three corrected consumers and the H1 contract; no
-schema or data rollback is required. The evidence/status update is a separate
-documentation commit.
+schema or data rollback is required. The evidence/status updates are separate
+documentation-only commits.
 
 H1 stops after this report. No T1 code, plan execution, merge, tag, release or
 historical hash recalculation was started. The next candidate is T1 and

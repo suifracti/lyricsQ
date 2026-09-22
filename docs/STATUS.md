@@ -11,7 +11,7 @@
 - branch：`codex/h1-hash-domain-boundary`（基线 `main @ 87eade3314a595f06adeec7a0a8029790f44756e`）
 - source HEAD（H1 已验证 production commit）：`449df0a6446dd01f250ff84eec34ff87efccf70d` (`fix: separate lyrics source hash domains`)
 - release identity：正式 GitHub Release `v0.1.2`，release commit `6528be3103f75fd4f63757855b9d61cd30f757d8`
-- status last updated：`2026-09-22`
+- status last updated：`2026-09-23`
 - tracked/staged 状态：H1 production 与定向 contract 已提交；H1 evidence/STATUS 文档提交后 tracked/staged diff 应为零。三份既有 `PROJECT_FULL_AUDIT_*.md` 保持 untracked，不纳入 H1 提交。精确 checkout 仍以 `git rev-parse HEAD` 为准；文档提交不改变上述已验证 production commit 身份。
 
 ## Product Boundary
@@ -94,7 +94,7 @@
 
 ## Open Core Risks
 
-以下项目仍按当前 Master Plan / batch ownership 作为未关闭核心项；A0 本轮不判断它们已修复：
+以下项目仍按当前 Master Plan / batch ownership 作为未关闭核心项；H1 本轮不判断它们已修复：
 
 - T1 read/projection fidelity
 - T2 lossless edit/timing
