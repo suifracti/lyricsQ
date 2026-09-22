@@ -496,10 +496,8 @@ public final class LyricsEditorSessionController: ObservableObject {
 
     public func selectTranslation(versionID: UUID) {
         guard let version = availableTranslations.first(where: { $0.record.id == versionID }), version.isComplete,
-              let draft,
-              let baseDoc = draft.document(source: draft.source) else { return }
-        let document = Self.documentByProjecting(version, onto: baseDoc)
-        let replacement = LyricsEditorDraft(document: document, sourceVersionID: draft.sourceVersionID, sourceContentHash: draft.sourceContentHash)
+              let draft else { return }
+        let replacement = Self.draftByProjecting(version, onto: draft)
         self.draft = replacement
         self.selectedTranslation = version
         self.baseTranslationLines = replacement.lines.map(Self.translationText)
@@ -925,6 +923,20 @@ public final class LyricsEditorSessionController: ObservableObject {
             lines[stored.lineIndex].translationText = stored.translatedText
         }
         return document.replacingLines(lines)
+    }
+
+    private static func draftByProjecting(
+        _ translation: StoredTranslationVersion,
+        onto draft: LyricsEditorDraft
+    ) -> LyricsEditorDraft {
+        guard translation.isComplete,
+              translation.lines.count == draft.lines.count else { return draft }
+        var projected = draft
+        for stored in translation.lines where projected.lines.indices.contains(stored.lineIndex) {
+            projected.lines[stored.lineIndex].translationText = stored.translatedText
+        }
+        projected.markSaved()
+        return projected
     }
 
     private static func documentPreservingLineIDs(

@@ -406,12 +406,39 @@ struct T1ReadProjectionFidelityContract {
             createLyricsVersion: false,
             translation: ManualTranslationEdit(targetLanguage: "zh-Hans", lines: ["同一版本译文"])
         ))
+        let initialTranslations = try await repository.loadTranslationVersions(
+            lyricsVersionID: versionID,
+            targetLanguage: "zh-Hans",
+            sourceContentHash: sourceHash
+        )
+        guard let translation = initialTranslations.first(where: {
+            $0.lines.first?.translatedText == "同一版本译文"
+        }) else { throw ContractFailure("translation fixture did not load") }
+        let alternateTranslation = try await repository.saveTranslation(
+            lyricsVersionID: versionID,
+            sourceContentHash: sourceHash,
+            originalLines: [originalText],
+            draft: AITranslationDraft(
+                lines: [AITranslationLine(index: 0, translation: "切换后的译文")],
+                targetLanguage: "zh-Hans",
+                model: "T1 fixture",
+                baseURLHost: "fixture.invalid",
+                promptHash: "t1-alternate-translation",
+                sourceContentHash: sourceHash,
+                isMachineGenerated: false,
+                isManuallyEdited: true
+            ),
+            forceNewVersion: true
+        )
         let translations = try await repository.loadTranslationVersions(
             lyricsVersionID: versionID,
             targetLanguage: "zh-Hans",
             sourceContentHash: sourceHash
         )
-        guard let translation = translations.first else { throw ContractFailure("translation fixture did not load") }
+        guard translations.count == 2,
+              translations.contains(where: { $0.record.id == alternateTranslation.record.id }) else {
+            throw ContractFailure("alternate same-version translation fixture did not load")
+        }
 
         let observer = try ReadOnlyDatabase(url: repository.databaseURL)
         let beforeRead = try observer.snapshot()
@@ -483,14 +510,52 @@ struct T1ReadProjectionFidelityContract {
             selectedTranslation: translation
         )
         try await waitUntil("timed editor versions did not load") { editor.availableVersions.count >= 2 }
-        try await assertEditorOverlay(editor, track: track, sourceHash: sourceHash, expectedSpans: spans, timingID: timingID)
+        try await assertEditorOverlay(
+            editor,
+            track: track,
+            sourceHash: sourceHash,
+            expectedTranslation: "同一版本译文",
+            expectedSpans: spans,
+            timingID: timingID
+        )
+
+        await MainActor.run { editor.selectTranslation(versionID: alternateTranslation.record.id) }
+        try await assertEditorOverlay(
+            editor,
+            track: track,
+            sourceHash: sourceHash,
+            expectedTranslation: "切换后的译文",
+            expectedSpans: spans,
+            timingID: timingID
+        )
+        guard await MainActor.run(body: {
+            editor.selectedTranslation?.record.id == alternateTranslation.record.id && editor.draft?.isDirty == false
+        }) else {
+            throw ContractFailure("translation switch did not adopt the selected clean draft")
+        }
+        await MainActor.run { editor.selectTranslation(versionID: translation.record.id) }
+        try await assertEditorOverlay(
+            editor,
+            track: track,
+            sourceHash: sourceHash,
+            expectedTranslation: "同一版本译文",
+            expectedSpans: spans,
+            timingID: timingID
+        )
 
         // Exercise the real editor's version-switch load and return path too.
         await MainActor.run { editor.selectLyricsVersion(versionID: partialID) }
         try await waitUntil("editor did not switch to untimed sibling") { editor.currentSourceVersionID == partialID }
         await MainActor.run { editor.selectLyricsVersion(versionID: versionID) }
         try await waitUntil("editor did not return to timed version") { editor.currentSourceVersionID == versionID }
-        try await assertEditorOverlay(editor, track: track, sourceHash: sourceHash, expectedSpans: spans, timingID: timingID)
+        try await assertEditorOverlay(
+            editor,
+            track: track,
+            sourceHash: sourceHash,
+            expectedTranslation: "切换后的译文",
+            expectedSpans: spans,
+            timingID: timingID
+        )
 
         let afterRead = try observer.snapshot()
         guard beforeRead == afterRead else {
@@ -706,6 +771,7 @@ struct T1ReadProjectionFidelityContract {
         _ editor: LyricsEditorSessionController,
         track: Track,
         sourceHash: String,
+        expectedTranslation: String,
         expectedSpans: [TimedTextSpan],
         timingID: UUID
     ) async throws {
@@ -726,7 +792,7 @@ struct T1ReadProjectionFidelityContract {
                   draft.source == .neteaseExperimental,
                   line.startTime == 0,
                   line.endTime == 4,
-                  line.translationText == "同一版本译文",
+                  line.translationText == expectedTranslation,
                   line.kanaText == "こんにち",
                   line.romajiText == "konnichi",
                   spans.exists, spans.value == expectedSpans,
@@ -736,7 +802,7 @@ struct T1ReadProjectionFidelityContract {
                   draftSynced == true,
                   draft.sourceVersionID == editor.currentSourceVersionID,
                   draft.sourceContentHash == sourceHash else {
-                throw ContractFailure("editor draft lost locked reading, line timing, spans, performer/language, attachment identity, or source identity")
+                throw ContractFailure("editor draft translation=\(expectedTranslation) lost locked reading, line timing, spans, performer/language, attachment identity, or source identity")
             }
             guard editor.isReadingLocked(lineID: line.id) else {
                 throw ContractFailure("legacy locked-reading state was not retained in the editor")
