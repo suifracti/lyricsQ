@@ -41,13 +41,18 @@ public final class SpotifyScreenCaptureAudioSpike: NSObject, ObservableObject {
     private var playbackCancellables = Set<AnyCancellable>()
     private var activeCaptureGuard: AutomaticLiveCaptureSessionGuard?
     private var captureGeneration: UInt64 = 0
+    private let sampleDeliveryGate = CaptureSampleDeliveryGate()
 
     /// Optional sink for S2 continuity layer. Invoked on the capture queue.
-    nonisolated(unsafe) public var audioSampleHandler: ((CMSampleBuffer) -> Void)?
+    /// The generation is assigned by the coordinator and is invalidated before
+    /// a segment is finalized. It prevents queued samples from being relabeled
+    /// as belonging to a later segment.
+    nonisolated(unsafe) public var audioSampleHandler: ((CMSampleBuffer, UInt64) -> Void)?
 
     private override init() {
         super.init()
         Self.scavengeOrphanTempDirectories()
+        #if DEBUG
         // Prefer S2 auto-start when both envs are set.
         if ProcessInfo.processInfo.environment["SPOTIFYLYRICS_SCK_S2"] == "1" {
             // LiveCaptureCoordinator owns start sequencing.
@@ -59,6 +64,7 @@ public final class SpotifyScreenCaptureAudioSpike: NSObject, ObservableObject {
                 await self.start(autoStopAfter: max(5, seconds))
             }
         }
+        #endif
     }
 
     deinit {
@@ -79,6 +85,21 @@ public final class SpotifyScreenCaptureAudioSpike: NSObject, ObservableObject {
                 }
             }
             .store(in: &playbackCancellables)
+    }
+
+    /// Assign the currently open coordinator segment's sample generation.
+    /// Zero means that no sample may be forwarded to the coordinator.
+    public func setSampleDeliveryGeneration(_ generation: UInt64) {
+        sampleDeliveryGate.setGeneration(generation)
+    }
+
+    /// Invalidate queued callbacks before a segment is closed or a stream is
+    /// replaced. The serial callback queue is drained while the gate is off,
+    /// so a callback already queued before the boundary cannot enter the next
+    /// segment after it is assigned a new generation.
+    public func invalidateSampleDeliveryAndDrain() {
+        sampleDeliveryGate.invalidate()
+        sampleQueue.sync { }
     }
 
     public func start(
@@ -182,6 +203,7 @@ public final class SpotifyScreenCaptureAudioSpike: NSObject, ObservableObject {
             // Audio output only — no screen consumer.
             try stream.addStreamOutput(self, type: .audio, sampleHandlerQueue: sampleQueue)
             self.stream = stream
+            sampleDeliveryGate.activate(stream: stream)
             SCKSpikeLog.log("STREAM configured capturesAudio=1 screenOutput=0 mic=0 sampleRate=48000 channels=2")
 
             let work = FileManager.default.temporaryDirectory
@@ -333,6 +355,7 @@ public final class SpotifyScreenCaptureAudioSpike: NSObject, ObservableObject {
     }
 
     private func cleanupResources(reason: String) async {
+        invalidateSampleDeliveryAndDrain()
         if let stream {
             do {
                 try await stream.stopCapture()
@@ -343,6 +366,7 @@ public final class SpotifyScreenCaptureAudioSpike: NSObject, ObservableObject {
             try? stream.removeStreamOutput(self, type: .audio)
         }
         self.stream = nil
+        sampleDeliveryGate.invalidate()
 
         if let workDirectory {
             let path = workDirectory.path
@@ -382,8 +406,11 @@ extension SpotifyScreenCaptureAudioSpike: SCStreamDelegate, SCStreamOutput {
             return
         }
         guard type == .audio else { return }
+        guard sampleDeliveryGate.matches(stream: stream) else { return }
         stats.ingestAudio(sampleBuffer)
-        audioSampleHandler?(sampleBuffer)
+        if let generation = sampleDeliveryGate.generation(for: stream) {
+            audioSampleHandler?(sampleBuffer, generation)
+        }
     }
 
     nonisolated public func stream(_ stream: SCStream, didStopWithError error: Error) {
@@ -393,6 +420,51 @@ extension SpotifyScreenCaptureAudioSpike: SCStreamDelegate, SCStreamOutput {
             self.state = .failed
             await self.cleanupResources(reason: "stream-error")
         }
+    }
+}
+
+/// Thread-safe provenance for ScreenCaptureKit callbacks. A stream identity
+/// prevents a callback from an old stream being re-labeled after restart;
+/// generation is controlled by the coordinator at segment boundaries.
+private final class CaptureSampleDeliveryGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var activeStreamID: ObjectIdentifier?
+    private var activeGeneration: UInt64 = 0
+
+    func activate(stream: SCStream) {
+        lock.lock()
+        defer { lock.unlock() }
+        activeStreamID = ObjectIdentifier(stream)
+        activeGeneration = 0
+    }
+
+    func setGeneration(_ generation: UInt64) {
+        lock.lock()
+        defer { lock.unlock() }
+        guard activeStreamID != nil else { return }
+        activeGeneration = generation
+    }
+
+    func invalidate() {
+        lock.lock()
+        defer { lock.unlock() }
+        activeStreamID = nil
+        activeGeneration = 0
+    }
+
+    func generation(for stream: SCStream) -> UInt64? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard activeStreamID == ObjectIdentifier(stream), activeGeneration != 0 else {
+            return nil
+        }
+        return activeGeneration
+    }
+
+    func matches(stream: SCStream) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return activeStreamID == ObjectIdentifier(stream)
     }
 }
 

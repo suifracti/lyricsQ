@@ -81,6 +81,53 @@ grep -Eq 'guard accepts\(sessionGuard, playback: playback\)' "$JOB"
 grep -Eq 'saveAlignedVersion' "$JOB"
 grep -Eq 'Task\.isCancelled|accepts\(sessionGuard, playback: playback\)' "$JOB"
 
+# A late ScreenCaptureKit callback must carry immutable stream/session
+# provenance through both the synchronous WAV writer path and the MainActor
+# continuity path. The automatic product path must also own the coordinator
+# generation it waits for; a busy coordinator cannot donate an older handoff.
+grep -Eq 'audioSampleHandler: \(\(CMSampleBuffer, UInt64\) -> Void\)\?' "$SPIKE"
+grep -Eq 'sampleGenerationFlag|sampleDeliveryGeneration' "$COORD"
+grep -Eq 'sampleGeneration' "$COORD"
+grep -Eq 'setSampleDeliveryGeneration|sampleDeliveryGate|activeStreamID' "$SPIKE"
+python3 - "$JOB" "$SPIKE" <<'PY'
+from pathlib import Path
+import sys
+
+job = Path(sys.argv[1]).read_text()
+spike = Path(sys.argv[2]).read_text()
+before = job.index("await coordinator.start(")
+started = job.index("let startedGeneration = coordinator.lastStartedGeneration", before)
+if "let generationBeforeStart = coordinator.lastStartedGeneration" not in job[before - 600:before]:
+    raise SystemExit("automatic capture must snapshot coordinator generation before start")
+if not (before < started):
+    raise SystemExit("automatic capture must read its started generation after start")
+handoff = job.index("let handoff = coordinator.lastAlignmentHandoff", started)
+if "handoff.generation == startedGeneration" not in job[started:handoff + 500]:
+    raise SystemExit("automatic capture must require a generation-matched handoff")
+report_guard = job.index("guard let report", handoff)
+if "handoff?.report ?? LiveCaptureCoordinator.shared.lastPartialReport" in job[report_guard:report_guard + 180]:
+    raise SystemExit("automatic capture must not fall back to an unowned lastPartialReport")
+
+append_start = Path("SpotifyLyrics/Capture/LiveCaptureCoordinator.swift").read_text().index(
+    "private func appendPCM("
+)
+coordinator = Path("SpotifyLyrics/Capture/LiveCaptureCoordinator.swift").read_text()
+append_guard = coordinator.index("guard sampleGenerationFlag.matches", append_start)
+append_write = coordinator.index("openSegment?.wavWriter?.append", append_start)
+if not append_guard < append_write:
+    raise SystemExit("WAV writer must validate sample generation before append")
+ingest_start = coordinator.index("private func ingestOnMain(")
+ingest_guard = coordinator.index("guard sampleGenerationFlag.matches", ingest_start)
+ingest_state = coordinator.index("guard state == .running", ingest_start)
+if not ingest_guard < ingest_state:
+    raise SystemExit("MainActor sample ingestion must validate sample generation first")
+
+env = spike.index('ProcessInfo.processInfo.environment["SPOTIFYLYRICS_SCK_SPIKE"]')
+debug = spike.rfind("#if DEBUG", 0, env)
+if debug < 0:
+    raise SystemExit("direct spike environment auto-start must be DEBUG-only")
+PY
+
 # Local-file alignment remains a separate path and does not enter live capture.
 python3 - "$LOCAL" <<'PY'
 from pathlib import Path

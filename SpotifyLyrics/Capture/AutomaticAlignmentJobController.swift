@@ -438,19 +438,24 @@ public final class AutomaticAlignmentJobController: ObservableObject {
             let seconds = Double(
                 ProcessInfo.processInfo.environment["SPOTIFYLYRICS_AUTO_ALIGN_SECONDS"] ?? "55"
             ) ?? 55
-            await LiveCaptureCoordinator.shared.start(
+            let coordinator = LiveCaptureCoordinator.shared
+            let generationBeforeStart = coordinator.lastStartedGeneration
+            await coordinator.start(
                 autoStopAfter: max(25, seconds),
                 runPartialAlignment: true
             )
+            let startedGeneration = coordinator.lastStartedGeneration
             guard gen == self.generation,
+                  startedGeneration != generationBeforeStart,
                   !Task.isCancelled,
                   self.accepts(sessionGuard, playback: playback) else {
                 self.markStaleJobCancelled()
                 return
             }
 
-            await LiveCaptureCoordinator.shared.waitUntilIdle(timeoutSeconds: 240)
+            await coordinator.waitUntilIdle(timeoutSeconds: 240)
             guard gen == self.generation,
+                  coordinator.lastStartedGeneration == startedGeneration,
                   !Task.isCancelled,
                   self.accepts(sessionGuard, playback: playback) else {
                 self.markStaleJobCancelled()
@@ -471,16 +476,20 @@ public final class AutomaticAlignmentJobController: ObservableObject {
                 return
             }
 
-            let handoff = LiveCaptureCoordinator.shared.lastAlignmentHandoff
-            guard let report = handoff?.report ?? LiveCaptureCoordinator.shared.lastPartialReport else {
-                let kind = handoff?.failureKind
+            guard let handoff = coordinator.lastAlignmentHandoff,
+                  handoff.generation == startedGeneration else {
+                self.markStaleJobCancelled(message: "捕获结果不属于本次自动任务，已丢弃")
+                return
+            }
+            guard let report = handoff.report else {
+                let kind = handoff.failureKind
                 let engine = SpeechEngineRegistry.resolve()
                 if kind == .cancelled || Task.isCancelled {
                     self.state = .canceled
                     self.statusMessage = "已取消"
                     self.userFacingStatus = Self.statusForCaptureFailure(
                         kind: .cancelled,
-                        message: handoff?.message,
+                        message: handoff.message,
                         fallback: "已取消"
                     )
                 } else if !engine.isAvailable {
@@ -493,10 +502,10 @@ public final class AutomaticAlignmentJobController: ObservableObject {
                     self.state = .deferred
                     self.statusMessage = "本次证据不足，等待继续播放"
                     self.lastDecision = "deferred"
-                    self.lastError = handoff?.message ?? kind?.rawValue
+                    self.lastError = handoff.message ?? kind?.rawValue
                     self.userFacingStatus = Self.statusForCaptureFailure(
                         kind: kind,
-                        message: handoff?.message,
+                        message: handoff.message,
                         fallback: "未能生成建议时间"
                     )
                 }

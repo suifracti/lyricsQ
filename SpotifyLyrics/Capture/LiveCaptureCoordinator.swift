@@ -42,6 +42,8 @@ public final class LiveCaptureCoordinator: ObservableObject {
     private var pendingStartRequestID: UUID?
     private var alignmentGeneration: UInt64 = 0
     private let generationFlag = GenerationFlag()
+    private var sampleDeliveryGeneration: UInt64 = 0
+    private let sampleGenerationFlag = GenerationFlag()
     private var alignmentTask: Task<Void, Never>?
     @Published public private(set) var lastPartialReport: PartialAlignmentReport?
     /// Generation of the most recently started capture session (Assist handoff).
@@ -193,6 +195,7 @@ public final class LiveCaptureCoordinator: ObservableObject {
         completedSessions = []
         activeSession = nil
         openSegment = nil
+        invalidateSampleDelivery()
         shouldRunPartialAlignment = runPartialAlignment
             || ProcessInfo.processInfo.environment["SPOTIFYLYRICS_SCK_S3A"] == "1"
         alignmentGeneration &+= 1
@@ -212,10 +215,10 @@ public final class LiveCaptureCoordinator: ObservableObject {
 
         // Ensure low-level capture is running and samples are forwarded here.
         SpotifyScreenCaptureAudioSpike.shared.bind(playback: playback)
-        SpotifyScreenCaptureAudioSpike.shared.audioSampleHandler = { [weak self] buffer in
+        SpotifyScreenCaptureAudioSpike.shared.audioSampleHandler = { [weak self] buffer, sampleGeneration in
             // Append PCM on the capture queue path first (writer is thread-safe).
-            self?.appendPCM(buffer)
-            self?.handleAudioSample(buffer)
+            self?.appendPCM(buffer, sampleGeneration: sampleGeneration)
+            self?.handleAudioSample(buffer, sampleGeneration: sampleGeneration)
         }
 
         state = .starting
@@ -303,6 +306,7 @@ public final class LiveCaptureCoordinator: ObservableObject {
         gapWatchTask = nil
         cancellables.removeAll()
 
+        invalidateSampleDelivery()
         endOpenSegment(reason: boundary(from: reason), position: playback?.currentTime)
         if var session = activeSession {
             session.terminalReason = reason
@@ -403,10 +407,16 @@ public final class LiveCaptureCoordinator: ObservableObject {
         )
     }
 
-    private func appendPCM(_ sampleBuffer: CMSampleBuffer) {
+    private func invalidateSampleDelivery() {
+        sampleGenerationFlag.value = 0
+        SpotifyScreenCaptureAudioSpike.shared.invalidateSampleDeliveryAndDrain()
+    }
+
+    private func appendPCM(_ sampleBuffer: CMSampleBuffer, sampleGeneration: UInt64) {
         // Writer is thread-safe. Append synchronously on the capture callback —
         // an async MainActor hop races finalize/finish() and can yield empty WAV
         // plus a nil lastPartialReport handoff.
+        guard sampleGenerationFlag.matches(sampleGeneration) else { return }
         openSegment?.wavWriter?.append(sampleBuffer)
     }
 
@@ -625,6 +635,8 @@ public final class LiveCaptureCoordinator: ObservableObject {
         guard let session = activeSession else { return }
         if openSegment != nil {
             endOpenSegment(reason: .sessionReplaced, position: position)
+        } else {
+            invalidateSampleDelivery()
         }
         let continuity = UUID()
         let segmentID = UUID()
@@ -643,12 +655,16 @@ public final class LiveCaptureCoordinator: ObservableObject {
             wavWriter: writer
         )
         openSegment = segment
+        sampleDeliveryGeneration &+= 1
+        sampleGenerationFlag.value = sampleDeliveryGeneration
+        SpotifyScreenCaptureAudioSpike.shared.setSampleDeliveryGeneration(sampleDeliveryGeneration)
         SCKSpikeLog.log(
             "SEGMENT start segmentID=\(segment.segmentID.uuidString) sessionID=\(session.sessionID.uuidString) identity=\(segment.identityDigest) reason=\(reason.rawValue) position=\(fmt(position)) hostTime=\(fmt(host)) continuityID=\(continuity.uuidString) wav=\(writer?.fileURL.lastPathComponent ?? "none")"
         )
     }
 
     private func endOpenSegment(reason: SegmentBoundaryReason, position: TimeInterval?) {
+        invalidateSampleDelivery()
         guard var segment = openSegment else { return }
         openSegment = nil
         let host = Date().timeIntervalSince1970
@@ -868,14 +884,15 @@ public final class LiveCaptureCoordinator: ObservableObject {
 
     // MARK: - Audio samples
 
-    private func handleAudioSample(_ sampleBuffer: CMSampleBuffer) {
+    private func handleAudioSample(_ sampleBuffer: CMSampleBuffer, sampleGeneration: UInt64) {
         // Called on capture queue via handler; hop to MainActor.
         Task { @MainActor in
-            self.ingestOnMain(sampleBuffer)
+            self.ingestOnMain(sampleBuffer, sampleGeneration: sampleGeneration)
         }
     }
 
-    private func ingestOnMain(_ sampleBuffer: CMSampleBuffer) {
+    private func ingestOnMain(_ sampleBuffer: CMSampleBuffer, sampleGeneration: UInt64) {
+        guard sampleGenerationFlag.matches(sampleGeneration) else { return }
         guard state == .running else { return }
         guard playback?.playbackSourceIdentity == .spotifyDesktop else { return }
         let host = Date().timeIntervalSince1970
