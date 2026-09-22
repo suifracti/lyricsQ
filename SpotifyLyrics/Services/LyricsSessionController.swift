@@ -170,7 +170,12 @@ public final class LyricsSessionController: ObservableObject {
                     return false
                 }
                 self.persistenceStatusMessage = persistenceError
-                self.apply(outcome.result, identity: identity, requestRevision: requestRevision)
+                self.apply(
+                    outcome.result,
+                    identity: identity,
+                    requestRevision: requestRevision,
+                    sourceContentHash: cachedReference?.sourceContentHash
+                )
                 if let cachedReference {
                     self.activeLyricsVersionID = cachedReference.versionID
                     self.activeSourceContentHash = cachedReference.sourceContentHash
@@ -412,7 +417,7 @@ public final class LyricsSessionController: ObservableObject {
         cancelCurrentRequest()
         revision &+= 1
         activeLyricsVersionID = versionID
-        applyLoadedDocument(document, identity: document.identity)
+        applyLoadedDocument(document, identity: document.identity, sourceContentHash: sourceContentHash)
         activeSourceContentHash = sourceContentHash
         alignmentProvenanceAvailability = document.source == .automaticAlignment ? .available : .unavailable
         LyricsE2ELog.log("SESSION adopt persisted version=\(versionID.uuidString) source=\(document.source)")
@@ -540,29 +545,19 @@ public final class LyricsSessionController: ObservableObject {
         )
     }
 
-    private func applyLoadedDocument(_ document: LyricsDocument, identity: TrackIdentity) {
+    private func applyLoadedDocument(
+        _ document: LyricsDocument,
+        identity: TrackIdentity,
+        sourceContentHash: String? = nil
+    ) {
         isNoSelection = false
         let enrichedLines = LyricsLayerEnricher.enrich(lines: document.lines)
         let inferredLanguage = document.language ?? LyricsLanguageGate.inferredLanguage(
             text: enrichedLines.map(\.originalText).joined(separator: "\n")
         )
-        let enriched = LyricsDocument(
-            identity: identity,
-            title: document.title,
-            artist: document.artist,
-            album: document.album,
-            duration: document.duration,
-            lines: enrichedLines,
-            isSynchronized: document.isSynchronized,
-            source: document.source,
-            confidence: document.confidence,
-            providerSourceID: document.providerSourceID,
-            spotifyTrackID: document.spotifyTrackID,
-            isrc: document.isrc,
-            language: inferredLanguage
-        )
+        let enriched = document.replacingLines(enrichedLines, language: inferredLanguage)
         lyrics = enriched.lines
-        let bindingToken = LyricsPersistenceMapper.sourceContentHash(document: enriched)
+        let bindingToken = sourceContentHash ?? LyricsPersistenceMapper.sourceContentHash(document: document)
 #if DEBUG
         debugLyricsBindingToken = bindingToken
 #endif
@@ -599,7 +594,8 @@ public final class LyricsSessionController: ObservableObject {
     private func apply(
         _ result: LyricsLookupResult,
         identity: TrackIdentity,
-        requestRevision: UInt64
+        requestRevision: UInt64,
+        sourceContentHash: String? = nil
     ) {
         guard activeIdentity == identity, revision == requestRevision else {
             LyricsE2ELog.log("SESSION drop stale result rev=\(requestRevision) current=\(revision)")
@@ -617,7 +613,7 @@ public final class LyricsSessionController: ObservableObject {
                 LyricsE2ELog.log("SESSION match identity mismatch")
                 return
             }
-            applyLoadedDocument(document, identity: identity)
+            applyLoadedDocument(document, identity: identity, sourceContentHash: sourceContentHash)
         case .candidates(let candidates):
             lyrics = []
 #if DEBUG

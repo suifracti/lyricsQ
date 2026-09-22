@@ -99,6 +99,47 @@ public struct LyricsDocument: Equatable, Sendable {
         self.timingVersionID = timingVersionID
     }
 
+    /// Rebuilds a display document after a line projection without dropping
+    /// its identity, partial-timeline mask, language, or timing attachment.
+    public func replacingLines(_ lines: [LyricLine]) -> LyricsDocument {
+        replacingLines(lines, language: language)
+    }
+
+    /// Variant for a caller that deliberately enriches the language field.
+    public func replacingLines(_ lines: [LyricLine], language: String?) -> LyricsDocument {
+        copying(lines: lines, language: language, timingVersionID: timingVersionID)
+    }
+
+    /// Variant for a repository projection that has just selected the exact
+    /// immutable timing attachment used to build `lines`.
+    public func replacingLines(_ lines: [LyricLine], timingVersionID: UUID?) -> LyricsDocument {
+        copying(lines: lines, language: language, timingVersionID: timingVersionID)
+    }
+
+    private func copying(
+        lines: [LyricLine],
+        language: String?,
+        timingVersionID: UUID?
+    ) -> LyricsDocument {
+        LyricsDocument(
+            identity: identity,
+            title: title,
+            artist: artist,
+            album: album,
+            duration: duration,
+            lines: lines,
+            isSynchronized: isSynchronized,
+            source: source,
+            confidence: confidence,
+            providerSourceID: providerSourceID,
+            spotifyTrackID: spotifyTrackID,
+            isrc: isrc,
+            language: language,
+            explicitlyTimedLineIndices: explicitlyTimedLineIndices,
+            timingVersionID: timingVersionID
+        )
+    }
+
     public var hasTimedSpans: Bool {
         lines.contains { $0.hasTimedSpans }
     }

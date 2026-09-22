@@ -901,7 +901,11 @@ public final class LyricsEditorSessionController: ObservableObject {
             endTime: line.endTime,
             kanaText: line.kanaText,
             romajiText: line.romajiText,
-            rubyTokens: line.rubyTokens
+            rubyTokens: line.rubyTokens,
+            performerID: line.performerID,
+            timedSpans: line.timedSpans,
+            readingRepresentationID: line.readingRepresentationID,
+            readingSurfaceText: line.readingSurfaceText
         )
     }
 
@@ -920,18 +924,7 @@ public final class LyricsEditorSessionController: ObservableObject {
         for stored in translation.lines where lines.indices.contains(stored.lineIndex) {
             lines[stored.lineIndex].translationText = stored.translatedText
         }
-        return LyricsDocument(
-            identity: document.identity,
-            title: document.title,
-            artist: document.artist,
-            album: document.album,
-            duration: document.duration,
-            lines: lines,
-            isSynchronized: document.isSynchronized,
-            source: document.source,
-            confidence: document.confidence,
-            providerSourceID: document.providerSourceID
-        )
+        return document.replacingLines(lines)
     }
 
     private static func documentPreservingLineIDs(
@@ -941,41 +934,24 @@ public final class LyricsEditorSessionController: ObservableObject {
         guard let previousDraft,
               previousDraft.lines.count == document.lines.count else { return document }
         let lines = document.lines.enumerated().map { index, line in
-            LyricLine(
-                id: previousDraft.lines[index].id,
-                timestamp: line.timestamp,
-                originalText: line.originalText,
-                endTime: line.endTime,
-                translationText: line.translationText,
-                romajiText: line.romajiText,
-                kanaText: line.kanaText,
-                rubyTokens: line.rubyTokens
-            )
+            line.replacingID(previousDraft.lines[index].id)
         }
-        return LyricsDocument(
-            identity: document.identity,
-            title: document.title,
-            artist: document.artist,
-            album: document.album,
-            duration: document.duration,
-            lines: lines,
-            isSynchronized: document.isSynchronized,
-            source: document.source,
-            confidence: document.confidence,
-            providerSourceID: document.providerSourceID
-        )
+        return document.replacingLines(lines)
     }
 
     private static func regenerate(_ line: LyricsEditorLineDraft) -> LyricsEditorLineDraft {
-        let source = LyricsEditorLineDraft(
+        let source = LyricLine(
             id: line.id,
+            timestamp: line.startTime ?? 0,
             originalText: line.originalText,
+            endTime: line.endTime,
             translationText: line.translationText,
-            startTime: line.startTime,
-            endTime: line.endTime
+            performerID: line.performerID,
+            timedSpans: line.timedSpans,
+            readingRepresentationID: line.readingRepresentationID,
+            readingSurfaceText: line.readingSurfaceText
         )
-        let generated = LyricsLayerEnricher.enrich(lines: [source.asLyricLine()]).first
-        guard let generated else { return source }
+        guard let generated = LyricsLayerEnricher.enrich(lines: [source]).first else { return line }
         var result = LyricsEditorLineDraft(
             line: generated,
             startTimeIsMeaningful: line.startTime != nil

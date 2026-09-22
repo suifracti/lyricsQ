@@ -33,6 +33,13 @@ public struct LyricsEditorLineDraft: Identifiable, Equatable, Hashable, Sendable
     public var kanaText: String?
     public var romajiText: String?
     public var rubyTokens: [LyricRubyToken]?
+    /// Projection metadata retained while opening an existing timed version.
+    /// These fields are intentionally not emitted by `asLyricLine()`; creating
+    /// a new timing attachment for an editor save is handled in T2.
+    public var performerID: String?
+    public var timedSpans: [TimedTextSpan]?
+    public var readingRepresentationID: String?
+    public var readingSurfaceText: String?
 
     public init(
         id: UUID = UUID(),
@@ -42,7 +49,11 @@ public struct LyricsEditorLineDraft: Identifiable, Equatable, Hashable, Sendable
         endTime: TimeInterval? = nil,
         kanaText: String? = nil,
         romajiText: String? = nil,
-        rubyTokens: [LyricRubyToken]? = nil
+        rubyTokens: [LyricRubyToken]? = nil,
+        performerID: String? = nil,
+        timedSpans: [TimedTextSpan]? = nil,
+        readingRepresentationID: String? = nil,
+        readingSurfaceText: String? = nil
     ) {
         self.id = id
         self.originalText = originalText
@@ -52,6 +63,10 @@ public struct LyricsEditorLineDraft: Identifiable, Equatable, Hashable, Sendable
         self.kanaText = kanaText
         self.romajiText = romajiText
         self.rubyTokens = rubyTokens
+        self.performerID = performerID
+        self.timedSpans = timedSpans
+        self.readingRepresentationID = readingRepresentationID
+        self.readingSurfaceText = readingSurfaceText
     }
 
     public init(line: LyricLine, startTimeIsMeaningful: Bool = true) {
@@ -66,7 +81,11 @@ public struct LyricsEditorLineDraft: Identifiable, Equatable, Hashable, Sendable
             endTime: line.endTime,
             kanaText: line.kanaText,
             romajiText: line.romajiText,
-            rubyTokens: line.rubyTokens
+            rubyTokens: line.rubyTokens,
+            performerID: line.performerID,
+            timedSpans: line.timedSpans,
+            readingRepresentationID: line.readingRepresentationID,
+            readingSurfaceText: line.readingSurfaceText
         )
     }
 
@@ -93,6 +112,12 @@ public struct LyricsEditorDraft: Equatable, Sendable {
     public let artist: String?
     public let album: String?
     public let duration: TimeInterval?
+    public let isSynchronized: Bool
+    public let language: String?
+    public let explicitlyTimedLineIndices: Set<Int>?
+    /// Source attachment identity retained in this editor projection. It is
+    /// not passed into a new-version save document.
+    public let timingVersionID: UUID?
     public let sourceVersionID: UUID
     public let sourceContentHash: String
     public let source: LyricsSource
@@ -109,6 +134,10 @@ public struct LyricsEditorDraft: Equatable, Sendable {
         album: String?,
         duration: TimeInterval?,
         lines: [LyricsEditorLineDraft],
+        isSynchronized: Bool = true,
+        language: String? = nil,
+        explicitlyTimedLineIndices: Set<Int>? = nil,
+        timingVersionID: UUID? = nil,
         sourceVersionID: UUID,
         sourceContentHash: String,
         source: LyricsSource
@@ -118,6 +147,10 @@ public struct LyricsEditorDraft: Equatable, Sendable {
         self.artist = artist
         self.album = album
         self.duration = duration
+        self.isSynchronized = isSynchronized
+        self.language = language
+        self.explicitlyTimedLineIndices = explicitlyTimedLineIndices
+        self.timingVersionID = timingVersionID
         self.lines = lines
         self.sourceVersionID = sourceVersionID
         self.sourceContentHash = sourceContentHash
@@ -133,6 +166,10 @@ public struct LyricsEditorDraft: Equatable, Sendable {
         self.artist = nil
         self.album = nil
         self.duration = nil
+        self.isSynchronized = true
+        self.language = nil
+        self.explicitlyTimedLineIndices = nil
+        self.timingVersionID = nil
         self.sourceVersionID = UUID()
         self.sourceContentHash = ""
         self.source = .manualCreate
@@ -153,6 +190,10 @@ public struct LyricsEditorDraft: Equatable, Sendable {
                     startTimeIsMeaningful: document.lineHasExplicitTiming(index)
                 )
             },
+            isSynchronized: document.isSynchronized,
+            language: document.language,
+            explicitlyTimedLineIndices: document.explicitlyTimedLineIndices,
+            timingVersionID: document.timingVersionID,
             sourceVersionID: sourceVersionID,
             sourceContentHash: sourceContentHash,
             source: document.source

@@ -1229,22 +1229,7 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
                         updatedLines[i].timedSpans = timing.spans
                     }
                 }
-                baseDoc = LyricsDocument(
-                    identity: baseDoc.identity,
-                    title: baseDoc.title,
-                    artist: baseDoc.artist,
-                    album: baseDoc.album,
-                    duration: baseDoc.duration,
-                    lines: updatedLines,
-                    isSynchronized: baseDoc.isSynchronized,
-                    source: baseDoc.source,
-                    confidence: baseDoc.confidence,
-                    providerSourceID: baseDoc.providerSourceID,
-                    spotifyTrackID: baseDoc.spotifyTrackID,
-                    isrc: baseDoc.isrc,
-                    language: baseDoc.language,
-                    timingVersionID: timingRecord?.id
-                )
+                baseDoc = baseDoc.replacingLines(updatedLines, timingVersionID: timingRecord?.id)
             }
             let document = applyingLockedReadings(
                 to: baseDoc,
@@ -1286,22 +1271,7 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
                     updatedLines[i].timedSpans = timing.spans
                 }
             }
-            baseDoc = LyricsDocument(
-                identity: baseDoc.identity,
-                title: baseDoc.title,
-                artist: baseDoc.artist,
-                album: baseDoc.album,
-                duration: baseDoc.duration,
-                lines: updatedLines,
-                isSynchronized: baseDoc.isSynchronized,
-                source: baseDoc.source,
-                confidence: baseDoc.confidence,
-                providerSourceID: baseDoc.providerSourceID,
-                spotifyTrackID: baseDoc.spotifyTrackID,
-                isrc: baseDoc.isrc,
-                language: baseDoc.language,
-                timingVersionID: timingRecord?.id
-            )
+            baseDoc = baseDoc.replacingLines(updatedLines, timingVersionID: timingRecord?.id)
         }
         let document = applyingLockedReadings(
             to: baseDoc,
@@ -1847,30 +1817,12 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         guard !readings.isEmpty else { return document }
         var lines = document.lines
         for reading in readings where lines.indices.contains(reading.lineIndex) {
-            let current = lines[reading.lineIndex]
-            lines[reading.lineIndex] = LyricLine(
-                id: current.id,
-                timestamp: current.timestamp,
-                originalText: current.originalText,
-                endTime: current.endTime,
-                translationText: current.translationText,
-                romajiText: reading.romajiText ?? current.romajiText,
-                kanaText: reading.kanaText ?? current.kanaText,
-                rubyTokens: current.rubyTokens
-            )
+            var projected = lines[reading.lineIndex]
+            projected.romajiText = reading.romajiText ?? projected.romajiText
+            projected.kanaText = reading.kanaText ?? projected.kanaText
+            lines[reading.lineIndex] = projected
         }
-        return LyricsDocument(
-            identity: document.identity,
-            title: document.title,
-            artist: document.artist,
-            album: document.album,
-            duration: document.duration,
-            lines: lines,
-            isSynchronized: document.isSynchronized,
-            source: document.source,
-            confidence: document.confidence,
-            providerSourceID: document.providerSourceID
-        )
+        return document.replacingLines(lines)
     }
 
     private func insertReadingLayers(

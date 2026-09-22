@@ -1306,6 +1306,24 @@ public struct LyricLine: Identifiable, Equatable, Hashable, Sendable {
         self.readingSurfaceText = readingSurfaceText
     }
 
+    /// Copies this line while preserving every current model field.
+    public func replacingID(_ id: UUID) -> LyricLine {
+        LyricLine(
+            id: id,
+            timestamp: timestamp,
+            originalText: originalText,
+            endTime: endTime,
+            translationText: translationText,
+            romajiText: romajiText,
+            kanaText: kanaText,
+            rubyTokens: rubyTokens,
+            performerID: performerID,
+            timedSpans: timedSpans,
+            readingRepresentationID: readingRepresentationID,
+            readingSurfaceText: readingSurfaceText
+        )
+    }
+
     public var hasTimedSpans: Bool {
         guard let timedSpans, !timedSpans.isEmpty else { return false }
         return true
