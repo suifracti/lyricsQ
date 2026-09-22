@@ -9,10 +9,10 @@
 
 - repo root：`/Users/apple/backup/sptifylyrics`
 - branch：`main`
-- source HEAD（B0 / v0.1.2 产品基线）：`6528be3103f75fd4f63757855b9d61cd30f757d8`
-- release identity：正式 GitHub Release `v0.1.2`，release commit 同上
+- source HEAD（C1 已验证 production commit）：`b95ebd1636ff0d8e847390f608886e18484a30a9`
+- release identity：正式 GitHub Release `v0.1.2`，release commit `6528be3103f75fd4f63757855b9d61cd30f757d8`
 - status last updated：`2026-09-22`
-- tracked/staged 状态：D0 只产生文档与 B0 evidence 变更，`SpotifyLyrics/` 生产源码 diff 为零；三份既有 `PROJECT_FULL_AUDIT_*.md` 保持 untracked，不纳入本状态页或 D0 提交。精确 checkout 仍以 `git rev-parse HEAD` 为准。
+- tracked/staged 状态：C1 production 与定向 contracts 已在本地提交；文档 evidence 提交后 tracked/staged diff 应为零。三份既有 `PROJECT_FULL_AUDIT_*.md` 保持 untracked，不纳入 C1 提交。精确 checkout 仍以 `git rev-parse HEAD` 为准；当前文档提交不改变 production commit 上述身份。
 
 ## Product Boundary
 
@@ -37,7 +37,12 @@
 - **D0 — CLOSED**
   - documentation source-of-truth convergence and narrow Obsidian sync
   - Evidence：[D0 documentation SOT](evidence/core-integrity/D0-documentation-sot.md)
-- **Next**：C1 — Playback / Presentation Semantic Isolation
+- **C1 — CLOSED**
+  - `AUTOMATED_VERIFIED`
+  - `NATIVE_INPUT_PARTIAL`
+  - `USER_EXTERNAL_PENDING`
+  - Evidence：[C1 playback / presentation isolation](evidence/core-integrity/C1-playback-presentation-isolation.md)
+- **Next**：A0 — Capture Source Verification & Containment
 
 `NATIVE_INPUT_PENDING` 不是 PASS，也不表示 B0 发现的产品缺陷已经修复。
 
@@ -46,13 +51,14 @@
 - production clock：`presentation = raw anchor + elapsed + offset`，最后 clamp。
 - `+offset` = 歌词提前出现；`-offset` = 歌词延后出现。
 - 当前 offset 使用 global key `lyrics.presentationOffset.v1`。
-- V3 visible time / progress 会消费 presentation time。
+- C1 后 V3 transport seconds / progress / slider value 使用 playback-domain time；歌词行与逐字 fill 继续使用 presentation time。
 - mouse / drag pointer mapping 属 raw domain。
-- keyboard / AX 当前存在 presentation → raw seek 混域。
+- keyboard / AX slider callback 现在从 playback-domain value 开始并提交 raw seek target。
 - 调 offset 本身不会直接 provider seek。
-- paused offset subscriber 存在短暂旧值读取路径。
+- paused offset subscriber 现在使用 publisher 发出的新 offset 立即重算歌词 projection；transport 不变且不 seek。
 - Fullscreen 复用 V3。
-- native input event execution 尚未完成。
+- search preview lyric-row 使用 identity guard；preview B 不得 seek live A，同一 live identity 仍允许。
+- native mouse / keyboard / AX 外部事件本轮未在真实 AppKit host 中运行，保留 `NATIVE_INPUT_PARTIAL`。
 
 详见 [B0 evidence](evidence/core-integrity/B0-clock-offset.md)；本页只保留结论，不复制运行输出。
 
@@ -60,7 +66,6 @@
 
 以下项目仍按当前 Master Plan / batch ownership 作为未关闭核心项；D0 不判断它们已修复：
 
-- C1 clock / transport / seek
 - A0 capture source containment
 - H1 hash domain
 - T1 read/projection fidelity
@@ -73,8 +78,7 @@
 
 ## Known Test Drift
 
-- `Tests/v3_seek_draft_contract.py`：当前 fake 不满足 production getter；归 C1 owning issue。
-- `Tests/fullscreen_lyrics_contract.sh`：静态 literal assertion 与现实现别名写法漂移；不是 clock failure，D0 不修。
+- `Tests/fullscreen_lyrics_contract.sh`：静态 literal assertion 与现实现别名写法漂移；不是 C1 clock failure，本轮未为此扩展修复。
 
 ## Source-of-Truth Rules
 
@@ -88,5 +92,5 @@
 
 ## Next Executor Contract
 
-**C1 — Playback / Presentation Semantic Isolation**
-等待 Planner 下发合同。
+**A0 — Capture Source Verification & Containment**
+等待 Planner 下发合同；C1 已结案，本轮不提前执行 A0。
