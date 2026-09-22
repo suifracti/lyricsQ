@@ -9,11 +9,11 @@
 
 - repo root：`/Users/apple/backup/sptifylyrics`
 - branch：`codex/t1-read-projection-fidelity`（基线 H1 final HEAD `c062cfe371a2fcab3b1569888a6da35646627f0e`）
-- source HEAD（T1 已验证 production commit）：`bd6127c699a282d0bab5ab350cccd6a781446f41` (`fix: preserve lyrics read projections`)
+- source HEAD（T1 已验证 production commit）：`2963f710c85e0993963d0127514791ee6a19196f` (`fix: preserve editor projection on translation switch`)
 - H1 production commit：`449df0a6446dd01f250ff84eec34ff87efccf70d`
 - release identity：正式 GitHub Release `v0.1.2`，release commit `6528be3103f75fd4f63757855b9d61cd30f757d8`
 - status last updated：`2026-09-23`
-- tracked/staged 状态：T1 production、focused contract 与 evidence/status 均已提交并推送；准确 checkout HEAD 以 Git 为准。原始 H1 checkout 中的三份既有 `PROJECT_FULL_AUDIT_*.md` 保持原样，不纳入 T1。
+- tracked/staged 状态：T1 production、focused contract 与最终 evidence/status 均已提交并推送；原始 H1 checkout 中的三份既有 `PROJECT_FULL_AUDIT_*.md` 保持原样，不纳入 T1。
 
 ## Product Boundary
 
@@ -55,7 +55,7 @@
   - `AUTOMATED_VERIFIED`
   - 真人验收：`USER_VERIFICATION_REQUIRED / NOT_RUN`
   - Evidence：[T1 read / projection fidelity](evidence/core-integrity/T1-read-projection-fidelity.md)
-- **Next**：Planner 定向审查 T1；T2 尚未开始
+- **Next**：T1 Planner 定向审查完成，未发现 Blocker / 必要 Relevant；T2 尚未开始。
 
 `NATIVE_INPUT_PENDING` 不是 PASS，也不表示 B0 发现的产品缺陷已经修复。
 
@@ -99,6 +99,7 @@
 
 - partial unsynchronized mask、有效零秒、占位行和行结束时间贯穿 repository → session → editor draft；model/session/draft 保留 `nil` 与空集合区别，SQLite 对无 timed row 的现有映射为 `nil`。
 - 旧 locked-reading overlay 仍生效，同时原文、行时间、timed spans、performer、language、translation projection、同版本 timing attachment UUID 与 canonical source hash 保留。
+- editor draft 内切换同一歌词版本的译文只改变译文文本；锁定读音、逐字 spans、performer/language、attachment UUID 与规范源身份保持一致。
 - 重复加载与切换 session/editor 版本未改变隔离 fixture 的任何数据库表或 `data_version`；无 schema 或用户数据变更。
 - 新版本保存是否继续 timing attachment 属 T2，本轮未处理。真人验收保持 `USER_VERIFICATION_REQUIRED / NOT_RUN`。
 
@@ -134,4 +135,4 @@
 ## Next Executor Contract
 
 **T2 — Lossless Edit / Timing**
-T1 已自动验收并推送；先由 Planner 定向审查 T1 Blocker / 必要 Relevant。T2 尚未开始。
+T1 已自动验收并推送；Planner 定向审查完成，未发现 Blocker / 必要 Relevant。T2 尚未开始。

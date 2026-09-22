@@ -5,10 +5,11 @@
 - `base_head`: `c062cfe371a2fcab3b1569888a6da35646627f0e` (H1 final HEAD)
 - `checkpoint`: `633a59b3eff9e78d34056649eef15ad773cca8ec` (pushed before T1 edits)
 - `branch`: `codex/t1-read-projection-fidelity`
-- `validated_production_commit`: `bd6127c699a282d0bab5ab350cccd6a781446f41`
-- `contract_followup_commits`: `0109ac3c42d0456587fefd9c3c5377b2ce989389`, `93e9b017096005b1c9919bde561dc8d10f4c38aa`
+- `validated_production_commit`: `2963f710c85e0993963d0127514791ee6a19196f`
+- `contract_followup_commits`: `0109ac3c42d0456587fefd9c3c5377b2ce989389`, `93e9b017096005b1c9919bde561dc8d10f4c38aa`, `2963f710c85e0993963d0127514791ee6a19196f`
+- `validated_source_and_contract_identity`: `2963f710c85e0993963d0127514791ee6a19196f`
 - `upstream`: `origin/codex/t1-read-projection-fidelity`
-- `next`: Planner targeted review; T2 has not started
+- `next`: Planner targeted review complete with no Blocker / necessary Relevant; T2 has not started
 - `human verification`: `USER_VERIFICATION_REQUIRED / NOT_RUN`
 
 ## H1 prerequisite check
@@ -53,6 +54,8 @@ The source fix is confined to six production files:
   language, partial mask and timing version ID.
 - `SpotifyLyrics/Services/LyricsEditorSessionController.swift`: line-ID,
   translation and reading projections use the fidelity-preserving copies.
+  Selecting another stored translation version now changes only translation
+  text on a copy of the existing draft, preserving the rest of its projection.
 
 The editor's new-version conversion (`LyricsEditorDraft.document()` /
 `LyricsEditorLineDraft.asLyricLine()`) still does not create or carry forward a
@@ -65,7 +68,7 @@ The focused contract is in
 
 ```text
 ca8c64dc3da254fded05b2ff533ae622e5036c5e9f58c35dbd92a24e812e109e  Tests/t1_read_projection_fidelity_contract.sh
-8e323b386299bfac2e0b71c4144b70f3270f73ddf52adec71ce7b58e18e645ae  Tests/t1_read_projection_fidelity_contract.swift
+86eba390d1c1297ded523064cd8201de374036a4dda6cc58c26e6058095555aa  Tests/t1_read_projection_fidelity_contract.swift
 ```
 
 ## Independent counterexamples
@@ -142,6 +145,40 @@ T1 read/projection fidelity contract passed (legacy)
 Repeated repository loads, session switch to an untimed sibling and back, and
 editor switch to that sibling and back all preserve the same loaded fields.
 
+### C — Switching translation versions inside the editor draft
+
+The same timed source version has two complete stored translation versions.
+The contract enters the editor with the first translation, switches to the
+alternate translation, switches back, and then switches the lyrics version
+away and back. This exercises `selectTranslation` on an existing draft rather
+than only the initial repository-to-editor projection.
+
+Before the fix, the new case ran against production source HEAD
+`3e800d39eee8dd5304f3b0182284cec20e8ac176` with the updated focused contract.
+`bash Tests/t1_read_projection_fidelity_contract.sh legacy` exited `1` at the
+editor assertion after selecting the alternate translation. The repository
+overlay log immediately before that assertion still showed the original
+locked reading, all three spans, performer, language and timing attachment;
+the loss occurred in the translation-version draft projection.
+
+```text
+FAIL: editor draft translation=切换后的译文 lost locked reading, line timing, spans, performer/language, attachment identity, or source identity
+legacy overlay observed kana=Optional("こんにち") romaji=Optional("konnichi") spans=3 performer=Optional("v2") language=Optional("ja") timingID=Optional(977B731A-FF43-4350-9CA6-87C52B699A10) provider=Optional("t1-authoritative-provider-source")
+```
+
+After the fix, `selectTranslation` copies the existing draft, replaces its
+translation text, and marks the projection clean. The final `all` contract
+exits `0` and checks both translation values while also checking the locked
+reading, start/end times, spans, performer/language, exact timing UUID,
+source identity and canonical hash after each switch. Returning from the
+untimed sibling preserves the currently selected latest translation. The
+new-version save converter remains unchanged for T2.
+
+```text
+legacy overlay observed kana=Optional("こんにち") romaji=Optional("konnichi") spans=3 performer=Optional("v2") language=Optional("ja") timingID=Optional(FDC28D1F-A6CC-4E4D-96E9-99400DF36139) provider=Optional("t1-authoritative-provider-source")
+T1 read/projection fidelity contract passed (all)
+```
+
 ## Field facts by layer
 
 | Field | SQLite load / repository overlay | Session | Editor draft |
@@ -151,7 +188,7 @@ editor switch to that sibling and back all preserve the same loaded fields.
 | Timed spans | Absent fixture stays absent; timed fixture returns all 3 spans | All 3 spans remain attached | All 3 spans and their text/UTF-16 coordinates remain attached |
 | Performer | Absent fixture stays `nil`; timed fixture returns `v2` | `v2` retained | `v2` retained |
 | Language | The no-language input follows the existing mapper rule and is stored/read as `und`; timed fixture reads `ja` | `und` / `ja` retained | `und` / `ja` retained |
-| Translation | Stored compatibility line translation is retained alongside the reading overlay | `compatibility line translation` retained | Selected same-version translation draft remains `同一版本译文` |
+| Translation | Stored compatibility line translation is retained alongside the reading overlay | `compatibility line translation` retained | Selecting either stored same-version translation changes only translation text; returning to the timed lyrics version selects the latest complete translation under existing policy while all other draft fields remain equal |
 | Legacy locked reading | No overlay in partial fixture; timed fixture applies stored kana/romaji while keeping original source rows | Display reading remains projected; canonical source hash is passed separately | Display reading and locked state retained |
 | Attachment identity | Exact selected timing version UUID present for timed fixture; absent for partial fixture | Same UUID carried through loaded document | Same UUID carried through draft; no replacement attachment is created |
 | Document identity / metadata | Request identity, track metadata, source, confidence, provider source ID and language come from the production mapper | Document copy preserves them | Draft keeps track metadata, source version ID and canonical source hash |
@@ -164,11 +201,12 @@ new storage semantics were added.
 
 ## Database no-write evidence
 
-The contract seeds a temporary database using the production repository and
-an isolated historical locked-reading row. Immediately before read-path
-checks it takes a read-only snapshot of every table plus `PRAGMA data_version`.
-After repeated repository loads, session adoption/switches, editor begin and
-editor version switches, the complete snapshot and data version are equal.
+The contract seeds a temporary database using the production repository,
+including both translations, and an isolated historical locked-reading row.
+Immediately before read-path checks it takes a read-only snapshot of every
+table plus `PRAGMA data_version`. After repeated repository loads, session
+adoption/switches, editor begin, translation selection and editor version
+switches, the complete snapshot and data version are equal.
 The contract logs `temporary_copy=YES` and `formal_database_opened=NO`.
 Fixture setup is intentionally outside this read-only comparison window.
 
@@ -180,13 +218,15 @@ All commands ran from the isolated T1 worktree unless noted.
 |---|---:|---|
 | Pre-fix `bash Tests/t1_read_projection_fidelity_contract.sh partial` at H1 base | `1` | Expected RED: partial mask lost in real session projection |
 | Pre-fix `bash Tests/t1_read_projection_fidelity_contract.sh legacy` at H1 base | `1` | Expected RED: lock projected, timing/metadata/attachment lost |
+| Pre-fix `bash Tests/t1_read_projection_fidelity_contract.sh legacy` at `3e800d39eee8dd5304f3b0182284cec20e8ac176` | `1` | Expected RED: selecting another translation discarded fields from the editor draft |
 | `bash Tests/t1_read_projection_fidelity_contract.sh partial` | `0` | Production SQLite → session → draft partial timeline |
 | `bash Tests/t1_read_projection_fidelity_contract.sh legacy` | `0` | Production locked-reading overlay → session → editor and switches |
-| `bash Tests/t1_read_projection_fidelity_contract.sh all` | `0` | Both counterexamples, nil/empty masks and no-write snapshot |
+| `bash Tests/t1_read_projection_fidelity_contract.sh all` at source/test commit `2963f710c85e0993963d0127514791ee6a19196f` | `0` | Both required counterexamples, translation selection, nil/empty masks and no-write snapshot |
 | `bash Tests/h1_hash_domain_boundary_contract.sh` | `0` | H1 hash identity and mismatch-guard regression |
 | `bash Tests/sqlite_session_contract.sh` | `0` | Existing SQLite/session contract |
 | `bash Tests/timing_persistence_immutable_contract.sh` | `0` | Existing immutable timing identity / idempotency contract |
 | `bash Tests/lyrics_editor_contract.sh` | `0` | Existing editor contract |
+| `bash Tests/phase_2_5c_contract.sh` | `0` | Existing translation/session contract |
 | `bash Tests/phase_2_6a_persistence_contract.sh` | `0` | Existing reading persistence contract |
 | `git diff --check` | `0` | Whitespace check before production commit |
 | `xcodebuild -project SpotifyLyrics.xcodeproj -scheme SpotifyLyrics -configuration Debug -derivedDataPath /tmp/lyrics-t1-read-projection-deriveddata CODE_SIGNING_ALLOWED=NO build` | `0` | `BUILD SUCCEEDED` |
@@ -204,8 +244,13 @@ fixture had more; it now checks for the required minimum. A later assertion
 assumed an omitted language remained `nil`; inspection confirmed the existing
 mapper stores it as `und`, and the contract now verifies that established
 behavior. These were harness or assertion corrections, not product
-regression results. The final targeted commands listed above all passed. The
-full suite was not run.
+regression results. The first post-fix translation-switch run also had an
+incorrect expected translation after returning from another lyrics version;
+the existing editor selects the latest complete same-version translation.
+The contract was corrected to that observed selection rule while retaining
+an explicit switch-back assertion. These were harness or assertion
+corrections, not product regression results. The final targeted commands
+listed above all passed. The full suite was not run.
 
 ## Not run and handoff boundary
 
@@ -215,10 +260,13 @@ full suite was not run.
 - No timing-attachment save behavior was changed or verified; that is T2.
 - No S1/O1/R1/provider/UI work, merge, tag, release or deployment was started.
 
-Rollback scope: revert test follow-up commits
+Rollback scope: revert source/test commit
+`2963f710c85e0993963d0127514791ee6a19196f`, test follow-up commits
 `93e9b017096005b1c9919bde561dc8d10f4c38aa` and
 `0109ac3c42d0456587fefd9c3c5377b2ce989389`, then production commit
 `bd6127c699a282d0bab5ab350cccd6a781446f41`, to remove the T1 contract and
 code. The checkpoint is a zero-diff commit; no schema or user-data rollback
-is needed. Next action is Planner's targeted review of T1 Blocker / necessary
-Relevant only; do not start T2 until that handoff is complete.
+is needed. A separate docs/status commit only changes evidence and stage
+pointers. Planner's targeted review confirmed the evidence and found no T1
+Blocker / necessary Relevant. T2 has not started. Human verification remains
+`USER_VERIFICATION_REQUIRED / NOT_RUN`.
