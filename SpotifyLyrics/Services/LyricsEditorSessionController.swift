@@ -509,9 +509,10 @@ public final class LyricsEditorSessionController: ObservableObject {
     public func selectLyricsVersion(versionID: UUID) {
         guard let repository, let track, let identity else { return }
         guard let record = availableVersions.first(where: { $0.record.id == versionID }) else { return }
+        let requestedSourceContentHash = record.sourceContentHash
         let preferredTranslationID = availableTranslations.first {
             $0.record.lyricsVersionID == versionID &&
-            $0.record.sourceContentHash == record.record.contentHash &&
+            $0.record.sourceContentHash == requestedSourceContentHash &&
             $0.record.targetLanguage == translationConfiguration.targetLanguage
         }?.record.id
         let requestGeneration = generation
@@ -523,7 +524,7 @@ public final class LyricsEditorSessionController: ObservableObject {
                 let translations = try await repository.loadTranslationVersions(
                     lyricsVersionID: loaded.record.id,
                     targetLanguage: self?.translationConfiguration.targetLanguage ?? "zh-Hans",
-                    sourceContentHash: loaded.record.contentHash
+                    sourceContentHash: loaded.sourceContentHash
                 )
                 guard !Task.isCancelled else { return }
                 let selected = translations.first { $0.record.id == preferredTranslationID }
@@ -536,7 +537,7 @@ public final class LyricsEditorSessionController: ObservableObject {
                         identity: identity,
                         document: loaded.document,
                         lyricsVersionID: loaded.record.id,
-                        sourceContentHash: loaded.record.contentHash,
+                        sourceContentHash: loaded.sourceContentHash,
                         revision: self.sourceRevision,
                         translations: translations,
                         selectedTranslation: selected,
@@ -833,7 +834,7 @@ public final class LyricsEditorSessionController: ObservableObject {
             isNewSourceSession = false
             newSourceKind = .manualEdit
             sourceVersionID = stored.record.id
-            sourceContentHash = stored.record.contentHash
+            sourceContentHash = stored.sourceContentHash
             // SQLite stores rows by lineIndex, not the editor-only UUID used by
             // SwiftUI bindings. Preserve the current draft IDs while the
             // focused TextField is committing, otherwise the re-render after
@@ -841,7 +842,7 @@ public final class LyricsEditorSessionController: ObservableObject {
             // misleading "找不到歌词行" message.
             let projected = Self.documentByProjecting(result.translationVersion, onto: stored.document)
             let stableProjected = Self.documentPreservingLineIDs(projected, from: self.draft)
-            var next = LyricsEditorDraft(document: stableProjected, sourceVersionID: stored.record.id, sourceContentHash: stored.record.contentHash)
+            var next = LyricsEditorDraft(document: stableProjected, sourceVersionID: stored.record.id, sourceContentHash: stored.sourceContentHash)
             next.markSaved()
             draft = next
             baseLyricsLines = next.lines.map(Self.lyricsProjection)

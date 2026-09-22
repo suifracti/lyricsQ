@@ -749,7 +749,7 @@ public final class PlaybackState: ObservableObject {
             lyricsSession.adoptPersisted(
                 document: stored.document,
                 versionID: stored.record.id,
-                sourceContentHash: stored.record.contentHash
+                sourceContentHash: stored.sourceContentHash
             )
         }
         translationSession.reloadCurrentContext()

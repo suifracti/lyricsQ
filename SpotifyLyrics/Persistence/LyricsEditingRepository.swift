@@ -17,6 +17,16 @@ public struct StoredEditableLyricsVersion: Equatable, Sendable {
         self.document = document
         self.lockedReadingLayers = lockedReadingLayers
     }
+
+    /// Canonical identity of the stored source rows. Unlike
+    /// `record.contentHash`, this excludes provider/deduplication metadata and
+    /// any translation, timing, or reading projection applied to `document`.
+    public var sourceContentHash: String {
+        LyricsSourceContentHasher.hash(
+            isSynchronized: record.isSynced,
+            lines: lines
+        )
+    }
 }
 
 public struct LyricsReadingLayerDraft: Equatable, Sendable {
