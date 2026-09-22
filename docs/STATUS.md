@@ -1,39 +1,92 @@
-# 当前状态
+# Spotify Lyrics Current Status
 
-更新日期：2026-09-07。
+状态页最后更新：2026-09-22。
+这是 repository 的唯一滚动工程状态入口；详细运行证据保留在 `docs/evidence/`，不在本页复制完整审计。
 
-## 预发布测试版，不是正式发布版
+文档链：`README.md` → `docs/STATUS.md` → 具体 evidence / batch report / 已授权计划。
 
-本轮目标是合入已有体验改动、整理首页与截图、修复菜单重复注册并提供可审核的 DMG。发布标签为 `v0.1.2-preview.1`；应用版本为 0.1.2（3）。GitHub 必须标记为 Pre-release，不设为正式最新版。
+## Source Identity
 
-功能与限制以 [README](../README.md) 为对外入口。代码存在、合同脚本通过或截图存在，都不等于实机验收完成。
+- repo root：`/Users/apple/backup/sptifylyrics`
+- branch：`main`
+- source HEAD（B0 / v0.1.2 产品基线）：`6528be3103f75fd4f63757855b9d61cd30f757d8`
+- release identity：正式 GitHub Release `v0.1.2`，release commit 同上
+- status last updated：`2026-09-22`
+- tracked/staged 状态：D0 只产生文档与 B0 evidence 变更，`SpotifyLyrics/` 生产源码 diff 为零；三份既有 `PROJECT_FULL_AUDIT_*.md` 保持 untracked，不纳入本状态页或 D0 提交。精确 checkout 仍以 `git rev-parse HEAD` 为准。
 
-## 当前不可用
+## Product Boundary
 
-用户明确反馈以下功能仍有 Bug，不能作为可用能力宣传：
+- **Core**：V3 / Fullscreen
+- **Supported Secondary**：Desktop transparent v2 / Menu Bar
+- **Experimental**：Direction D / Capsule
+- **Legacy**：Classic V1 / desktop legacy panel
+- **iOS**：当前无 iOS target
 
-- AI 翻译、重新翻译与 AI 辅助歌词处理。
-- 自动排轴／本地音频强制对齐。
-- 顶部胶囊／灵动岛式歌词。
+这里的分类表示维护级别和工程边界：Experimental 不是不可达，Legacy 也不是死代码。AI、自动排轴和 Capsule 等入口存在不等于稳定支持或已完成用户验收。
 
-其它实验界面不作为正式能力；菜单栏歌曲信息菜单与顶部胶囊不是同一功能。
+## Current Milestone
 
-## 已有功能与待反馈边界
+**M1 — macOS Core Integrity Baseline**
 
-V3 主播放页、桌面歌词、全屏歌词、歌词版本管理、手动编辑、共享歌词时间、复制、收听记录等已存在。详见 README 的功能表。此前 A–H 曾被撤回部分验收，不在此恢复成“全部通过”。
+## Batch State
 
-歌词源匹配仍可能返回不同录音；Piano/Live 等变体尤其需要核对。逐行时间不一致不能靠统一 offset 掩盖。网络源、读音生成、单双行显示等实际质量仍随数据和运行环境变化。
+- **B0 — CLOSED**
+  - `BASELINE_CHARACTERIZED`
+  - 原生 mouse / keyboard / AX：`NATIVE_INPUT_PENDING`
+  - Evidence：[B0 clock & offset truth](evidence/core-integrity/B0-clock-offset.md)
+- **D0 — CLOSED**
+  - documentation source-of-truth convergence and narrow Obsidian sync
+  - Evidence：[D0 documentation SOT](evidence/core-integrity/D0-documentation-sot.md)
+- **Next**：C1 — Playback / Presentation Semantic Isolation
 
-## 本轮审查范围
+`NATIVE_INPUT_PENDING` 不是 PASS，也不表示 B0 发现的产品缺陷已经修复。
 
-- 应用级菜单仅注册一次，窗口命令并入系统 Window 菜单；Release 不包含 DEBUG 调试菜单。
-- 将用户指定图片作为应用图标资源；不替换歌曲封面。
-- 首页直接嵌入截图，移除“全部稳定”式表述和本机路径，补充已实现入口及限制。
-- 测试包须记录源码、构建配置、架构和散列；ad-hoc 签名不是 Developer ID 或公证。
-- 只运行菜单/资源定向检查、Debug 与 Release 构建、文档链接及打包校验；不重跑歌词全量回归。具体结果以发布附件 BUILD_INFO 为准。
+## B0 Confirmed Facts
 
-## 历史资料
+- production clock：`presentation = raw anchor + elapsed + offset`，最后 clamp。
+- `+offset` = 歌词提前出现；`-offset` = 歌词延后出现。
+- 当前 offset 使用 global key `lyrics.presentationOffset.v1`。
+- V3 visible time / progress 会消费 presentation time。
+- mouse / drag pointer mapping 属 raw domain。
+- keyboard / AX 当前存在 presentation → raw seek 混域。
+- 调 offset 本身不会直接 provider seek。
+- paused offset subscriber 存在短暂旧值读取路径。
+- Fullscreen 复用 V3。
+- native input event execution 尚未完成。
 
-[此前状态快照](archive/status-before-preview-20260907.md)仅供追溯，不覆盖本页或用户最新反馈。
-[截图与体验报告](work/experience-restoration/experience-feedback-report.md)记录当时的场景，不是当前测试版的全量验收证明。
-旧版本 v0.1.0、v0.1.1 保持不变，不覆盖已有资产。
+详见 [B0 evidence](evidence/core-integrity/B0-clock-offset.md)；本页只保留结论，不复制运行输出。
+
+## Open Core Risks
+
+以下项目仍按当前 Master Plan / batch ownership 作为未关闭核心项；D0 不判断它们已修复：
+
+- C1 clock / transport / seek
+- A0 capture source containment
+- H1 hash domain
+- T1 read/projection fidelity
+- T2 lossless edit/timing
+- S1 manual adoption persistence
+- O1 scoped offset
+- R1 reading token consistency
+- U1 honest experimental UI
+- V1 M1 gate
+
+## Known Test Drift
+
+- `Tests/v3_seek_draft_contract.py`：当前 fake 不满足 production getter；归 C1 owning issue。
+- `Tests/fullscreen_lyrics_contract.sh`：静态 literal assertion 与现实现别名写法漂移；不是 clock failure，D0 不修。
+
+## Source-of-Truth Rules
+
+1. 当前用户指令 / 已授权 Batch 决定“现在做什么”。
+2. cwd / worktree / HEAD / source 决定“实际改哪份代码”。
+3. tag + GitHub Release metadata 决定“发布了什么”。
+4. 运行证据 / 精确源码链决定“行为如何”。
+5. `docs/STATUS.md` 决定“当前工程推进状态”。
+6. Obsidian 保存长期决定、用户体验反馈、项目索引和当前阶段指针；不复制完整工程状态数据库。
+7. archive / preview / `.local` / 历史 Agent 报告不能覆盖当前 HEAD。
+
+## Next Executor Contract
+
+**C1 — Playback / Presentation Semantic Isolation**
+等待 Planner 下发合同。
