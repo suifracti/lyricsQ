@@ -8,11 +8,12 @@
 ## Source Identity
 
 - repo root：`/Users/apple/backup/sptifylyrics`
-- branch：`codex/h1-hash-domain-boundary`（基线 `main @ 87eade3314a595f06adeec7a0a8029790f44756e`）
-- source HEAD（H1 已验证 production commit）：`449df0a6446dd01f250ff84eec34ff87efccf70d` (`fix: separate lyrics source hash domains`)
+- branch：`codex/t1-read-projection-fidelity`（基线 H1 final HEAD `c062cfe371a2fcab3b1569888a6da35646627f0e`）
+- source HEAD（T1 已验证 production commit）：`bd6127c699a282d0bab5ab350cccd6a781446f41` (`fix: preserve lyrics read projections`)
+- H1 production commit：`449df0a6446dd01f250ff84eec34ff87efccf70d`
 - release identity：正式 GitHub Release `v0.1.2`，release commit `6528be3103f75fd4f63757855b9d61cd30f757d8`
 - status last updated：`2026-09-23`
-- tracked/staged 状态：H1 production 与定向 contract 已提交；H1 evidence/STATUS 文档提交后 tracked/staged diff 应为零。三份既有 `PROJECT_FULL_AUDIT_*.md` 保持 untracked，不纳入 H1 提交。精确 checkout 仍以 `git rev-parse HEAD` 为准；文档提交不改变上述已验证 production commit 身份。
+- tracked/staged 状态：T1 production、focused contract 与 evidence/status 均已提交并推送；准确 checkout HEAD 以 Git 为准。原始 H1 checkout 中的三份既有 `PROJECT_FULL_AUDIT_*.md` 保持原样，不纳入 T1。
 
 ## Product Boundary
 
@@ -50,7 +51,11 @@
   - `AUTOMATED_VERIFIED`
   - 真人 provider 版本切换后小修改保存：`USER_VERIFICATION_REQUIRED / NOT_RUN`
   - Evidence：[H1 hash domain boundary](evidence/core-integrity/H1-hash-domain-boundary.md)
-- **Next candidate**：T1 — Read / Projection Fidelity（未开始，等待 Planner）
+- **T1 — CLOSED**
+  - `AUTOMATED_VERIFIED`
+  - 真人验收：`USER_VERIFICATION_REQUIRED / NOT_RUN`
+  - Evidence：[T1 read / projection fidelity](evidence/core-integrity/T1-read-projection-fidelity.md)
+- **Next**：Planner 定向审查 T1；T2 尚未开始
 
 `NATIVE_INPUT_PENDING` 不是 PASS，也不表示 B0 发现的产品缺陷已经修复。
 
@@ -90,13 +95,21 @@
 
 详见 [H1 evidence](evidence/core-integrity/H1-hash-domain-boundary.md)。
 
+## T1 Confirmed Facts
+
+- partial unsynchronized mask、有效零秒、占位行和行结束时间贯穿 repository → session → editor draft；model/session/draft 保留 `nil` 与空集合区别，SQLite 对无 timed row 的现有映射为 `nil`。
+- 旧 locked-reading overlay 仍生效，同时原文、行时间、timed spans、performer、language、translation projection、同版本 timing attachment UUID 与 canonical source hash 保留。
+- 重复加载与切换 session/editor 版本未改变隔离 fixture 的任何数据库表或 `data_version`；无 schema 或用户数据变更。
+- 新版本保存是否继续 timing attachment 属 T2，本轮未处理。真人验收保持 `USER_VERIFICATION_REQUIRED / NOT_RUN`。
+
+详见 [T1 evidence](evidence/core-integrity/T1-read-projection-fidelity.md)。
+
 详见 [B0 evidence](evidence/core-integrity/B0-clock-offset.md)；本页只保留结论，不复制运行输出。
 
 ## Open Core Risks
 
-以下项目仍按当前 Master Plan / batch ownership 作为未关闭核心项；H1 本轮不判断它们已修复：
+以下项目仍按当前 Master Plan / batch ownership 作为未关闭核心项；T1 本轮只关闭 read/projection fidelity，不判断这些项目已修复：
 
-- T1 read/projection fidelity
 - T2 lossless edit/timing
 - S1 manual adoption persistence
 - O1 scoped offset
@@ -120,5 +133,5 @@
 
 ## Next Executor Contract
 
-**T1 — Read / Projection Fidelity**
-H1 已自动验收并停止；T1 未开始，等待 Planner 下发定向合同。
+**T2 — Lossless Edit / Timing**
+T1 已自动验收并推送；先由 Planner 定向审查 T1 Blocker / 必要 Relevant。T2 尚未开始。
