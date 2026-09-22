@@ -1,6 +1,6 @@
 # Spotify Lyrics Current Status
 
-状态页最后更新：2026-09-22。
+状态页最后更新：2026-09-23。
 这是 repository 的唯一滚动工程状态入口；详细运行证据保留在 `docs/evidence/`，不在本页复制完整审计。
 
 文档链：`README.md` → `docs/STATUS.md` → 具体 evidence / batch report / 已授权计划。
@@ -8,11 +8,11 @@
 ## Source Identity
 
 - repo root：`/Users/apple/backup/sptifylyrics`
-- branch：`main`
-- source HEAD（A0 已验证 production commit）：`e775f39702361dff9dba7894e746927c660c257b` (`fix: bind capture handoff to active source generation`)
+- branch：`codex/h1-hash-domain-boundary`（基线 `main @ 87eade3314a595f06adeec7a0a8029790f44756e`）
+- source HEAD（H1 已验证 production commit）：`449df0a6446dd01f250ff84eec34ff87efccf70d` (`fix: separate lyrics source hash domains`)
 - release identity：正式 GitHub Release `v0.1.2`，release commit `6528be3103f75fd4f63757855b9d61cd30f757d8`
 - status last updated：`2026-09-22`
-- tracked/staged 状态：A0 production 与定向 contracts 已在本地提交；A0 evidence/STATUS 文档提交后 tracked/staged diff 应为零。三份既有 `PROJECT_FULL_AUDIT_*.md` 保持 untracked，不纳入 A0 提交。精确 checkout 仍以 `git rev-parse HEAD` 为准；文档提交不改变上述已验证 production commit 身份。
+- tracked/staged 状态：H1 production 与定向 contract 已提交；H1 evidence/STATUS 文档提交后 tracked/staged diff 应为零。三份既有 `PROJECT_FULL_AUDIT_*.md` 保持 untracked，不纳入 H1 提交。精确 checkout 仍以 `git rev-parse HEAD` 为准；文档提交不改变上述已验证 production commit 身份。
 
 ## Product Boundary
 
@@ -46,7 +46,11 @@
   - `AUTOMATED_VERIFIED`
   - 真实 Spotify/Music capture：`USER_VERIFICATION_REQUIRED / NOT_RUN`
   - Evidence：[A0 capture source containment](evidence/core-integrity/A0-capture-source-containment.md)
-- **Next**：H1 — Hash Domain Boundary Repair
+- **H1 — CLOSED**
+  - `AUTOMATED_VERIFIED`
+  - 真人 provider 版本切换后小修改保存：`USER_VERIFICATION_REQUIRED / NOT_RUN`
+  - Evidence：[H1 hash domain boundary](evidence/core-integrity/H1-hash-domain-boundary.md)
+- **Next candidate**：T1 — Read / Projection Fidelity（未开始，等待 Planner）
 
 `NATIVE_INPUT_PENDING` 不是 PASS，也不表示 B0 发现的产品缺陷已经修复。
 
@@ -75,13 +79,23 @@
 
 详见 [A0 evidence](evidence/core-integrity/A0-capture-source-containment.md)；本页不复制完整运行输出。
 
+## H1 Confirmed Facts
+
+- provider/version `contentHash` 继续只承担版本记录与去重身份；既有算法和固定预期未改变。
+- translation/reading/timing/editor compare-and-save 使用从 canonical stored `lyric_lines` 计算的 `sourceContentHash`。
+- 可编辑版本的 `document` 可能已叠加 timing 或 locked reading；H1 不从该显示投影反算规范源身份。
+- 首次打开、provider A → B → A、manual 选择、正确身份保存、保存后继续加载、错误身份拒绝/no-write 与迟到异步结果均已通过临时 SQLite 自动合同。
+- repository `sourceContentMismatch` 防线保留；无 schema 迁移、历史 hash 重算或用户数据库访问。
+- 真人“切 provider 版本后小修改保存”未运行，保持 `USER_VERIFICATION_REQUIRED / NOT_RUN`。
+
+详见 [H1 evidence](evidence/core-integrity/H1-hash-domain-boundary.md)。
+
 详见 [B0 evidence](evidence/core-integrity/B0-clock-offset.md)；本页只保留结论，不复制运行输出。
 
 ## Open Core Risks
 
 以下项目仍按当前 Master Plan / batch ownership 作为未关闭核心项；A0 本轮不判断它们已修复：
 
-- H1 hash domain
 - T1 read/projection fidelity
 - T2 lossless edit/timing
 - S1 manual adoption persistence
@@ -106,5 +120,5 @@
 
 ## Next Executor Contract
 
-**H1 — Hash Domain Boundary Repair**
-等待 Planner 下发合同；A0 已结案，本轮不提前执行 H1。
+**T1 — Read / Projection Fidelity**
+H1 已自动验收并停止；T1 未开始，等待 Planner 下发定向合同。
