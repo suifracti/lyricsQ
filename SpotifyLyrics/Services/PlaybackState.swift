@@ -30,6 +30,10 @@ public final class PlaybackState: ObservableObject {
     @Published public var currentMode: LyricsDisplayMode = .mainWindow
     @Published public var preferences: DisplayPreferences = DisplayPreferences()
     @Published public private(set) var providerStatus: PlaybackProviderState = .connecting
+    /// Source identity reported by the active playback provider. This is not
+    /// inferred from process existence or track metadata and is the source
+    /// capability input for automatic live capture.
+    @Published public private(set) var playbackSourceIdentity: PlaybackSourceIdentity = .unknown
     @Published public private(set) var isMockPreviewMode = false
     @Published public private(set) var hasLiveTrack = false
     @Published public private(set) var songSearchSelectionMessage = ""
@@ -443,6 +447,23 @@ public final class PlaybackState: ObservableObject {
     public var liveTrackIdentity: TrackIdentity? {
         guard hasLiveTrack, !isMockPreviewMode else { return nil }
         return TrackIdentity(track: currentTrack)
+    }
+
+    /// Shared source/identity capability boundary for the existing live
+    /// capture implementation. Local-file alignment intentionally does not
+    /// consult this gate.
+    public func liveCaptureEligibility(requiresPlaying: Bool = true) -> AutomaticLiveCaptureEligibility {
+        AutomaticLiveCaptureSourceGate.evaluate(
+            AutomaticLiveCaptureContext(
+                source: playbackSourceIdentity,
+                providerIsReady: providerStatus.isReady,
+                hasLiveTrack: hasLiveTrack,
+                isMockPreview: isMockPreviewMode,
+                isPlaying: isPlaying,
+                identityKey: liveTrackIdentity?.stableKey
+            ),
+            requiresPlaying: requiresPlaying
+        )
     }
 
     public var liveLyricsDocumentMatchesCurrentTrack: Bool {
@@ -1185,6 +1206,7 @@ public final class PlaybackState: ObservableObject {
         clearSearchPreview()
         isMockPreviewMode = true
         hasLiveTrack = false
+        updatePlaybackSourceIdentity(.mockPreview)
         providerStatus = .mockPreview
         currentTrack = MockData.sampleTrack
         lyricsSession.enterMockPreview(lines: MockData.sampleLyrics)
@@ -1199,6 +1221,7 @@ public final class PlaybackState: ObservableObject {
         clearSearchPreview()
         isMockPreviewMode = false
         hasLiveTrack = false
+        updatePlaybackSourceIdentity(.unknown)
         currentTrack = .emptyPlaybackPlaceholder
         lyricsSession.clear()
         isPlaying = false
@@ -1608,6 +1631,8 @@ public final class PlaybackState: ObservableObject {
         fallback: String
     ) -> String {
         switch kind {
+        case .unsupportedSource:
+            return "当前播放来源不支持 Spotify live capture"
         case .noCompletedSession, .noWavSegments, .captureFailed:
             return "没有捕获到有效音频"
         case .speechFailed:
@@ -2108,6 +2133,10 @@ public final class PlaybackState: ObservableObject {
         // A refresh that was already in flight when Mock Preview was entered
         // must not be allowed to resurrect a real Spotify session.
         guard !isMockPreviewMode else { return }
+        let nextSource = snapshot.status.isReady && snapshot.track != nil
+            ? snapshot.sourceIdentity
+            : .unknown
+        updatePlaybackSourceIdentity(nextSource)
         guard snapshot.status.isReady, let providerTrack = snapshot.track else {
             guard hasLiveTrack else {
                 transientProviderFailureStartedAt = nil
@@ -2227,6 +2256,7 @@ public final class PlaybackState: ObservableObject {
 
     private func clearLiveTrackIfNeeded() {
         guard !isMockPreviewMode else { return }
+        updatePlaybackSourceIdentity(.unknown)
         transientProviderFailureStartedAt = nil
         pauseListeningHistorySession(at: Date())
         alignmentTask?.cancel()
@@ -2242,6 +2272,16 @@ public final class PlaybackState: ObservableObject {
         songSearchSelectionMessage = ""
         isPlaying = false
         resetPlaybackAnchor(to: 0, source: .reset)
+    }
+
+    private func updatePlaybackSourceIdentity(_ next: PlaybackSourceIdentity) {
+        guard playbackSourceIdentity != next else { return }
+        let previous = playbackSourceIdentity
+        playbackSourceIdentity = next
+        AutomaticAlignmentJobController.shared.notifyPlaybackSourceChanged(
+            previous: previous,
+            next: next
+        )
     }
 
     private func beginListeningHistorySession(

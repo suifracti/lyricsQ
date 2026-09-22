@@ -70,7 +70,8 @@ struct SpotifyLyricsApp: App {
                     }
                     // Diagnostic harness only — env-driven SCK spikes.
                     LiveCaptureCoordinator.shared.bind(playback: playbackState)
-                    _ = SpotifyScreenCaptureAudioSpike.shared
+                    let spike = SpotifyScreenCaptureAudioSpike.shared
+                    spike.bind(playback: playbackState)
 #endif
                 }
 #if DEBUG

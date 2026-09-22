@@ -15,6 +15,7 @@ public final class LiveCaptureCoordinator: ObservableObject {
 
     public enum State: String, Sendable {
         case idle
+        case starting
         case running
         case stopping
         case failed
@@ -32,11 +33,13 @@ public final class LiveCaptureCoordinator: ObservableObject {
     private var lastHostTime: TimeInterval = 0
     private var lastIsPlaying = false
     private var lastIdentityKey: String?
+    private var lastPlaybackSource: PlaybackSourceIdentity = .unknown
     private var lastAudioHostTime: TimeInterval = 0
     private var lastAnchorLogHostTime: TimeInterval = 0
     private var sessionWorkDirectory: URL?
     private var autoStopTask: Task<Void, Never>?
     private var gapWatchTask: Task<Void, Never>?
+    private var pendingStartRequestID: UUID?
     private var alignmentGeneration: UInt64 = 0
     private let generationFlag = GenerationFlag()
     private var alignmentTask: Task<Void, Never>?
@@ -50,6 +53,7 @@ public final class LiveCaptureCoordinator: ObservableObject {
     /// Classifies why Assist could not produce a draft (logs + UI mapping).
     public enum PartialAlignmentFailureKind: String, Sendable, Equatable {
         case startIgnored
+        case unsupportedSource
         case captureFailed
         case noCompletedSession
         case noWavSegments
@@ -136,6 +140,53 @@ public final class LiveCaptureCoordinator: ObservableObject {
             )
             return
         }
+        guard let playback else {
+            let message = "没有绑定当前播放来源，已拒绝 live capture"
+            lastError = message
+            publishHandoff(
+                generation: lastStartedGeneration,
+                report: nil,
+                failureKind: .unsupportedSource,
+                message: message
+            )
+            SCKSpikeLog.log("S2 start rejected reason=no_playback_bound")
+            return
+        }
+        // The automatic controller requires active playback before it calls
+        // this entry point. The coordinator itself historically supports a
+        // paused Spotify session and waits for resume before opening a
+        // segment, so source containment must not remove that behavior.
+        let eligibility = playback.liveCaptureEligibility(requiresPlaying: false)
+        guard eligibility.isAllowed else {
+            let message: String
+            if playback.playbackSourceIdentity == .appleMusic {
+                message = "当前 Apple Music 播放不支持 Spotify live capture"
+            } else {
+                message = "当前播放来源不支持 live capture（\(eligibility.reason)）"
+            }
+            lastError = message
+            publishHandoff(
+                generation: lastStartedGeneration,
+                report: nil,
+                failureKind: .unsupportedSource,
+                message: message
+            )
+            SCKSpikeLog.log(
+                "S2 start rejected source=\(playback.playbackSourceIdentity.rawValue) reason=\(eligibility.reason)"
+            )
+            return
+        }
+        guard let startIdentityKey = playback.liveTrackIdentity?.stableKey else {
+            let message = "当前播放来源缺少有效歌曲身份，已拒绝 live capture"
+            lastError = message
+            publishHandoff(
+                generation: lastStartedGeneration,
+                report: nil,
+                failureKind: .unsupportedSource,
+                message: message
+            )
+            return
+        }
         lastError = nil
         lastPartialReport = nil
         lastAlignmentHandoff = nil
@@ -147,22 +198,55 @@ public final class LiveCaptureCoordinator: ObservableObject {
         alignmentGeneration &+= 1
         generationFlag.value = alignmentGeneration
         lastStartedGeneration = alignmentGeneration
+        let startGuard = AutomaticLiveCaptureSessionGuard(
+            source: playback.playbackSourceIdentity,
+            identityKey: startIdentityKey,
+            generation: alignmentGeneration
+        )
+        let startRequestID = UUID()
+        pendingStartRequestID = startRequestID
         alignmentTask?.cancel()
         SCKSpikeLog.log(
             "S2 SESSION_BOOT formal_db_opened=NO partial=\(shouldRunPartialAlignment) gen=\(alignmentGeneration)"
         )
 
         // Ensure low-level capture is running and samples are forwarded here.
+        SpotifyScreenCaptureAudioSpike.shared.bind(playback: playback)
         SpotifyScreenCaptureAudioSpike.shared.audioSampleHandler = { [weak self] buffer in
             // Append PCM on the capture queue path first (writer is thread-safe).
             self?.appendPCM(buffer)
             self?.handleAudioSample(buffer)
         }
 
+        state = .starting
+        installPlaybackObservers()
+
         if SpotifyScreenCaptureAudioSpike.shared.state != .capturing {
-            await SpotifyScreenCaptureAudioSpike.shared.start(autoStopAfter: nil)
+            await SpotifyScreenCaptureAudioSpike.shared.start(
+                autoStopAfter: nil,
+                sessionGuard: startGuard
+            )
+        }
+        guard pendingStartRequestID == startRequestID,
+              accepts(startGuard, playback: playback) else {
+            if SpotifyScreenCaptureAudioSpike.shared.state == .discovering
+                || SpotifyScreenCaptureAudioSpike.shared.state == .capturing
+                || SpotifyScreenCaptureAudioSpike.shared.state == .failed {
+                await SpotifyScreenCaptureAudioSpike.shared.stop(reason: "s2-stale-start")
+            }
+            if pendingStartRequestID == startRequestID {
+                pendingStartRequestID = nil
+                cancellables.removeAll()
+                SpotifyScreenCaptureAudioSpike.shared.audioSampleHandler = nil
+                state = .idle
+            }
+            SCKSpikeLog.log("S2 drop stale startup provenance")
+            return
         }
         guard SpotifyScreenCaptureAudioSpike.shared.state == .capturing else {
+            pendingStartRequestID = nil
+            cancellables.removeAll()
+            SpotifyScreenCaptureAudioSpike.shared.audioSampleHandler = nil
             lastError = SpotifyScreenCaptureAudioSpike.shared.lastError ?? "capture failed"
             state = .failed
             SCKSpikeLog.log("S2 failed to start underlying spike error=\(lastError ?? "")")
@@ -176,11 +260,11 @@ public final class LiveCaptureCoordinator: ObservableObject {
             return
         }
 
-        installPlaybackObservers()
+        pendingStartRequestID = nil
         state = .running
 
-        if let identity = playback?.currentTrackIdentity, playback?.hasLiveTrack == true {
-            beginSession(identity: identity, trackDuration: playback?.currentTrack.duration ?? 0, reason: .initial)
+        if let identity = playback.liveTrackIdentity, playback.hasLiveTrack {
+            beginSession(identity: identity, trackDuration: playback.currentTrack.duration, reason: .initial)
         } else {
             SCKSpikeLog.log("S2 waiting for live track before first session")
         }
@@ -208,7 +292,9 @@ public final class LiveCaptureCoordinator: ObservableObject {
     }
 
     public func stop(reason: CaptureTerminalReason = .userStop) async {
-        guard state == .running || state == .failed else { return }
+        guard state == .starting || state == .running || state == .failed else { return }
+        let wasStarting = state == .starting
+        pendingStartRequestID = nil
         state = .stopping
         SCKSpikeLog.log("S2 stop reason=\(reason.rawValue)")
         autoStopTask?.cancel()
@@ -228,7 +314,7 @@ public final class LiveCaptureCoordinator: ObservableObject {
 
         // Align while WAVs still exist; S1 spike stop scavenges capture temp.
         let handoffGen = lastStartedGeneration
-        if shouldRunPartialAlignment {
+        if shouldRunPartialAlignment && !wasStarting {
             await runPartialAlignmentIfNeeded(stopReason: reason)
             // Guarantee Assist never sees idle with a cleared handoff for this gen.
             if lastAlignmentHandoff?.generation != handoffGen {
@@ -280,7 +366,7 @@ public final class LiveCaptureCoordinator: ObservableObject {
     /// Wait until capture leaves running/stopping. Callers must then read `lastAlignmentHandoff`.
     public func waitUntilIdle(timeoutSeconds: TimeInterval = 180) async {
         let deadline = Date().addingTimeInterval(timeoutSeconds)
-        while state == .running || state == .stopping {
+        while state == .starting || state == .running || state == .stopping {
             if Date() > deadline { break }
             try? await Task.sleep(nanoseconds: 100_000_000)
         }
@@ -336,7 +422,8 @@ public final class LiveCaptureCoordinator: ObservableObject {
         lastPosition = playback.currentTime
         lastHostTime = Date().timeIntervalSince1970
         lastIsPlaying = playback.isPlaying
-        lastIdentityKey = playback.currentTrackIdentity?.stableKey
+        lastIdentityKey = playback.liveTrackIdentity?.stableKey
+        lastPlaybackSource = playback.playbackSourceIdentity
 
         // Reuse PlaybackState's existing timer-driven publishers.
         playback.$currentTime
@@ -364,7 +451,7 @@ public final class LiveCaptureCoordinator: ObservableObject {
     private func onPlaybackObjectWillChange() {
         // Identity is not a separate publisher; re-read after the next main turn.
         Task { @MainActor in
-            self.evaluateIdentityChange()
+            self.evaluatePlaybackContextChange()
         }
     }
 
@@ -387,9 +474,11 @@ public final class LiveCaptureCoordinator: ObservableObject {
     }
 
     private func onPosition(_ position: TimeInterval) {
-        guard state == .running else { return }
+        guard state == .starting || state == .running else { return }
         let host = Date().timeIntervalSince1970
-        evaluateIdentityChange()
+        evaluatePlaybackContextChange()
+
+        guard playback?.playbackSourceIdentity == .spotifyDesktop else { return }
 
         guard activeSession != nil else {
             lastPosition = position
@@ -428,15 +517,21 @@ public final class LiveCaptureCoordinator: ObservableObject {
         lastHostTime = host
     }
 
-    private func evaluateIdentityChange() {
-        guard state == .running else { return }
-        let identity = playback?.currentTrackIdentity
+    private func evaluatePlaybackContextChange() {
+        guard state == .starting || state == .running else { return }
+        let wasStarting = state == .starting
+        let source = playback?.playbackSourceIdentity ?? .unknown
+        let identity = playback?.liveTrackIdentity
         let key = identity?.stableKey
-        if key == lastIdentityKey { return }
+        if key == lastIdentityKey, source == lastPlaybackSource { return }
 
         let previous = lastIdentityKey
+        let previousSource = lastPlaybackSource
         lastIdentityKey = key
-        SCKSpikeLog.log("S2 IDENTITY previous=\(short(previous)) next=\(short(key))")
+        lastPlaybackSource = source
+        SCKSpikeLog.log(
+            "S2 CONTEXT previousSource=\(previousSource.rawValue) nextSource=\(source.rawValue) previous=\(short(previous)) next=\(short(key))"
+        )
 
         // Invalidate any in-flight S3A work for the previous song.
         alignmentGeneration &+= 1
@@ -451,18 +546,48 @@ public final class LiveCaptureCoordinator: ObservableObject {
         }
         activeSession = nil
 
-        if let identity, playback?.hasLiveTrack == true {
+        if wasStarting {
+            pendingStartRequestID = nil
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                await self.stop(
+                    reason: source == .spotifyDesktop ? .trackChanged : .spotifyUnavailable
+                )
+            }
+            return
+        }
+
+        if source == .spotifyDesktop, let identity, playback?.hasLiveTrack == true {
             beginSession(
                 identity: identity,
                 trackDuration: playback?.currentTrack.duration ?? 0,
                 reason: .trackChanged
             )
         } else {
-            SCKSpikeLog.log("S2 no live track after identity change")
+            SCKSpikeLog.log("S2 source unsupported or no live track; stopping capture")
+            Task { @MainActor [weak self] in
+                guard let self, self.state == .running else { return }
+                let reason: CaptureTerminalReason = source == .spotifyDesktop ? .noLiveTrack : .spotifyUnavailable
+                await self.stop(reason: reason)
+            }
         }
     }
 
     // MARK: - Session / segment
+
+    private func accepts(
+        _ startGuard: AutomaticLiveCaptureSessionGuard,
+        playback: PlaybackState
+    ) -> Bool {
+        startGuard.accepts(
+            source: playback.playbackSourceIdentity,
+            identityKey: playback.liveTrackIdentity?.stableKey,
+            generation: alignmentGeneration,
+            providerReady: playback.providerStatus.isReady
+                && playback.hasLiveTrack
+                && !playback.isMockPreviewMode
+        )
+    }
 
     private func beginSession(identity: TrackIdentity, trackDuration: TimeInterval, reason: SegmentBoundaryReason) {
         let sessionID = UUID()
@@ -607,6 +732,17 @@ public final class LiveCaptureCoordinator: ObservableObject {
             )
             return
         }
+        guard playback.playbackSourceIdentity == .spotifyDesktop,
+              playback.liveTrackIdentity?.stableKey == session.trackIdentity.stableKey else {
+            SCKSpikeLog.log("S3A drop stale provenance source_or_identity")
+            publishHandoff(
+                generation: gen,
+                report: nil,
+                failureKind: .cancelled,
+                message: "播放来源或歌曲已切换，已丢弃迟到结果"
+            )
+            return
+        }
         // Held-out: use current synced lyrics times only for evaluation AFTER
         // alignment. Algorithm input always uses plain lines (timestamps zeroed).
         let liveLines = playback.liveLyrics
@@ -741,12 +877,13 @@ public final class LiveCaptureCoordinator: ObservableObject {
 
     private func ingestOnMain(_ sampleBuffer: CMSampleBuffer) {
         guard state == .running else { return }
+        guard playback?.playbackSourceIdentity == .spotifyDesktop else { return }
         let host = Date().timeIntervalSince1970
         lastAudioHostTime = host
 
         // Drop late buffers from a previous session/identity.
         guard let session = activeSession else { return }
-        if let live = playback?.currentTrackIdentity, live != session.trackIdentity {
+        if let live = playback?.liveTrackIdentity, live != session.trackIdentity {
             SCKSpikeLog.log("S2 DROP late buffer identity mismatch")
             return
         }

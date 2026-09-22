@@ -11,6 +11,7 @@ final class AutomaticAlignmentJobController {
     func notePlaybackContextChanged() {}
     func notifySeek(from: TimeInterval, to: TimeInterval) {}
     func notifyTrackChanged(previousKey: String?, nextKey: String) {}
+    func notifyPlaybackSourceChanged(previous: PlaybackSourceIdentity, next: PlaybackSourceIdentity) {}
 }
 
 @MainActor

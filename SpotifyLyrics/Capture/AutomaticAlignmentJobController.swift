@@ -43,6 +43,7 @@ public final class AutomaticAlignmentJobController: ObservableObject {
     private weak var playback: PlaybackState?
     private var jobTask: Task<Void, Never>?
     private var generation: UInt64 = 0
+    private var activeSessionGuard: AutomaticLiveCaptureSessionGuard?
     private var cancellables = Set<AnyCancellable>()
 
     private init() {}
@@ -55,6 +56,11 @@ public final class AutomaticAlignmentJobController: ObservableObject {
     private static let persistenceFailureStatus = UserFacingStatus(
         title: "自动排轴结果未能保存",
         recoveryHint: "当前歌词没有被自动覆盖；请稍后重试。"
+    )
+
+    private static let unsupportedSourceStatus = UserFacingStatus(
+        title: "当前播放来源不支持自动捕获",
+        recoveryHint: "自动 live capture 目前只接受 Spotify Desktop；本地音频排轴仍可独立使用。"
     )
 
     private static func statusForCaptureFailure(
@@ -80,6 +86,8 @@ public final class AutomaticAlignmentJobController: ObservableObject {
         }
 
         switch kind {
+        case .unsupportedSource:
+            return Self.unsupportedSourceStatus
         case .captureFailed, .noCompletedSession, .noWavSegments:
             return UserFacingStatus(
                 title: "音频捕获失败",
@@ -185,9 +193,10 @@ public final class AutomaticAlignmentJobController: ObservableObject {
         jobTask?.cancel()
         jobTask = nil
         generation &+= 1
+        activeSessionGuard = nil
         Task { @MainActor in
             let st = LiveCaptureCoordinator.shared.state
-            if st == .running || st == .stopping {
+            if st == .starting || st == .running || st == .stopping {
                 await LiveCaptureCoordinator.shared.stop(reason: .userStop)
             }
         }
@@ -281,6 +290,19 @@ public final class AutomaticAlignmentJobController: ObservableObject {
             if jobTask == nil { state = .waitingForPlayback; statusMessage = "等待播放" }
             return
         }
+        let sourceEligibility = playback.liveCaptureEligibility(requiresPlaying: false)
+        if !sourceEligibility.isAllowed && sourceEligibility.isUnsupportedSource {
+            LyricsE2ELog.log(
+                "AUTO_ALIGN gate=false reason=unsupported_source source=\(playback.playbackSourceIdentity.rawValue)"
+            )
+            if jobTask != nil {
+                cancelCurrentJob(userInitiated: false)
+            }
+            state = .deferred
+            statusMessage = "当前播放来源不支持自动捕获"
+            userFacingStatus = Self.unsupportedSourceStatus
+            return
+        }
         guard let identity = playback.currentTrackIdentity else {
             LyricsE2ELog.log("AUTO_ALIGN gate=false reason=no_track_identity")
             return
@@ -300,6 +322,14 @@ public final class AutomaticAlignmentJobController: ObservableObject {
             } else if jobTask == nil {
                 state = .waitingForPlayback
                 statusMessage = "等待播放"
+            }
+            return
+        }
+        guard playback.liveCaptureEligibility().isAllowed else {
+            LyricsE2ELog.log("AUTO_ALIGN gate=false reason=source_or_playback_unavailable")
+            if jobTask == nil {
+                state = .waitingForPlayback
+                statusMessage = "等待可用播放来源"
             }
             return
         }
@@ -366,8 +396,20 @@ public final class AutomaticAlignmentJobController: ObservableObject {
         plain: LyricsDocument,
         parentVersionID: UUID
     ) {
+        guard playback.liveCaptureEligibility().isAllowed else {
+            state = .deferred
+            statusMessage = "当前播放来源不支持自动捕获"
+            userFacingStatus = Self.unsupportedSourceStatus
+            return
+        }
         generation &+= 1
         let gen = generation
+        let sessionGuard = AutomaticLiveCaptureSessionGuard(
+            source: playback.playbackSourceIdentity,
+            identityKey: identity.stableKey,
+            generation: gen
+        )
+        activeSessionGuard = sessionGuard
         activeIdentityKey = identity.stableKey
         lastError = nil
         lastDecision = nil
@@ -400,21 +442,34 @@ public final class AutomaticAlignmentJobController: ObservableObject {
                 autoStopAfter: max(25, seconds),
                 runPartialAlignment: true
             )
-            guard gen == self.generation, !Task.isCancelled else { return }
+            guard gen == self.generation,
+                  !Task.isCancelled,
+                  self.accepts(sessionGuard, playback: playback) else {
+                self.markStaleJobCancelled()
+                return
+            }
 
             await LiveCaptureCoordinator.shared.waitUntilIdle(timeoutSeconds: 240)
-            guard gen == self.generation, !Task.isCancelled else { return }
+            guard gen == self.generation,
+                  !Task.isCancelled,
+                  self.accepts(sessionGuard, playback: playback) else {
+                self.markStaleJobCancelled()
+                return
+            }
 
             // Identity still matches?
             guard playback.currentTrackIdentity?.stableKey == identity.stableKey else {
-                self.state = .canceled
-                self.statusMessage = "歌曲已切换，任务已取消"
-                self.jobTask = nil
+                self.markStaleJobCancelled(message: "歌曲或播放来源已切换，任务已取消")
                 return
             }
 
             self.state = .aligning
             self.statusMessage = "正在整理时间建议…"
+
+            guard self.accepts(sessionGuard, playback: playback) else {
+                self.markStaleJobCancelled()
+                return
+            }
 
             let handoff = LiveCaptureCoordinator.shared.lastAlignmentHandoff
             guard let report = handoff?.report ?? LiveCaptureCoordinator.shared.lastPartialReport else {
@@ -483,6 +538,10 @@ public final class AutomaticAlignmentJobController: ObservableObject {
 
             switch gate.decision {
             case .completeAndAdopt:
+                guard self.accepts(sessionGuard, playback: playback) else {
+                    self.markStaleJobCancelled()
+                    return
+                }
                 await self.completeAndAdopt(
                     playback: playback,
                     identity: identity,
@@ -491,7 +550,8 @@ public final class AutomaticAlignmentJobController: ObservableObject {
                     sourceHash: sourceHash,
                     draft: draft,
                     report: report,
-                    progress: progress
+                    progress: progress,
+                    sessionGuard: sessionGuard
                 )
             case .accumulate:
                 self.state = .accumulating
@@ -520,6 +580,30 @@ public final class AutomaticAlignmentJobController: ObservableObject {
         }
     }
 
+    private func accepts(
+        _ sessionGuard: AutomaticLiveCaptureSessionGuard,
+        playback: PlaybackState
+    ) -> Bool {
+        sessionGuard.accepts(
+            source: playback.playbackSourceIdentity,
+            identityKey: playback.liveTrackIdentity?.stableKey,
+            generation: generation,
+            providerReady: playback.providerStatus.isReady
+                && playback.hasLiveTrack
+                && !playback.isMockPreviewMode
+        )
+    }
+
+    private func markStaleJobCancelled(message: String = "歌曲或播放来源已切换，任务已取消") {
+        state = .canceled
+        statusMessage = message
+        jobTask = nil
+        activeIdentityKey = nil
+        activeSessionGuard = nil
+        userFacingStatus = nil
+        LyricsE2ELog.log("AUTO_ALIGN drop stale job reason=source_or_identity")
+    }
+
     private func completeAndAdopt(
         playback: PlaybackState,
         identity: TrackIdentity,
@@ -528,8 +612,13 @@ public final class AutomaticAlignmentJobController: ObservableObject {
         sourceHash: String,
         draft: AssistedAlignmentDraft,
         report: PartialAlignmentReport,
-        progress: AutomaticAlignmentProgressStore.ProgressDocument
+        progress: AutomaticAlignmentProgressStore.ProgressDocument,
+        sessionGuard: AutomaticLiveCaptureSessionGuard
     ) async {
+        guard accepts(sessionGuard, playback: playback) else {
+            markStaleJobCancelled()
+            return
+        }
         // Build full synchronized document from progress + draft
         var lines = plain.lines
         let map = Dictionary(uniqueKeysWithValues: progress.timedLines.map { ($0.lyricLineIndex, $0) })
@@ -608,6 +697,10 @@ public final class AutomaticAlignmentJobController: ObservableObject {
         }
 
         do {
+            guard accepts(sessionGuard, playback: playback) else {
+                markStaleJobCancelled()
+                return
+            }
             let saved = try await repository.saveAlignedVersion(
                 AlignmentPersistenceRequest(
                     track: playback.currentTrack,
@@ -638,6 +731,10 @@ public final class AutomaticAlignmentJobController: ObservableObject {
                 LyricsE2ELog.log("AUTO_ALIGN save rejected disposition=\(saved.disposition)")
                 return
             }
+            guard accepts(sessionGuard, playback: playback) else {
+                markStaleJobCancelled()
+                return
+            }
             let hash = saved.sourceContentHash ?? LyricsPersistenceMapper.sourceContentHash(document: document)
             playback.lyricsSession.adoptPersisted(
                 document: document,
@@ -649,6 +746,13 @@ public final class AutomaticAlignmentJobController: ObservableObject {
             userFacingStatus = nil
             LyricsE2ELog.log("AUTO_ALIGN completeAndAdopt version=\(versionID.uuidString.prefix(8))")
         } catch {
+            if Task.isCancelled {
+                return
+            }
+            guard accepts(sessionGuard, playback: playback) else {
+                self.markStaleJobCancelled()
+                return
+            }
             state = .failed
             statusMessage = "本次无法可靠完成"
             lastError = error.localizedDescription
@@ -667,7 +771,30 @@ public final class AutomaticAlignmentJobController: ObservableObject {
             statusMessage = ""
         }
         activeIdentityKey = nil
+        activeSessionGuard = nil
         userFacingStatus = nil
+        scheduleEvaluate()
+    }
+
+    /// Called when the provider reports a different active source. A running
+    /// Spotify capture is never allowed to continue into Music/unknown, and a
+    /// late report from the old source cannot be adopted.
+    public func notifyPlaybackSourceChanged(
+        previous: PlaybackSourceIdentity,
+        next: PlaybackSourceIdentity
+    ) {
+        guard previous != next else { return }
+        if jobTask != nil || state == .capturing || state == .aligning || state == .evaluating {
+            cancelCurrentJob(userInitiated: false)
+            state = .idle
+            statusMessage = ""
+        }
+        activeIdentityKey = nil
+        activeSessionGuard = nil
+        userFacingStatus = nil
+        LyricsE2ELog.log(
+            "AUTO_ALIGN sourceChanged previous=\(previous.rawValue) next=\(next.rawValue)"
+        )
         scheduleEvaluate()
     }
 

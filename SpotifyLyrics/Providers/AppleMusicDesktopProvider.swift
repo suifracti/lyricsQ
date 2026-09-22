@@ -30,26 +30,51 @@ public final class AppleMusicDesktopProvider: PlaybackProvider {
 
     public func refresh() async -> PlaybackSnapshot {
         guard FileManager.default.fileExists(atPath: applicationPath) else {
-            return PlaybackSnapshot(status: .notInstalled, track: nil, position: 0, isPlaying: false)
+            return PlaybackSnapshot(
+                status: .notInstalled,
+                track: nil,
+                position: 0,
+                isPlaying: false,
+                sourceIdentity: .appleMusic
+            )
         }
 
         guard isRunning else {
-            return PlaybackSnapshot(status: .notRunning, track: nil, position: 0, isPlaying: false)
+            return PlaybackSnapshot(
+                status: .notRunning,
+                track: nil,
+                position: 0,
+                isPlaying: false,
+                sourceIdentity: .appleMusic
+            )
         }
 
         do {
             guard let result = try await execute(script: readScript) else {
-                return PlaybackSnapshot(status: .unavailable("Apple Music 没有返回当前歌曲"), track: nil, position: 0, isPlaying: false)
+                return PlaybackSnapshot(
+                    status: .unavailable("Apple Music 没有返回当前歌曲"),
+                    track: nil,
+                    position: 0,
+                    isPlaying: false,
+                    sourceIdentity: .appleMusic
+                )
             }
             return await parseSnapshot(result)
         } catch let error as AppleScriptExecutionError {
-            return PlaybackSnapshot(status: map(error: error), track: nil, position: 0, isPlaying: false)
+            return PlaybackSnapshot(
+                status: map(error: error),
+                track: nil,
+                position: 0,
+                isPlaying: false,
+                sourceIdentity: .appleMusic
+            )
         } catch {
             return PlaybackSnapshot(
                 status: .unavailable(error.localizedDescription),
                 track: nil,
                 position: 0,
-                isPlaying: false
+                isPlaying: false,
+                sourceIdentity: .appleMusic
             )
         }
     }
@@ -123,7 +148,13 @@ public final class AppleMusicDesktopProvider: PlaybackProvider {
     private func parseSnapshot(_ value: String) async -> PlaybackSnapshot {
         let fields = value.components(separatedBy: fieldSeparator)
         guard fields.count >= 8 else {
-            return PlaybackSnapshot(status: .unavailable("Apple Music 返回的数据格式无法识别"), track: nil, position: 0, isPlaying: false)
+            return PlaybackSnapshot(
+                status: .unavailable("Apple Music 返回的数据格式无法识别"),
+                track: nil,
+                position: 0,
+                isPlaying: false,
+                sourceIdentity: .appleMusic
+            )
         }
 
         let state = fields[0].lowercased()
@@ -140,7 +171,8 @@ public final class AppleMusicDesktopProvider: PlaybackProvider {
                 status: .noTrack,
                 track: nil,
                 position: 0,
-                isPlaying: false
+                isPlaying: false,
+                sourceIdentity: .appleMusic
             )
         }
 
@@ -163,7 +195,8 @@ public final class AppleMusicDesktopProvider: PlaybackProvider {
             status: status,
             track: track,
             position: min(max(0, position), duration),
-            isPlaying: isPlaying
+            isPlaying: isPlaying,
+            sourceIdentity: .appleMusic
         )
     }
 

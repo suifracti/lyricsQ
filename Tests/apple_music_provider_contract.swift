@@ -28,6 +28,7 @@ struct AppleMusicProviderContract {
         precondition(snapshot.track?.id == "applemusic:3B1F8E109761A672", "Track ID mismatch")
         precondition(snapshot.isPlaying == true, "isPlaying mismatch")
         precondition(snapshot.position == 45.2, "Position mismatch")
+        precondition(snapshot.sourceIdentity == .appleMusic, "Source identity mismatch")
 
         // 2. Test stopped with no track
         let emptyProvider = AppleMusicDesktopProvider { script, _ in
