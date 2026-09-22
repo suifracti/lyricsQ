@@ -659,6 +659,7 @@ struct T1ReadProjectionFidelityContract {
                   document.lines.first?.originalText == "今日🌸今日",
                   document.lines.first?.timestamp == 0,
                   document.lines.first?.endTime == 4,
+                  document.lines.first?.translationText == "compatibility line translation",
                   document.lines.first?.kanaText == "こんにち",
                   document.lines.first?.romajiText == "konnichi",
                   document.lines.first?.performerID == "v2",
