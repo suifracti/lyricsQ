@@ -9,10 +9,10 @@
 
 - repo root：`/Users/apple/backup/sptifylyrics`
 - branch：`main`
-- source HEAD（C1 已验证 production commit）：`b95ebd1636ff0d8e847390f608886e18484a30a9`
+- source HEAD（A0 已验证 production commit）：`e775f39702361dff9dba7894e746927c660c257b` (`fix: bind capture handoff to active source generation`)
 - release identity：正式 GitHub Release `v0.1.2`，release commit `6528be3103f75fd4f63757855b9d61cd30f757d8`
 - status last updated：`2026-09-22`
-- tracked/staged 状态：C1 production 与定向 contracts 已在本地提交；文档 evidence 提交后 tracked/staged diff 应为零。三份既有 `PROJECT_FULL_AUDIT_*.md` 保持 untracked，不纳入 C1 提交。精确 checkout 仍以 `git rev-parse HEAD` 为准；当前文档提交不改变 production commit 上述身份。
+- tracked/staged 状态：A0 production 与定向 contracts 已在本地提交；A0 evidence/STATUS 文档提交后 tracked/staged diff 应为零。三份既有 `PROJECT_FULL_AUDIT_*.md` 保持 untracked，不纳入 A0 提交。精确 checkout 仍以 `git rev-parse HEAD` 为准；文档提交不改变上述已验证 production commit 身份。
 
 ## Product Boundary
 
@@ -42,7 +42,11 @@
   - `NATIVE_INPUT_PARTIAL`
   - `USER_EXTERNAL_PENDING`
   - Evidence：[C1 playback / presentation isolation](evidence/core-integrity/C1-playback-presentation-isolation.md)
-- **Next**：A0 — Capture Source Verification & Containment
+- **A0 — CLOSED**
+  - `AUTOMATED_VERIFIED`
+  - 真实 Spotify/Music capture：`USER_VERIFICATION_REQUIRED / NOT_RUN`
+  - Evidence：[A0 capture source containment](evidence/core-integrity/A0-capture-source-containment.md)
+- **Next**：H1 — Hash Domain Boundary Repair
 
 `NATIVE_INPUT_PENDING` 不是 PASS，也不表示 B0 发现的产品缺陷已经修复。
 
@@ -60,13 +64,23 @@
 - search preview lyric-row 使用 identity guard；preview B 不得 seek live A，同一 live identity 仍允许。
 - native mouse / keyboard / AX 外部事件本轮未在真实 AppKit host 中运行，保留 `NATIVE_INPUT_PARTIAL`。
 
+## A0 Confirmed Facts
+
+- Automatic live capture now accepts only explicit ready Spotify Desktop provenance; Apple Music, unknown, mock/preview, unavailable, and no-identity contexts fail closed before Spotify discovery.
+- Source, track identity, and generation are carried through startup and final adoption checks; a source/track change during asynchronous startup stops the request and cannot adopt a late result.
+- ScreenCaptureKit samples carry active stream/session generation; segment boundaries invalidate and drain queued callbacks before the next segment can receive samples.
+- Automatic alignment requires a newly advanced coordinator generation and an exactly generation-matched handoff; it cannot reuse an older `lastPartialReport`.
+- Local-file alignment remains independent of live capture and is not disabled by an active Music source.
+- The automatic switch remains opt-in and Release-reachable. Real ScreenCaptureKit/Spotify/Music capture was not run; user verification remains `USER_VERIFICATION_REQUIRED / NOT_RUN`.
+
+详见 [A0 evidence](evidence/core-integrity/A0-capture-source-containment.md)；本页不复制完整运行输出。
+
 详见 [B0 evidence](evidence/core-integrity/B0-clock-offset.md)；本页只保留结论，不复制运行输出。
 
 ## Open Core Risks
 
-以下项目仍按当前 Master Plan / batch ownership 作为未关闭核心项；D0 不判断它们已修复：
+以下项目仍按当前 Master Plan / batch ownership 作为未关闭核心项；A0 本轮不判断它们已修复：
 
-- A0 capture source containment
 - H1 hash domain
 - T1 read/projection fidelity
 - T2 lossless edit/timing
@@ -92,5 +106,5 @@
 
 ## Next Executor Contract
 
-**A0 — Capture Source Verification & Containment**
-等待 Planner 下发合同；C1 已结案，本轮不提前执行 A0。
+**H1 — Hash Domain Boundary Repair**
+等待 Planner 下发合同；A0 已结案，本轮不提前执行 H1。
