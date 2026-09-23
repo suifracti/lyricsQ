@@ -117,9 +117,9 @@ Fixture 隔离依据：C1 Python/Swift 合同使用临时编译目录；B0 使�
 执行命令：
 
 ```sh
-xcodebuild -project SpotifyLyrics.xcodeproj -scheme SpotifyLyrics \\
-  -configuration Debug \\
-  -derivedDataPath /tmp/spotifylyrics-v1-core-integrity-deriveddata \\
+xcodebuild -project SpotifyLyrics.xcodeproj -scheme SpotifyLyrics \
+  -configuration Debug \
+  -derivedDataPath /tmp/spotifylyrics-v1-core-integrity-deriveddata \
   CODE_SIGNING_ALLOWED=NO -quiet build
 ```
 
@@ -146,8 +146,8 @@ xcodebuild -project SpotifyLyrics.xcodeproj -scheme SpotifyLyrics \\
 
 | 项目 | 阻塞？ | 理由 / 证据 | 下一步 |
 | --- | --- | --- | --- |
-| 上表 1–6 必要真人验收 | **是，阻止 `M1_READY`；当前结论仍为 `USER_PENDING`。** | 自动证据无法替代真实播放器、原生输入、重启后的窗口体验与用户可理解性。各批次 `USER_VERIFICATION_REQUIRED / NOT_RUN` 尚未被用户结果关闭。 | 交 Planner 定向审查后，使用隔离测试资产集中验收；每项记录结果。 |
-| UI smoke 自动启动 | 否（已按明确隔离规则跳过） | 没有证明 bundle/defaults/DB/自动连接全隔离的产品 UI harness；Debug build 和 D fixture env 不是隔离证明。 | 不启动正式 App。由 Planner 与用户协调隔离的人工验收方式；若后续建成可证明隔离的 harness 再单独运行。 |
+| 上表 1–6 必要真人验收 | **是，阻止 `M1_READY`；当前结论仍为 `USER_PENDING`。** | 自动证据无法替代真实播放器、原生输入、重启后的窗口体验与用户可理解性。各批次 `USER_VERIFICATION_REQUIRED / NOT_RUN` 尚未被用户结果关闭。 | Planner 定向审查完成后，使用隔离测试资产集中验收；每项记录结果。 |
+| UI smoke 自动启动 | 否（已按明确隔离规则跳过） | 没有证明 bundle/defaults/DB/自动连接全隔离的产品 UI harness；Debug build 和 D fixture env 不是隔离证明。 | 不启动正式 App；若后续建成可证明隔离的 harness，再单独运行。 |
 | A0 真实 capture | 否，本轮明确不要求 | gate/source/track/generation 自动合同通过；真机 capture 按用户边界保持 `USER_VERIFICATION_REQUIRED / NOT_RUN`，不因此扩大成 V1 blocker。 | 不强迫验收；只有用户以后要求真实 capture 时再单独授权。 |
 | `fullscreen_lyrics_contract.sh` 旧字面量 drift | 否 | STATUS 已记录；当前 Fullscreen/V3 共享 seek 与 clock 路径合同通过。该旧静态 runner 未作为当前候选 PASS，也未重跑。 | 不新建开发项；需要清理测试漂移时另做小型 test-only 任务。 |
 | A0 旧 `apple_music_provider_contract.sh` 环境退出 `133` | 否 | A0 原证据说明本机没有 `/System/Applications/Music.app`；本轮 source gate 合同通过，且未启动 Music。 | 保留 `NOT_RUN`/环境边界，不把缺失系统 App 伪装成 PASS。 |
@@ -167,4 +167,4 @@ xcodebuild -project SpotifyLyrics.xcodeproj -scheme SpotifyLyrics \\
 - `bash -n Tests/run_core_integrity.sh`、两个修改后 runner 的 `bash -n` 与 `git diff --check`：退出 `0`。
 - 20 项 aggregate：退出 `0`；20 PASS、0 FAIL、无 skip。
 - Debug build：退出 `0`；命令及 warnings 摘要见上文。
-- 无自动合同失败尚待二次尝试；没有启动真人/App 验证。本轮结论停在 `AUTOMATED_VERIFIED / USER_PENDING`，交 Planner 定向审查并安排上述真人验收；不进入后续阶段。
+- Planner 定向只读复审确认聚合器、修正后的两个 U1 runner、生产源码边界及 USER_PENDING 结论无剩余 Blocker / 必要 Relevant；复审指出本节构建命令续行符格式需修正，已改为单反斜杠。没有启动真人/App 验证。本轮结论停在 `AUTOMATED_VERIFIED / USER_PENDING`，安排上述真人验收；不进入后续阶段。

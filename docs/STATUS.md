@@ -96,7 +96,7 @@
   - U1 精确候选源码 `d75789ee74b1a68c6caf02cd062b14b3c59dcd24` 上的 20 项定向核心合同均通过；生产源码无差异。
   - 两个旧 U1 runner 的过期 Capsule 与 D 默认断言经最小测试预期/路由修正后通过；生产代码未改。
   - Debug 构建通过；没有可证明完整隔离的产品 UI harness，因此未启动 App。真人 1–6 项均为 `USER_VERIFICATION_REQUIRED / NOT_RUN`；A0 真实捕获仍为 `USER_VERIFICATION_REQUIRED / NOT_RUN`。
-  - V1 不标记 `M1_READY`。Planner 定向审查与必要真人验收仍待完成。
+  - V1 不标记 `M1_READY`。Planner 定向复审无剩余 Blocker / 必要 Relevant；必要真人验收仍待完成。
   - Evidence：[V1 core integrity verification](evidence/core-integrity/V1-core-integrity-verification.md)；逐项输出：[V1 contracts](evidence/core-integrity/V1-core-integrity-contracts.txt)
 
 `NATIVE_INPUT_PENDING` 不是 PASS，也不表示 B0 发现的产品缺陷已经修复。
@@ -197,7 +197,7 @@
 - Capsule、AI translation、automatic alignment 与 local-file alignment 保留真实行为，并在相应入口标记具体实验边界。A0 Spotify Desktop 来源门控与 local-file alignment 独立性不变。
 - V3 默认、可解析的 Classic / Direction D 布局与用户保存偏好未重置。该批不涉及数据库、歌词资产、用户词典、offset store 或 schema。
 - U1 定向合同、受影响 D 3.4/layout/Capsule 合同及 Debug 构建通过。两个既存 runner 分别因过期的 Capsule 当前版本断言、D 默认布局断言失败，未计为通过；D/Classic 交互 smoke 和真人验收为 `USER_VERIFICATION_REQUIRED / NOT_RUN`。
-- Planner 首轮发现的必要 Relevant 已在 `a33e9a1` 修复，最终复审无剩余 Blocker / 必要 Relevant。V1 仅为下一候选，尚未开始且不代表 `M1_READY`。
+- Planner 首轮发现的必要 Relevant 已在 `a33e9a1` 修复，U1 当时的最终复审无剩余 Blocker / 必要 Relevant。随后 V1 在同一候选源码上完成自动验收；其当前结论与真人待验状态见下方 V1 记录。
 
 详见 [U1 evidence](evidence/core-integrity/U1-honest-experimental-ui.md)。
 
@@ -226,4 +226,4 @@
 ## Next Executor Contract
 
 **V1 — AUTOMATED_VERIFIED / USER_PENDING**
-验证分支 `codex/v1-core-integrity-verification` 从 U1 最终 HEAD `d75789ee74b1a68c6caf02cd062b14b3c59dcd24` 建立。20 项当前候选核心合同与 task-specific Debug 构建通过；本轮无生产源码改动。两个既存 U1 runner 过期预期已按当前 catalog、持久选择、Settings 路由及 V3 默认最小校正并通过。产品 UI smoke 因无法证明 app bundle、defaults、SQLite 和自动连接全隔离而未启动。必要真人清单 1–6 仍为 `USER_VERIFICATION_REQUIRED / NOT_RUN`；Planner 定向审查待完成。不得标记 `M1_READY`。
+验证分支 `codex/v1-core-integrity-verification` 从 U1 最终 HEAD `d75789ee74b1a68c6caf02cd062b14b3c59dcd24` 建立。20 项当前候选核心合同与 task-specific Debug 构建通过；本轮无生产源码改动。两个既存 U1 runner 过期预期已按当前 catalog、持久选择、Settings 路由及 V3 默认最小校正并通过。产品 UI smoke 因无法证明 app bundle、defaults、SQLite 和自动连接全隔离而未启动。Planner 定向复审无剩余 Blocker / 必要 Relevant。必要真人清单 1–6 仍为 `USER_VERIFICATION_REQUIRED / NOT_RUN`；不得标记 `M1_READY`。
