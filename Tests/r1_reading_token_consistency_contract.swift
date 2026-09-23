@@ -389,6 +389,24 @@ struct R1ReadingTokenConsistencyContract {
             representationID: nil, sourceContentHash: sourceHash)
         try require(!afterRejectedWrites.contains(where: { $0.record.id == badVersionID || $0.record.id == invalidRangeVersionID }),
                     "rejected inconsistent token records left readable partial versions")
+
+        // The edit creates an immutable child. The prior manual version remains
+        // selectable and can still become the persisted current version again.
+        await MainActor.run { reopenedSession.adopt(versionID: parent.id) }
+        try await waitUntil("the production session did not reselect the prior reading version") {
+            reopenedSession.selectedVersion?.record.id == parent.id
+        }
+        var restoredParent = false
+        for _ in 0..<100 {
+            let versionsAfterReselect = try await reopened.loadReadingVersions(
+                lyricsVersionID: lyricsVersionID, representationID: nil, sourceContentHash: sourceHash)
+            if versionsAfterReselect.contains(where: { $0.record.id == parent.id && $0.record.isCurrent }) {
+                restoredParent = true
+                break
+            }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        try require(restoredParent, "prior reading version was selectable in memory but did not persist as current")
     }
 
     private static func runDelayedGenerationRace() async throws {
