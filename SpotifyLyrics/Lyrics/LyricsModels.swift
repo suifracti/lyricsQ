@@ -175,6 +175,10 @@ public struct LyricsCandidate: Identifiable, Equatable, Sendable {
     /// Provider-declared source language, when available. It is used only by
     /// the projection gate and never replaces the original lyric text.
     public let language: String?
+    /// Preserves explicit row-time semantics for unsynchronized partial
+    /// timelines while a Provider result is represented as a candidate.
+    /// Nil and an empty set retain their distinct legacy meanings.
+    public let explicitlyTimedLineIndices: Set<Int>?
     /// Runtime retrieval evidence. These fields are intentionally not part of
     /// persistence and are filled by LyricsSearchManager after SafeMatcher
     /// evaluates a Provider result.
@@ -200,6 +204,7 @@ public struct LyricsCandidate: Identifiable, Equatable, Sendable {
         spotifyTrackID: String? = nil,
         isrc: String? = nil,
         language: String? = nil,
+        explicitlyTimedLineIndices: Set<Int>? = nil,
         providerName: String? = nil,
         queryKind: String? = nil,
         queryTitle: String? = nil,
@@ -221,6 +226,7 @@ public struct LyricsCandidate: Identifiable, Equatable, Sendable {
         self.spotifyTrackID = spotifyTrackID
         self.isrc = isrc
         self.language = language
+        self.explicitlyTimedLineIndices = explicitlyTimedLineIndices
         self.providerName = providerName
         self.queryKind = queryKind
         self.queryTitle = queryTitle
@@ -247,7 +253,8 @@ public struct LyricsCandidate: Identifiable, Equatable, Sendable {
             providerSourceID: providerSourceID,
             spotifyTrackID: spotifyTrackID,
             isrc: isrc,
-            language: language
+            language: language,
+            explicitlyTimedLineIndices: explicitlyTimedLineIndices
         )
     }
 

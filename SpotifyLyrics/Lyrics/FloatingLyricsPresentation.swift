@@ -103,6 +103,95 @@ public enum FloatingLyricsPresentationHelper {
     }
 }
 
+private final class FloatingTimedRubyLayoutBox: NSObject {
+    let value: TimedRubyLayout?
+
+    init(_ value: TimedRubyLayout?) {
+        self.value = value
+    }
+}
+
+final class FloatingTimedRubyLayoutCacheKey: NSObject {
+    private struct Inputs: Hashable {
+        let originalText: String
+        let spans: [TimedTextSpan]
+        let fontSize: CGFloat
+        let weight: CGFloat
+        let showsRuby: Bool
+        let rubyTokens: [LyricRubyToken]?
+        let design: String
+    }
+
+    private let inputs: Inputs
+
+    init(
+        originalText: String,
+        spans: [TimedTextSpan],
+        fontSize: CGFloat,
+        weight: CGFloat,
+        showsRuby: Bool,
+        rubyTokens: [LyricRubyToken]?,
+        design: String
+    ) {
+        inputs = Inputs(
+            originalText: originalText,
+            spans: spans,
+            fontSize: fontSize,
+            weight: weight,
+            showsRuby: showsRuby,
+            rubyTokens: rubyTokens,
+            design: design
+        )
+    }
+
+    override var hash: Int { inputs.hashValue }
+
+    override func isEqual(_ object: Any?) -> Bool {
+        guard let other = object as? FloatingTimedRubyLayoutCacheKey else { return false }
+        return inputs == other.inputs
+    }
+}
+
+/// Bounded cache for desktop word-timing geometry. Playback time is not part
+/// of this key because the layout stores geometry; the live clock is read by
+/// the renderer when it paints progress.
+public enum FloatingTimedRubyLayoutCache {
+    private static let cache: NSCache<FloatingTimedRubyLayoutCacheKey, FloatingTimedRubyLayoutBox> = {
+        let cache = NSCache<FloatingTimedRubyLayoutCacheKey, FloatingTimedRubyLayoutBox>()
+        cache.countLimit = 512
+        return cache
+    }()
+
+    static func key(
+        originalText: String,
+        spans: [TimedTextSpan],
+        fontSize: CGFloat,
+        weight: CGFloat,
+        showsRuby: Bool,
+        rubyTokens: [LyricRubyToken]?,
+        design: String
+    ) -> FloatingTimedRubyLayoutCacheKey {
+        FloatingTimedRubyLayoutCacheKey(
+            originalText: originalText,
+            spans: spans,
+            fontSize: fontSize,
+            weight: weight,
+            showsRuby: showsRuby,
+            rubyTokens: rubyTokens,
+            design: design
+        )
+    }
+
+    static func layout(for key: FloatingTimedRubyLayoutCacheKey, make: () -> TimedRubyLayout?) -> TimedRubyLayout? {
+        if let cached = cache.object(forKey: key) {
+            return cached.value
+        }
+        let value = make()
+        cache.setObject(FloatingTimedRubyLayoutBox(value), forKey: key)
+        return value
+    }
+}
+
 public enum FloatingLyricsStylePanelPlacement: String, Equatable, Sendable {
     case right
     case left

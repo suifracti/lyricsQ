@@ -39,6 +39,16 @@ public final class LyricsSearchManager: @unchecked Sendable {
         let duration: TimeInterval
     }
 
+    private struct AutomaticAdoption {
+        let document: LyricsDocument
+        let decision: LyricsMatchDecision
+        let timingPriority: Int
+        let providerIndex: Int
+        let candidateIndex: Int
+        let providerName: String
+        let cameFromCandidates: Bool
+    }
+
     public init(
         providers: [LyricsProvider],
         name: String = "Lyrics Search",
@@ -234,6 +244,7 @@ public final class LyricsSearchManager: @unchecked Sendable {
             let networkProviders = indexedProviders.filter { $0.provider.executionLane == .network }
             var localCursor = 0
             var didProbeNetwork = false
+            var automaticAdoptions: [AutomaticAdoption] = []
 
             while localCursor < localProviders.count || !didProbeNetwork {
                 if Task.isCancelled {
@@ -295,7 +306,8 @@ public final class LyricsSearchManager: @unchecked Sendable {
                         providerSourceID: document.providerSourceID,
                         spotifyTrackID: document.spotifyTrackID,
                         isrc: document.isrc,
-                        language: document.language
+                        language: document.language,
+                        explicitlyTimedLineIndices: document.explicitlyTimedLineIndices
                     )
                     let decision = LyricsSafeMatcher.decide(
                         candidate: candidate,
@@ -313,9 +325,15 @@ public final class LyricsSearchManager: @unchecked Sendable {
                     )
 
                     if decision.tier == .autoHigh || decision.tier == .autoMedium {
-                        let enriched = Self.finalizeDocument(document, identity: identity)
-                        LyricsE2ELog.log("MANAGER AUTO_ADOPT provider=\(provider.name) strategy=\(variant.strategy.rawValue) kind=\(variant.queryKind.rawValue) tier=\(decision.tier) score=\(decision.score) evidence=\(decision.explanation.joined(separator: ";")) lines=\(enriched.lines.count) sync=\(enriched.isSynchronized)")
-                        return SearchOutcome(result: .match(enriched), diagnostics: diagnostics)
+                        automaticAdoptions.append(AutomaticAdoption(
+                            document: document,
+                            decision: decision,
+                            timingPriority: Self.timingPriority(of: candidate),
+                            providerIndex: probe.index,
+                            candidateIndex: 0,
+                            providerName: provider.name,
+                            cameFromCandidates: false
+                        ))
                     }
                     if decision.tier == .candidates {
                         Self.acceptCandidate(
@@ -330,8 +348,7 @@ public final class LyricsSearchManager: @unchecked Sendable {
 
                 case .candidates(let list):
                     var candidateDecisions: [LyricsMatchDecision] = []
-                    var autoAdoption: (LyricsCandidate, LyricsMatchDecision)?
-                    for item in list where item.identity == identity {
+                    for (candidateIndex, item) in list.enumerated() where item.identity == identity {
                         let decision = LyricsSafeMatcher.decide(
                             candidate: item,
                             metadata: meta,
@@ -340,10 +357,16 @@ public final class LyricsSearchManager: @unchecked Sendable {
                         )
                         candidateDecisions.append(decision)
                         if decision.tier == .autoHigh || decision.tier == .autoMedium {
-                            autoAdoption = (item, decision)
-                            break
-                        }
-                        if decision.tier == .candidates {
+                            automaticAdoptions.append(AutomaticAdoption(
+                                document: item.makeDocument(),
+                                decision: decision,
+                                timingPriority: Self.timingPriority(of: item),
+                                providerIndex: probe.index,
+                                candidateIndex: candidateIndex,
+                                providerName: provider.name,
+                                cameFromCandidates: true
+                            ))
+                        } else if decision.tier == .candidates {
                             Self.acceptCandidate(
                                 item,
                                 provider: provider.name,
@@ -361,26 +384,6 @@ public final class LyricsSearchManager: @unchecked Sendable {
                             matchDecisions: candidateDecisions
                         )
                     )
-                    if let (item, decision) = autoAdoption {
-                        let document = LyricsDocument(
-                            identity: identity,
-                            title: item.title,
-                            artist: item.artist,
-                            album: item.album,
-                            duration: item.duration,
-                            lines: item.lines,
-                            isSynchronized: item.isSynchronized,
-                            source: item.source,
-                            confidence: item.confidence,
-                            providerSourceID: item.providerSourceID,
-                            spotifyTrackID: item.spotifyTrackID,
-                            isrc: item.isrc,
-                            language: item.language
-                        )
-                        let enriched = Self.finalizeDocument(document, identity: identity)
-                        LyricsE2ELog.log("MANAGER AUTO_ADOPT from-candidates provider=\(provider.name) strategy=\(variant.strategy.rawValue) kind=\(variant.queryKind.rawValue) tier=\(decision.tier) score=\(decision.score) evidence=\(decision.explanation.joined(separator: ";")) lines=\(enriched.lines.count)")
-                        return SearchOutcome(result: .match(enriched), diagnostics: diagnostics)
-                    }
 
                 case .noLyrics:
                     sawNoLyrics = true
@@ -419,6 +422,14 @@ public final class LyricsSearchManager: @unchecked Sendable {
                     // Isolate: continue other providers/variants
                     }
                 }
+
+            }
+
+            if let selected = Self.bestAutomaticAdoption(in: automaticAdoptions) {
+                let enriched = Self.finalizeDocument(selected.document, identity: identity)
+                let selectionPath = selected.cameFromCandidates ? "from-candidates" : "provider-result"
+                LyricsE2ELog.log("MANAGER AUTO_ADOPT \(selectionPath) provider=\(selected.providerName) strategy=\(variant.strategy.rawValue) kind=\(variant.queryKind.rawValue) tier=\(selected.decision.tier) score=\(selected.decision.score) timingPriority=\(selected.timingPriority) evidence=\(selected.decision.explanation.joined(separator: ";")) lines=\(enriched.lines.count) sync=\(enriched.isSynchronized)")
+                return SearchOutcome(result: .match(enriched), diagnostics: diagnostics)
             }
         }
 
@@ -490,6 +501,61 @@ public final class LyricsSearchManager: @unchecked Sendable {
         negativeCacheLock.unlock()
     }
 
+    private static func timingPriority(of candidate: LyricsCandidate) -> Int {
+        let suppliedSpanLines = candidate.lines.enumerated().filter { _, line in
+            !(line.timedSpans?.isEmpty ?? true)
+        }
+        let hasValidWordTiming = !suppliedSpanLines.isEmpty && suppliedSpanLines.allSatisfy { index, line in
+            let lineStartIsMeaningful = candidate.isSynchronized
+                || candidate.explicitlyTimedLineIndices?.contains(index) == true
+            return line.hasValidTimedSpans(lineStartIsMeaningful: lineStartIsMeaningful)
+        }
+        if hasValidWordTiming { return 2 }
+
+        let hasValidLineTiming: Bool
+        if candidate.isSynchronized {
+            hasValidLineTiming = !candidate.lines.isEmpty
+                && candidate.lines.allSatisfy { $0.timestamp.isFinite && $0.timestamp >= 0 }
+        } else {
+            if let indices = candidate.explicitlyTimedLineIndices, !indices.isEmpty {
+                hasValidLineTiming = indices.allSatisfy { index in
+                    candidate.lines.indices.contains(index)
+                        && candidate.lines[index].timestamp.isFinite
+                        && candidate.lines[index].timestamp >= 0
+                }
+            } else {
+                hasValidLineTiming = false
+            }
+        }
+        return hasValidLineTiming ? 1 : 0
+    }
+
+    private static func bestAutomaticAdoption(in candidates: [AutomaticAdoption]) -> AutomaticAdoption? {
+        candidates.max { lhs, rhs in
+            if lhs.decision.score != rhs.decision.score {
+                return lhs.decision.score < rhs.decision.score
+            }
+            let lhsTier = automaticTierPriority(lhs.decision.tier)
+            let rhsTier = automaticTierPriority(rhs.decision.tier)
+            if lhsTier != rhsTier { return lhsTier < rhsTier }
+            if lhs.timingPriority != rhs.timingPriority {
+                return lhs.timingPriority < rhs.timingPriority
+            }
+            if lhs.providerIndex != rhs.providerIndex {
+                return lhs.providerIndex > rhs.providerIndex
+            }
+            return lhs.candidateIndex > rhs.candidateIndex
+        }
+    }
+
+    private static func automaticTierPriority(_ tier: LyricsMatchTier) -> Int {
+        switch tier {
+        case .autoHigh: return 2
+        case .autoMedium: return 1
+        case .candidates, .reject: return 0
+        }
+    }
+
     private static func acceptCandidate(
         _ candidate: LyricsCandidate,
         provider: String,
@@ -515,21 +581,29 @@ public final class LyricsSearchManager: @unchecked Sendable {
     /// Enrich layers; preserve originalText; mark unsynced documents clearly.
     private static func finalizeDocument(_ document: LyricsDocument, identity: TrackIdentity) -> LyricsDocument {
         let lines = LyricsLayerEnricher.enrich(lines: document.lines)
-        return LyricsDocument(
-            identity: identity,
-            title: document.title,
-            artist: document.artist,
-            album: document.album,
-            duration: document.duration,
-            lines: lines,
-            isSynchronized: document.isSynchronized,
-            source: document.source,
-            confidence: document.confidence,
-            providerSourceID: document.providerSourceID,
-            spotifyTrackID: document.spotifyTrackID,
-            isrc: document.isrc,
-            language: document.language
-        )
+        let identified: LyricsDocument
+        if document.identity == identity {
+            identified = document
+        } else {
+            identified = LyricsDocument(
+                identity: identity,
+                title: document.title,
+                artist: document.artist,
+                album: document.album,
+                duration: document.duration,
+                lines: document.lines,
+                isSynchronized: document.isSynchronized,
+                source: document.source,
+                confidence: document.confidence,
+                providerSourceID: document.providerSourceID,
+                spotifyTrackID: document.spotifyTrackID,
+                isrc: document.isrc,
+                language: document.language,
+                explicitlyTimedLineIndices: document.explicitlyTimedLineIndices,
+                timingVersionID: document.timingVersionID
+            )
+        }
+        return identified.replacingLines(lines)
     }
 
     private static func enrichCandidate(
@@ -553,6 +627,7 @@ public final class LyricsSearchManager: @unchecked Sendable {
             spotifyTrackID: candidate.spotifyTrackID,
             isrc: candidate.isrc,
             language: candidate.language,
+            explicitlyTimedLineIndices: candidate.explicitlyTimedLineIndices,
             providerName: providerName ?? candidate.providerName,
             queryKind: variant?.queryKind.rawValue ?? candidate.queryKind,
             queryTitle: variant?.titleQuery ?? candidate.queryTitle,

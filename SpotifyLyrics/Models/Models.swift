@@ -1209,6 +1209,23 @@ public struct LyricsPresentationClock: Equatable, Sendable {
     }
 }
 
+/// Avoid publishing identical timer samples while preserving every real
+/// playback-time change. PlaybackState uses this only for periodic tick
+/// updates; seek, reset, and track-transition writes remain event-driven.
+public enum PlaybackTickTimeUpdatePolicy {
+    public static func shouldPublish(currentTime: TimeInterval, nextTime: TimeInterval) -> Bool {
+        currentTime != nextTime
+    }
+
+    public static func shouldFinishMockPlayback(
+        isPlaying: Bool,
+        currentTime: TimeInterval,
+        duration: TimeInterval
+    ) -> Bool {
+        isPlaying && currentTime >= duration
+    }
+}
+
 /// Next lyric-line boundary after the published index.
 /// Equal timestamps are skipped so repeated lines collapse to one wake-up.
 public enum LyricBoundary {
@@ -1328,6 +1345,35 @@ public struct LyricLine: Identifiable, Equatable, Hashable, Sendable {
 
     public var hasTimedSpans: Bool {
         guard let timedSpans, !timedSpans.isEmpty else { return false }
+        return true
+    }
+
+    /// Whether this line carries a complete, text-aligned span sequence that
+    /// is safe to rank as real word timing. `lineStartIsMeaningful` must be
+    /// false for legacy/partial rows whose start time is only a placeholder.
+    public func hasValidTimedSpans(lineStartIsMeaningful: Bool = true) -> Bool {
+        guard let timedSpans, !timedSpans.isEmpty,
+              resolvedGraphemeSpans()?.count == timedSpans.count else { return false }
+
+        var previousUTF16End = 0
+        var previousStartTime: TimeInterval?
+        for span in timedSpans {
+            let endOffset = span.utf16Start.addingReportingOverflow(span.utf16Length)
+            guard span.utf16Start >= previousUTF16End,
+                  span.utf16Length > 0,
+                  !endOffset.overflow,
+                  span.startTime.isFinite,
+                  span.endTime.isFinite,
+                  span.startTime >= 0,
+                  span.endTime >= span.startTime,
+                  !lineStartIsMeaningful || (timestamp.isFinite && timestamp >= 0 && span.startTime >= timestamp),
+                  endTime.map({ $0.isFinite && $0 >= 0 && span.endTime <= $0 }) ?? true,
+                  previousStartTime.map({ span.startTime >= $0 }) ?? true else {
+                return false
+            }
+            previousUTF16End = endOffset.partialValue
+            previousStartTime = span.startTime
+        }
         return true
     }
 

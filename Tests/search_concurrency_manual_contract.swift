@@ -41,11 +41,11 @@ private struct ProbeProvider: LyricsProvider {
         precondition(network.0 == 0 && network.1 == 3 && network.2.count == 7, "network peak must be exactly3 and fully drained")
         let localLedger = ProbeLedger()
         let local = ProbeProvider(name: "local", executionLane: .local, delay: 1, ledger: localLedger, source: .local)
-        let online = ProbeProvider(name: "must-not-start", executionLane: .network, delay: 1, ledger: localLedger, source: .lrclib)
+        let online = ProbeProvider(name: "network-after-local", executionLane: .network, delay: 1, ledger: localLedger, source: .lrclib)
         guard case .match(let localChoice) = await LyricsSearchManager(providers: [online, local]).lookup(track: track, identity: identity) else { fatalError("local match") }
-        precondition(localChoice.source == .local)
+        precondition(localChoice.source == .lrclib, "configured order decides equal-quality results after local-first probing")
         let localRun = await localLedger.snapshot()
-        precondition(localRun.2 == ["local"], "local match must skip all online probes")
+        precondition(localRun.2 == ["local", "network-after-local"], "local providers execute before network providers even when a network provider has higher configured priority")
         let manual = LyricsCandidate(id: "body", identity: identity, title: track.title, artist: track.artist, album: track.album,
             duration: track.duration, lines: [LyricLine(timestamp: 0, originalText: "Body")], source: .lyricsOVH,
             confidence: 1, spotifyTrackID: track.spotifyId, isrc: track.isrc)
@@ -59,7 +59,7 @@ private struct ProbeProvider: LyricsProvider {
         let ovh = ProbeProvider(name: "OVH", executionLane: .network, delay: 1, ledger: ovhLedger, source: .lyricsOVH)
         guard case .candidates(let visible) = await LyricsSearchManager(providers: [ovh]).lookup(track: track, identity: identity), !visible.isEmpty else { fatalError("OVH body must remain visible and never auto-adopt even if provider returns match") }
         precondition(visible.allSatisfy { $0.source == .lyricsOVH && $0.displayedConfidence == 0 })
-        print("PASS peak3, configured priority, local-first, OVH manual-only visible candidate")
+        print("PASS peak3, configured selection priority, local-first execution, OVH manual-only visible candidate")
         fflush(stdout)
 
         // One result finishes before cancellation while the bounded group is

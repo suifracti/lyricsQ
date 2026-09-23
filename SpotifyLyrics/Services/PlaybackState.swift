@@ -2591,24 +2591,28 @@ public final class PlaybackState: ObservableObject {
 
     private func tick() {
         if isMockPreviewMode {
-            currentTime = min(currentTrack.duration, currentTime + (isPlaying ? tickInterval : 0))
-            if currentTime >= currentTrack.duration {
+            publishTickTime(min(currentTrack.duration, currentTime + (isPlaying ? tickInterval : 0)))
+            if PlaybackTickTimeUpdatePolicy.shouldFinishMockPlayback(
+                isPlaying: isPlaying,
+                currentTime: currentTime,
+                duration: currentTrack.duration
+            ) {
                 isPlaying = false
                 resetPlaybackAnchor(to: currentTrack.duration, source: .reset)
             }
         } else if providerStatus.isReady, hasLiveTrack {
             if isPlaying {
                 let elapsed = Date().timeIntervalSince(playbackAnchorDate)
-                currentTime = min(currentTrack.duration, playbackAnchorPosition + elapsed)
+                publishTickTime(min(currentTrack.duration, playbackAnchorPosition + elapsed))
                 if currentTime >= currentTrack.duration {
                     isPlaying = false
                     resetPlaybackAnchor(to: currentTrack.duration, source: .reset)
                 }
             } else {
-                currentTime = playbackAnchorPosition
+                publishTickTime(playbackAnchorPosition)
             }
         } else {
-            currentTime = 0
+            publishTickTime(0)
         }
 
         if isMockPreviewMode {
@@ -2622,6 +2626,13 @@ public final class PlaybackState: ObservableObject {
                 await self?.refreshProvider()
             }
         }
+    }
+
+    private func publishTickTime(_ nextTime: TimeInterval) {
+        guard PlaybackTickTimeUpdatePolicy.shouldPublish(currentTime: currentTime, nextTime: nextTime) else {
+            return
+        }
+        currentTime = nextTime
     }
 
     private enum LineIndexSource: String {

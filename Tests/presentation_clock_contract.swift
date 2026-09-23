@@ -355,6 +355,15 @@ struct PresentationClockContract {
         assert(upperBound.playbackTime(at: 100) == 60)
         assert(upperBound.presentationTime(at: 100) == 60)
 
+        assert(!PlaybackTickTimeUpdatePolicy.shouldPublish(currentTime: 12, nextTime: 12))
+        assert(!PlaybackTickTimeUpdatePolicy.shouldPublish(currentTime: 0, nextTime: 0))
+        assert(!PlaybackTickTimeUpdatePolicy.shouldPublish(currentTime: 60, nextTime: 60))
+        assert(PlaybackTickTimeUpdatePolicy.shouldPublish(currentTime: 12, nextTime: 12.2))
+        assert(PlaybackTickTimeUpdatePolicy.shouldPublish(currentTime: 12, nextTime: 11.8))
+        assert(!PlaybackTickTimeUpdatePolicy.shouldFinishMockPlayback(isPlaying: false, currentTime: 60, duration: 60))
+        assert(PlaybackTickTimeUpdatePolicy.shouldFinishMockPlayback(isPlaying: true, currentTime: 60, duration: 60))
+        assert(!PlaybackTickTimeUpdatePolicy.shouldFinishMockPlayback(isPlaying: true, currentTime: 59, duration: 60))
+
         print("PASS: Presentation clock contract verified")
     }
 }

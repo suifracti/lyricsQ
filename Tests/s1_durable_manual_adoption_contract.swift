@@ -10,6 +10,15 @@ private func check(_ condition: Bool, _ message: String) throws {
     guard condition else { throw ContractFailure(description: message) }
 }
 
+private struct FixedLyricsProvider: LyricsProvider {
+    let name: String
+    let result: LyricsLookupResult
+
+    func lookup(track: Track, identity: TrackIdentity) async -> LyricsLookupResult {
+        result
+    }
+}
+
 private func makeTrack(_ suffix: String) -> Track {
     Track(
         title: "采用测试 \(suffix)",
@@ -26,7 +35,8 @@ private func makeCandidate(
     confidence: Double,
     providerID: String,
     isSynchronized: Bool = true,
-    hasTiming: Bool = false
+    hasTiming: Bool = false,
+    explicitlyTimedLineIndices: Set<Int>? = nil
 ) -> LyricsCandidate {
     let text = hasTiming ? "A🙂A" : "採用候補 \(track.title)"
     let spans = hasTiming ? [
@@ -54,7 +64,8 @@ private func makeCandidate(
         providerSourceID: providerID,
         spotifyTrackID: track.spotifyId,
         isrc: track.isrc,
-        language: hasTiming ? "ja" : nil
+        language: hasTiming ? "ja" : nil,
+        explicitlyTimedLineIndices: explicitlyTimedLineIndices
     )
 }
 
@@ -197,7 +208,7 @@ struct S1DurableManualAdoptionContract {
     static func main() async {
         let scenario = CommandLine.arguments.dropFirst().first ?? "all"
         let scenarios = scenario == "all"
-            ? ["lyrics-ovh-zero", "kugou-half", "timed-spans", "locked-current", "selection-throws", "timing-throws", "invalid-content", "failed-results", "track-switch", "same-track-order"]
+            ? ["lyrics-ovh-zero", "kugou-half", "timed-spans", "auto-search-timed-reopen", "locked-current", "selection-throws", "timing-throws", "invalid-content", "failed-results", "track-switch", "same-track-order"]
             : [scenario]
         var failures = 0
         for item in scenarios {
@@ -217,6 +228,7 @@ struct S1DurableManualAdoptionContract {
         case "lyrics-ovh-zero": try await lowConfidenceAdoption(source: .lyricsOVH, confidence: 0, suffix: "ovh", isSynchronized: false)
         case "kugou-half": try await lowConfidenceAdoption(source: .kugouExperimental, confidence: 0.5, suffix: "kugou")
         case "timed-spans": try await lowConfidenceAdoption(source: .amll, confidence: 0.5, suffix: "timed", hasTiming: true)
+        case "auto-search-timed-reopen": try await automaticSearchPersistsBestTimedCandidate()
         case "locked-current": try await lockedCurrentRequiresConfirmation()
         case "selection-throws": try await preferredSelectionFailureRollsBack()
         case "timing-throws": try await timingAttachmentFailureRollsBack()
@@ -225,6 +237,113 @@ struct S1DurableManualAdoptionContract {
         case "track-switch": try await lateAdoptionStaysBoundToItsTrack()
         case "same-track-order": try await newerSameTrackRequestWins()
         default: throw ContractFailure(description: "unknown scenario \(scenario)")
+        }
+    }
+
+    private static func automaticSearchPersistsBestTimedCandidate() async throws {
+        try await withTemporaryRoot { root in
+            let track = makeTrack("nightly-auto")
+            let identity = TrackIdentity(track: track)
+            let partialTimed = makeCandidate(
+                track: track,
+                source: .amll,
+                confidence: 1,
+                providerID: "valid-partial-timing",
+                isSynchronized: false,
+                hasTiming: true,
+                explicitlyTimedLineIndices: [0]
+            )
+            var invalidLine = partialTimed.lines[0]
+            invalidLine.timedSpans = [TimedTextSpan(
+                id: 0,
+                text: "wrong",
+                startTime: 1.4,
+                endTime: 1.2,
+                utf16Start: 0,
+                utf16Length: 1
+            )]
+            let invalidTimed = LyricsCandidate(
+                id: "invalid-timing",
+                identity: identity,
+                title: track.title,
+                artist: track.artist,
+                album: track.album,
+                duration: track.duration,
+                lines: [invalidLine],
+                isSynchronized: false,
+                source: .lrclib,
+                confidence: 1,
+                providerSourceID: "invalid-timing"
+            )
+            let mixedMalformed = LyricsCandidate(
+                id: "mixed-malformed-timing",
+                identity: identity,
+                title: track.title,
+                artist: track.artist,
+                album: track.album,
+                duration: track.duration,
+                lines: [partialTimed.lines[0], invalidLine],
+                isSynchronized: false,
+                source: .amll,
+                confidence: 1,
+                providerSourceID: "mixed-malformed-timing",
+                spotifyTrackID: track.spotifyId,
+                explicitlyTimedLineIndices: [0, 1]
+            )
+            let plain = makeCandidate(
+                track: track,
+                source: .lrclib,
+                confidence: 1,
+                providerID: "plain-exact"
+            )
+            let provider = FixedLyricsProvider(
+                name: "isolated automatic-selection fixture",
+                result: .candidates([mixedMalformed, invalidTimed, plain, partialTimed])
+            )
+
+            @MainActor func runInitialSession() async throws -> UUID {
+                let repository = makeRepository(root: root)
+                let session = LyricsSessionController(providers: [provider], repository: repository)
+                session.begin(track: track, identity: identity, automaticallySearch: true)
+                for _ in 0..<200 {
+                    if let versionID = session.activeLyricsVersionID {
+                        guard let document = session.activeDocument else {
+                            throw ContractFailure(description: "automatic search saved a version without publishing its document")
+                        }
+                        try check(document.source == .amll, "best timed provider source was not selected")
+                        try check(document.providerSourceID == partialTimed.providerSourceID, "candidate with mixed valid/malformed spans was persisted instead of the valid partial timing source")
+                        try check(!document.isSynchronized, "partial timing semantics changed during automatic search")
+                        try check(document.explicitlyTimedLineIndices == Set([0]), "partial timing mask was lost during automatic search")
+                        try check(document.lines.first?.timedSpans == partialTimed.lines.first?.timedSpans, "valid provider spans changed during automatic search")
+                        return versionID
+                    }
+                    try await Task.sleep(nanoseconds: 5_000_000)
+                }
+                throw ContractFailure(description: "automatic search did not persist a selected version")
+            }
+
+            let selectedVersionID = try await runInitialSession()
+            let reopened = makeRepository(root: root)
+            try await reopened.prepare()
+            guard let stored = try await reopened.loadBestStored(track: track, identity: identity) else {
+                throw ContractFailure(description: "automatic selection did not survive database reopen")
+            }
+            try check(stored.versionID == selectedVersionID, "reopen selected a different automatic version")
+            try check(stored.document.source == .amll, "reopen changed the selected provider")
+            try check(stored.document.providerSourceID == partialTimed.providerSourceID, "reopen restored the mixed malformed timing source")
+            try check(!stored.document.isSynchronized, "reopen changed partial timing semantics")
+            try check(stored.document.explicitlyTimedLineIndices == Set([0]), "reopen lost explicit partial mask")
+            try check(stored.document.timingVersionID != nil, "selected word spans have no persisted attachment")
+            try check(stored.document.lines.first?.timedSpans == partialTimed.lines.first?.timedSpans, "reopen changed valid spans")
+
+            let restoredSession = LyricsSessionController(providers: [], repository: reopened)
+            restoredSession.begin(track: track, identity: identity, automaticallySearch: true)
+            for _ in 0..<200 where restoredSession.activeLyricsVersionID != selectedVersionID {
+                try await Task.sleep(nanoseconds: 5_000_000)
+            }
+            try check(restoredSession.activeLyricsVersionID == selectedVersionID, "new session did not restore the same automatic selection")
+            try check(restoredSession.activeDocument?.lines.first?.timedSpans == partialTimed.lines.first?.timedSpans, "restored session renderer input lost word timing")
+            try check(restoredSession.activeDocument?.explicitlyTimedLineIndices == Set([0]), "restored session renderer input lost partial mask")
         }
     }
 

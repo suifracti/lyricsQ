@@ -7,6 +7,79 @@ struct FloatingLyricsContract {
             LyricLine(timestamp: TimeInterval(index * 10), originalText: "line \(index)")
         }
 
+        let cacheSpans = [TimedTextSpan(
+            id: 0, text: "A🙂A", startTime: 0, endTime: 1,
+            utf16Start: 0, utf16Length: 4
+        )]
+        let cacheToken = LyricRubyToken(id: 0, surface: "A🙂A", ruby: "えー")
+        let cacheKey: FloatingTimedRubyLayoutCacheKey = FloatingTimedRubyLayoutCache.key(
+            originalText: "A🙂A", spans: cacheSpans, fontSize: 28,
+            weight: 0.8, showsRuby: true, rubyTokens: [cacheToken], design: "default"
+        )
+        let equalCacheKey = FloatingTimedRubyLayoutCache.key(
+            originalText: "A🙂A", spans: cacheSpans, fontSize: 28,
+            weight: 0.8, showsRuby: true, rubyTokens: [cacheToken], design: "default"
+        )
+        precondition(cacheKey !== equalCacheKey && cacheKey == equalCacheKey, "cache keys compare all layout dependencies instead of relying on a reduced hash string")
+        var layoutComputations = 0
+        let firstCachedLayout = FloatingTimedRubyLayoutCache.layout(for: cacheKey) {
+            layoutComputations += 1
+            return TimedRubyLayout(originalText: "A🙂A", tokens: [])
+        }
+        let reusedLayout = FloatingTimedRubyLayoutCache.layout(for: cacheKey) {
+            layoutComputations += 1
+            return nil
+        }
+        precondition(firstCachedLayout != nil && reusedLayout == firstCachedLayout)
+        precondition(layoutComputations == 1, "stable floating text dependencies reuse measured timed geometry")
+        let changedTimingKey = FloatingTimedRubyLayoutCache.key(
+            originalText: "A🙂A",
+            spans: [TimedTextSpan(id: 0, text: "A🙂A", startTime: 0.1, endTime: 1.1, utf16Start: 0, utf16Length: 4)],
+            fontSize: 28, weight: 0.8, showsRuby: true, rubyTokens: [cacheToken], design: "default"
+        )
+        precondition(changedTimingKey != cacheKey, "timing changes invalidate cached layout")
+        let changedTokenKey = FloatingTimedRubyLayoutCache.key(
+            originalText: "A🙂A", spans: cacheSpans, fontSize: 28,
+            weight: 0.8, showsRuby: true,
+            rubyTokens: [LyricRubyToken(id: 0, surface: "A🙂A", ruby: "ええ")], design: "default"
+        )
+        precondition(changedTokenKey != cacheKey, "reading changes invalidate cached layout")
+        precondition(
+            FloatingTimedRubyLayoutCache.key(
+                originalText: "B🙂B", spans: cacheSpans, fontSize: 28,
+                weight: 0.8, showsRuby: true, rubyTokens: [cacheToken], design: "default"
+            ) != cacheKey,
+            "display text changes invalidate cached layout"
+        )
+        precondition(
+            FloatingTimedRubyLayoutCache.key(
+                originalText: "A🙂A", spans: cacheSpans, fontSize: 29,
+                weight: 0.8, showsRuby: true, rubyTokens: [cacheToken], design: "default"
+            ) != cacheKey,
+            "font size changes invalidate cached layout"
+        )
+        precondition(
+            FloatingTimedRubyLayoutCache.key(
+                originalText: "A🙂A", spans: cacheSpans, fontSize: 28,
+                weight: 0.9, showsRuby: true, rubyTokens: [cacheToken], design: "default"
+            ) != cacheKey,
+            "font weight changes invalidate cached layout"
+        )
+        precondition(
+            FloatingTimedRubyLayoutCache.key(
+                originalText: "A🙂A", spans: cacheSpans, fontSize: 28,
+                weight: 0.8, showsRuby: false, rubyTokens: [cacheToken], design: "default"
+            ) != cacheKey,
+            "Ruby visibility changes invalidate cached layout"
+        )
+        precondition(
+            FloatingTimedRubyLayoutCache.key(
+                originalText: "A🙂A", spans: cacheSpans, fontSize: 28,
+                weight: 0.8, showsRuby: true, rubyTokens: [cacheToken], design: "rounded"
+            ) != cacheKey,
+            "layout design changes invalidate cached layout"
+        )
+
         let synchronized = FloatingLyricsPresentationHelper.selection(
             lines: lines,
             currentIndex: 3,
