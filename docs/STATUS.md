@@ -8,13 +8,14 @@
 ## Source Identity
 
 - repo root：`/Users/apple/backup/sptifylyrics`
-- branch：`codex/t2-lossless-editing-timing`（T2 从包含 T1 的 final HEAD 建立）
-- source HEAD（T2 已验证 production commit）：`40cc1b57fd3a20345d292a5be0f9304f9d5df06d` (`fix: preserve lyric timing on manual edits`)
+- branch：`codex/s1-durable-manual-adoption`（S1 从包含 H1/T1/T2 的最终 HEAD 建立）
+- source HEAD（S1 production commit）：`e566bbf51d1389e0279f0ba0412fa344bb449ac2` (`fix: persist explicit lyric adoption atomically`)
+- S1 base：T2 final HEAD `a427ea65b645931fe2d6fd94dcff5f463b4b1952`；pushed checkpoint `bee7ad106bfee7bfdc2ff96ba536b669cb53a41a`
 - H1 production commit：`449df0a6446dd01f250ff84eec34ff87efccf70d`
 - T1 production commit：`2963f710c85e0993963d0127514791ee6a19196f`
 - release identity：正式 GitHub Release `v0.1.2`，release commit `6528be3103f75fd4f63757855b9d61cd30f757d8`
 - status last updated：`2026-09-23`
-- tracked/staged 状态：T2 production、focused contract 与 evidence/status 文档分两个提交完成并推送。原始 H1 checkout 中的三份既有 `PROJECT_FULL_AUDIT_*.md` 保持原样，不纳入 T2。
+- tracked/staged 状态：S1 production 与 focused contract、evidence/status 文档分两个提交完成并推送。正式根中三份既有 `PROJECT_FULL_AUDIT_*.md` 保持原样，不纳入本批。
 
 ## Product Boundary
 
@@ -61,7 +62,12 @@
   - 真人验收：`USER_VERIFICATION_REQUIRED / NOT_RUN`
   - Planner 定向审查：完成，未发现 Blocker / 必要 Relevant
   - Evidence：[T2 lossless editing / timing](evidence/core-integrity/T2-lossless-editing-timing.md)
-- **Next**：S1 尚未开始；本轮停止在 T2 与 S1 之间。
+- **S1 — CLOSED**
+  - `AUTOMATED_VERIFIED`
+  - 真人低置信候选采用后重启恢复：`USER_VERIFICATION_REQUIRED / NOT_RUN`
+  - Planner 定向审查：完成，无 Blocker / 必要 Relevant
+  - Evidence：[S1 durable manual adoption](evidence/core-integrity/S1-durable-manual-adoption.md)
+- **Next**：S1 自动验收及 Planner 定向审查完成；本轮停止在 O1 前。
 
 `NATIVE_INPUT_PENDING` 不是 PASS，也不表示 B0 发现的产品缺陷已经修复。
 
@@ -122,13 +128,22 @@
 
 详见 [T2 evidence](evidence/core-integrity/T2-lossless-editing-timing.md)。
 
+## S1 Confirmed Facts
+
+- 人工采用候选使用独立于自动匹配的显式持久路径；自动保存的低置信拒绝门槛保持不变，provider/source/provenance/confidence 与独立身份声明原值保留并校验。
+- 候选资产、必要 timing attachment 与 preferred 当前版本在同一 SQLite 事务提交；只有事务返回持久版本 ID/hash 后 session 才发布当前状态。关闭/重开数据库和新 session 后，confidence 0 与 0.5 的人工选择均恢复为同一当前版本。
+- 锁定版本先返回明确冲突；取消无写入，确认时事务重新读取锁集合，确认后更改 preferred 而保留旧锁标记。事务注入失败、repository rejected/skipped 与异常均不改变当前成功状态或原选择。
+- 带真实 spans 的重复采用复用版本及 attachment 身份；从已加载父版本创建副本时分配子版本自己的 attachment ID，父 attachment 归属不变。A→B 迟到保存只写回 A，同曲新请求覆盖旧请求。
+- 自动验收保持 `USER_VERIFICATION_REQUIRED / NOT_RUN`；真人低置信候选采用后重启恢复尚未执行。
+
+详见 [S1 evidence](evidence/core-integrity/S1-durable-manual-adoption.md)。
+
 详见 [B0 evidence](evidence/core-integrity/B0-clock-offset.md)；本页只保留结论，不复制运行输出。
 
 ## Open Core Risks
 
-以下项目仍按当前 Master Plan / batch ownership 作为未关闭核心项；T1 本轮只关闭 read/projection fidelity，不判断这些项目已修复：
+以下项目仍按当前 Master Plan / batch ownership 作为未关闭核心项；S1 本轮只关闭 durable manual adoption，不判断这些项目已修复：
 
-- S1 manual adoption persistence
 - O1 scoped offset
 - R1 reading token consistency
 - U1 honest experimental UI
@@ -150,5 +165,5 @@
 
 ## Next Executor Contract
 
-**S1 — Manual Adoption Persistence**
-T2 自动验收及 Planner 定向审查已完成，未发现 Blocker / 必要 Relevant；真人验收保持 `USER_VERIFICATION_REQUIRED / NOT_RUN`。S1 尚未开始。
+**O1 — Scoped Offset**
+S1 自动验收与 Planner 定向审查已完成并推送；真人低置信候选采用后重启恢复保持 `USER_VERIFICATION_REQUIRED / NOT_RUN`。本轮不进入 O1。
