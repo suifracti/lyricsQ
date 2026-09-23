@@ -8,7 +8,9 @@
 ## Source Identity
 
 - repo root：`/Users/apple/backup/sptifylyrics`
-- branch：`codex/r1-reading-token-consistency`（R1 从 O1 最终 HEAD 建立；隔离 worktree 位于 `/private/tmp/spotifylyrics-r1-reading-token-consistency`）
+- branch：`codex/u1-honest-experimental-ui`（U1 从 R1 最终 HEAD 建立；隔离 worktree 位于 `/Users/apple/.codex/worktrees/u1-honest-experimental-ui/sptifylyrics`）
+- U1 base：R1 final HEAD `44f949ac9d062a77d3adf6fede0e94e95b69b3f7`；pushed U1 checkpoint `9bbf14e7071a506ebff5b800dca9808a7ac1fd69`
+- U1 production commits：`7299241839864dd345b713dea1323fb3b72bef33`、`c19a53c800d03ff5a09deb95f5a86cc0815e86dc`；包含 H1/T1/T2/S1/O1/R1 祖先，已推送，尚未合并
 - R1 base：O1 final HEAD `c31805467ae877e67ddd14e50af6b6587f719416`；pushed R1 checkpoint `f6e33debc35017fd900029dd1a98ac79f4154b51`
 - initial R1 production commit：`4944a818b8c3059b5f575578eaef6194bdd8b373` (`fix: keep manual reading tokens consistent`)
 - latest R1 production commit：`bad730103632cedeb852bffec0836745879ce109` (`fix: reject inconsistent kana tokens from all sources`)
@@ -20,7 +22,7 @@
 - T1 production commit：`2963f710c85e0993963d0127514791ee6a19196f`
 - release identity：正式 GitHub Release `v0.1.2`，release commit `6528be3103f75fd4f63757855b9d61cd30f757d8`
 - status last updated：`2026-09-23`
-- tracked/staged 状态：R1 production、focused contracts 与 evidence/status 文档记录在 R1 功能分支上；正式根中三份既有 `PROJECT_FULL_AUDIT_*.md` 保持原样，不纳入本批。
+- tracked/staged 状态：U1 production、focused contracts 与 evidence/status 文档记录在 U1 功能分支上；正式根中三份既有 `PROJECT_FULL_AUDIT_*.md` 保持原样，不纳入本批。
 
 ## Product Boundary
 
@@ -84,7 +86,13 @@
   - Planner 定向审查：完成，无 Blocker / 必要 Relevant
   - Latest production commit：`bad730103632cedeb852bffec0836745879ce109`（初始实现 `4944a818b8c3059b5f575578eaef6194bdd8b373`）；最终合同 follow-up：`63498bc9e9a4f53474fe87577092513c1ea92f97`；已推送，尚未合并
   - Evidence：[R1 reading/token consistency](evidence/core-integrity/R1-reading-token-consistency.md)
-- **Next**：U1 由后续独立批次接手；本轮已停止在 U1 前。
+- **U1 — CLOSED**
+  - `AUTOMATED_VERIFIED`
+  - D / Classic 人工入口、状态表达与布局偏好验收：`USER_VERIFICATION_REQUIRED / NOT_RUN`
+  - Planner 定向审查：待最终 evidence/status review
+  - Latest production commit：`c19a53c800d03ff5a09deb95f5a86cc0815e86dc`（初始实现 `7299241839864dd345b713dea1323fb3b72bef33`）；已推送，尚未合并
+  - Evidence：[U1 honest experimental UI](evidence/core-integrity/U1-honest-experimental-ui.md)
+- **Next candidate：V1**，待验收；U1 未标记 `M1_READY`，本轮停止在 V1 前。
 
 `NATIVE_INPUT_PENDING` 不是 PASS，也不表示 B0 发现的产品缺陷已经修复。
 
@@ -176,13 +184,23 @@
 
 详见 [R1 evidence](evidence/core-integrity/R1-reading-token-consistency.md)。
 
+## U1 Confirmed Facts
+
+- Classic immersive split 的 Favorite/More 空操作入口已移除；Direction D 行菜单保留发现与关闭行为，未实现的三项禁用并说明原因。D inspector 保留真实歌曲信息和导航，移除固定“当前/完成”假状态及空历史/操作入口。
+- Direction D 的搜索、Settings 与 TXT 编辑路径按实际路由工作；没有 SwiftUI presentation route 的 Debug AppKit host 会禁用对应动作，TXT guard 在准备前返回。取消/失败不打开 editor，成功准备后打开一次。
+- Capsule、AI translation、automatic alignment 与 local-file alignment 保留真实行为，并在相应入口标记具体实验边界。A0 Spotify Desktop 来源门控与 local-file alignment 独立性不变。
+- V3 默认、可解析的 Classic / Direction D 布局与用户保存偏好未重置。该批不涉及数据库、歌词资产、用户词典、offset store 或 schema。
+- U1 定向合同、受影响 D 3.4/layout/Capsule 合同及 Debug 构建通过。两个既存 runner 分别因过期的 Capsule 当前版本断言、D 默认布局断言失败，未计为通过；D/Classic 交互 smoke 和真人验收为 `USER_VERIFICATION_REQUIRED / NOT_RUN`。
+- Planner 定向审查待完成最终 evidence/status review。V1 仅为下一候选，尚未开始且不代表 `M1_READY`。
+
+详见 [U1 evidence](evidence/core-integrity/U1-honest-experimental-ui.md)。
+
 详见 [B0 evidence](evidence/core-integrity/B0-clock-offset.md)；本页只保留结论，不复制运行输出。
 
 ## Open Core Risks
 
-以下项目仍按当前 Master Plan / batch ownership 作为未关闭核心项；R1 只关闭整行读音与 token 一致性，不判断这些项目已修复：
+以下项目仍按当前 Master Plan / batch ownership 作为未关闭核心项；R1 与 U1 各自仅关闭其定向范围：
 
-- U1 honest experimental UI
 - V1 M1 gate
 
 ## Known Test Drift
@@ -201,5 +219,5 @@
 
 ## Next Executor Contract
 
-**U1 — Honest Experimental UI**
-R1 `bad730103632cedeb852bffec0836745879ce109` 已自动验证并推送；Planner 定向审查完成，无 Blocker / 必要 Relevant。V3 整行读音编辑、投影、romaji、重启与既有点击纠音的真人验收仍为 `USER_VERIFICATION_REQUIRED / NOT_RUN`。本轮没有开始 U1。
+**V1 — Next Candidate, Pending Acceptance**
+U1 `codex/u1-honest-experimental-ui` 已自动验证并推送；生产提交 `7299241839864dd345b713dea1323fb3b72bef33`、`c19a53c800d03ff5a09deb95f5a86cc0815e86dc`。D / Classic 入口理解度、真实状态与偏好保留的人验仍为 `USER_VERIFICATION_REQUIRED / NOT_RUN`。V1 尚未开始；不得据此标记 `M1_READY`。
