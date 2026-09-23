@@ -74,9 +74,23 @@ require("SongSearchPopover" in experimental_host and "openSettings()" in experim
         "Debug Direction D host does not preserve real search and Settings routes")
 require("DirectionDActionRouter.performManualLyricsImport" in experimental_host,
         "Debug Direction D import does not open the editor after successful preparation")
+require("onOpenEditor: (() -> Void)? = nil" in experimental_host and
+        "guard let onOpenEditor else { return }" in experimental_host,
+        "AppKit Debug host can prepare TXT without an editor presentation route")
 app = read("SpotifyLyrics/Main.swift")
 require("DirectionDDebugMainWindowSceneHost(" in app,
         "Debug Direction D main scene still uses router defaults without search/editor presentation")
+require("router: DirectionDExperimentalProductHost.makeRouter(playback: playback)" in app and
+        "canPresentWindowActions" in experimental_host,
+        "AppKit Debug host availability is not distinguished from the SwiftUI scene")
+toolbar = read("SpotifyLyrics/Views/Components/DirectionD/DirectionDSongWorkbenchButton.swift")
+require(".disabled(!canPresentWindowActions)" in toolbar and
+        "此诊断窗口" in toolbar,
+        "AppKit Debug toolbar leaves unavailable search/Settings controls clickable")
+direction_d_main = read("SpotifyLyrics/Views/Components/DirectionD/DirectionDMainWindowView.swift")
+require("primaryDisabledReason:" in direction_d_main and
+        "secondaryDisabledReason:" in direction_d_main,
+        "AppKit Debug empty-state search/TXT controls remain clickable")
 
 prefs = read("SpotifyLyrics/Views/Components/LyricsPreferencesPopover.swift")
 require("WindowManager.shared.toggleCapsule(state: playbackState)" in prefs,

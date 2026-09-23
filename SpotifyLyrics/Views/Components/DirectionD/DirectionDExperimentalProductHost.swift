@@ -43,11 +43,12 @@ struct DirectionDExperimentalProductHost: View {
 
     static func makeRouter(
         playback: PlaybackState,
-        onOpenManualLyricsSearch: @escaping () -> Void = {},
-        onOpenSettings: @escaping () -> Void = {},
-        onOpenEditor: @escaping () -> Void = {}
+        onOpenManualLyricsSearch: (() -> Void)? = nil,
+        onOpenSettings: (() -> Void)? = nil,
+        onOpenEditor: (() -> Void)? = nil
     ) -> DirectionDActionRouter {
         DirectionDActionRouter(
+            canPresentWindowActions: onOpenManualLyricsSearch != nil && onOpenSettings != nil && onOpenEditor != nil,
             onOpenSpotify: {
                 if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.spotify.client") {
                     NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
@@ -65,9 +66,10 @@ struct DirectionDExperimentalProductHost: View {
                 playback.retryLyrics()
             },
             onOpenManualLyricsSearch: {
-                onOpenManualLyricsSearch()
+                onOpenManualLyricsSearch?()
             },
             onImportLyrics: {
+                guard let onOpenEditor else { return }
                 DirectionDActionRouter.performManualLyricsImport(
                     prepare: { playback.prepareManualLyricsFromTXT() },
                     openEditor: onOpenEditor
@@ -76,7 +78,7 @@ struct DirectionDExperimentalProductHost: View {
             onOpenSongWorkbench: {
                 // Inspector toggle is local UI; no second business owner.
             },
-            onOpenSettings: { onOpenSettings() },
+            onOpenSettings: { onOpenSettings?() },
             onRetryAutomaticAlignment: {
                 AutomaticAlignmentJobController.shared.retry()
             },
