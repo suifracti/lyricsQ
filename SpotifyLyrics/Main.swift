@@ -105,11 +105,9 @@ struct SpotifyLyricsApp: App {
         // DirectionDMainWindowView, not the Phase 3.3 product-state host or
         // Preview Matrix.  It is debug-reachable and remains experimental.
         Window("Lyric Island", id: "direction-d-main-window") {
-            DirectionDMainWindowPresentationFactory.makeMainWindow(
-                stableID: "mainWindow.directionD.v4",
-                playbackState: playbackState,
-                adapter: directionDMainWindowAdapter,
-                router: DirectionDExperimentalProductHost.makeRouter(playback: playbackState)
+            DirectionDDebugMainWindowSceneHost(
+                playback: playbackState,
+                adapter: directionDMainWindowAdapter
             )
             .background(DirectionDMainWindowWindowIdentifier())
             .environmentObject(playbackState)

@@ -38,6 +38,9 @@ struct LyricsPreferencesPopover: View {
                 modeButton("顶部胶囊", systemImage: "capsule", isActive: playbackState.showCapsulePlayer) {
                     WindowManager.shared.toggleCapsule(state: playbackState)
                 }
+                Text("顶部胶囊为实验显示方式，与主窗口共享当前播放状态。")
+                    .font(.system(size: 11, design: .rounded))
+                    .foregroundStyle(LyricsDesignTokens.mutedText)
                 modeButton("全屏歌词", systemImage: "arrow.up.left.and.arrow.down.right", isActive: playbackState.showFullScreen) {
                     WindowManager.shared.toggleFullScreen(state: playbackState)
                 }

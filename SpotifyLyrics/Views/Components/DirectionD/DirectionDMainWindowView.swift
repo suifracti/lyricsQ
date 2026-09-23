@@ -470,9 +470,7 @@ public struct DirectionDMainWindowView: View {
                 primaryTitle: "手动搜索歌词",
                 primary: { router.onOpenManualLyricsSearch() },
                 secondaryTitle: "导入本地歌词",
-                secondary: { router.onImportLyrics() },
-                tertiaryTitle: "歌曲工作台",
-                tertiary: { router.onOpenSongWorkbench() }
+                secondary: { router.onImportLyrics() }
             )
         case .networkUnavailableNoCache:
             statusActions(

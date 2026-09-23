@@ -4,6 +4,16 @@ import AppKit
 /// Direction D User Action Router (Phase 3.3).
 /// Routes UI actions to existing business controllers/handlers without executing direct DB or network operations inside Views.
 public struct DirectionDActionRouter {
+    /// TXT import only creates an editor draft. Present the editor after a
+    /// successful preparation so cancellation never looks like an import.
+    @MainActor
+    public static func performManualLyricsImport(
+        prepare: () -> Bool,
+        openEditor: () -> Void
+    ) {
+        if prepare() { openEditor() }
+    }
+
     public var onOpenSpotify: () -> Void
     public var onOpenSystemSettings: () -> Void
     public var onRetryPlaybackDetection: () -> Void
