@@ -9,7 +9,7 @@
 
 - repo root：`/Users/apple/backup/sptifylyrics`
 - branch：`codex/o1-scoped-lyrics-offset`（O1 从包含 H1/T1/T2/S1 的最终 HEAD 建立）
-- source HEAD（O1 production commit）：`dd55087502f3aa5e767f79ed9595e0f0eff9cd5d` (`fix: scope lyrics offsets by saved version`)
+- source HEAD（O1 latest production commit）：`69c922b37331bf42be7b00494d9ba2f0f5dda3f7` (`fix: sync editor offset input on scope changes`；核心 scope 实现提交 `dd55087502f3aa5e767f79ed9595e0f0eff9cd5d`)
 - O1 base：S1 final HEAD `6211bed5c2e31fa0325be00e5a2415d8563f0f25`；pushed O1 checkpoint `f228808169991b6448e60ab1e999a6069310215a`
 - S1 base：T2 final HEAD `a427ea65b645931fe2d6fd94dcff5f463b4b1952`；pushed checkpoint `bee7ad106bfee7bfdc2ff96ba536b669cb53a41a`
 - H1 production commit：`449df0a6446dd01f250ff84eec34ff87efccf70d`
@@ -71,10 +71,10 @@
 - **O1 — CLOSED**
   - `AUTOMATED_VERIFIED`
   - 真人切歌/切版本/重启、跨窗口一致性、编辑器版本身份和真实播放进度：`USER_VERIFICATION_REQUIRED / NOT_RUN`
-  - Planner 定向审查：待执行
-  - Production commit：`dd55087502f3aa5e767f79ed9595e0f0eff9cd5d`，已推送，尚未合并
+  - Planner 定向审查：完成；初次 Necessary Relevant 已修复复审，无 Blocker / 必要 Relevant
+  - Latest production commit：`69c922b37331bf42be7b00494d9ba2f0f5dda3f7`，已推送，尚未合并
   - Evidence：[O1 scoped lyrics offset](evidence/core-integrity/O1-scoped-lyrics-offset.md)
-- **Next**：O1 Planner 定向审查；审查后 R1。本轮代码工作停止在 R1 前。
+- **Next**：R1 可由后续独立批次接手；本轮代码工作已停止在 R1 前。
 
 `NATIVE_INPUT_PENDING` 不是 PASS，也不表示 B0 发现的产品缺陷已经修复。
 
@@ -152,7 +152,7 @@
 - The editor resolves its selected saved version through the same repository boundary. Redirect-family records may retain a raw historical `trackStableKey`; O1 never uses that alias as the offset key. Dirty/stale/new editor drafts disable writes with an explanation.
 - Main V3, fullscreen, floating desktop and settings share the scoped store/control; Capsule continues to consume the common live line projection. No production consumer uses the old global value as an offset.
 - The old global value remains unchanged and unassigned. The scoped write changed no SQLite `data_version`; the ownership resolver is read-only. Offset changes still affect presentation time only and do not seek or change the playback-domain clock.
-- Automated contracts and Debug build passed. Planner review and real window/player experience remain pending; human verification stays `USER_VERIFICATION_REQUIRED / NOT_RUN`.
+- Automated contracts and Debug build passed. Planner found the editor's asynchronously resolved saved-version scope could leave the offset text field at its initial `0.00`; commit `69c922b` syncs the field when its explicit scope changes. Follow-up review found no remaining Blocker / necessary Relevant. Real window/player experience remains `USER_VERIFICATION_REQUIRED / NOT_RUN`.
 
 详见 [O1 evidence](evidence/core-integrity/O1-scoped-lyrics-offset.md)。
 
