@@ -8,7 +8,7 @@
 ## Source Identity
 
 - repo root：`/Users/apple/backup/sptifylyrics`
-- branch：`codex/u1-honest-experimental-ui`（U1 从 R1 最终 HEAD 建立；隔离 worktree 位于 `/Users/apple/.codex/worktrees/u1-honest-experimental-ui/sptifylyrics`）
+- branch：`codex/v1-core-integrity-verification`（V1 验证分支从 U1 最终 HEAD `d75789ee74b1a68c6caf02cd062b14b3c59dcd24` 建立；隔离 worktree 位于 `/private/tmp/spotifylyrics-v1-core-integrity-verification`；本轮仅测试/文档，无生产源码差异）
 - U1 base：R1 final HEAD `44f949ac9d062a77d3adf6fede0e94e95b69b3f7`；pushed U1 checkpoint `9bbf14e7071a506ebff5b800dca9808a7ac1fd69`
 - U1 production commits：`7299241839864dd345b713dea1323fb3b72bef33`、`c19a53c800d03ff5a09deb95f5a86cc0815e86dc`、`a33e9a160a413f928429fa976fc071f5e3f5fe27`；包含 H1/T1/T2/S1/O1/R1 祖先，已推送，尚未合并
 - R1 base：O1 final HEAD `c31805467ae877e67ddd14e50af6b6587f719416`；pushed R1 checkpoint `f6e33debc35017fd900029dd1a98ac79f4154b51`
@@ -92,7 +92,12 @@
   - Planner 定向审查：首轮 1 项必要 Relevant 已在 `a33e9a1` 修复；最终复审无剩余 Blocker / 必要 Relevant
   - Latest production commit：`a33e9a160a413f928429fa976fc071f5e3f5fe27`（初始实现 `7299241839864dd345b713dea1323fb3b72bef33`）；已推送，尚未合并
   - Evidence：[U1 honest experimental UI](evidence/core-integrity/U1-honest-experimental-ui.md)
-- **Next candidate：V1**，待验收；U1 未标记 `M1_READY`，本轮停止在 V1 前。
+- **V1 — AUTOMATED_VERIFIED / USER_PENDING**
+  - U1 精确候选源码 `d75789ee74b1a68c6caf02cd062b14b3c59dcd24` 上的 20 项定向核心合同均通过；生产源码无差异。
+  - 两个旧 U1 runner 的过期 Capsule 与 D 默认断言经最小测试预期/路由修正后通过；生产代码未改。
+  - Debug 构建通过；没有可证明完整隔离的产品 UI harness，因此未启动 App。真人 1–6 项均为 `USER_VERIFICATION_REQUIRED / NOT_RUN`；A0 真实捕获仍为 `USER_VERIFICATION_REQUIRED / NOT_RUN`。
+  - V1 不标记 `M1_READY`。Planner 定向审查与必要真人验收仍待完成。
+  - Evidence：[V1 core integrity verification](evidence/core-integrity/V1-core-integrity-verification.md)；逐项输出：[V1 contracts](evidence/core-integrity/V1-core-integrity-contracts.txt)
 
 `NATIVE_INPUT_PENDING` 不是 PASS，也不表示 B0 发现的产品缺陷已经修复。
 
@@ -200,13 +205,13 @@
 
 ## Open Core Risks
 
-以下项目仍按当前 Master Plan / batch ownership 作为未关闭核心项；R1 与 U1 各自仅关闭其定向范围：
+以下项目仍按当前 Master Plan / batch ownership 作为未关闭核心项；自动合同通过不替代 V1 的必要真人验收：
 
-- V1 M1 gate
+- V1 真人验收 1–6 尚未完成；阻止 `M1_READY`，当前为 `USER_PENDING`。
 
 ## Known Test Drift
 
-- `Tests/fullscreen_lyrics_contract.sh`：静态 literal assertion 与现实现别名写法漂移；不是 C1 clock failure，本轮未为此扩展修复。
+- `Tests/fullscreen_lyrics_contract.sh`：静态 literal assertion 与现实现别名写法漂移；本轮未重跑该脚本，当前 C1 clock / V3 / Fullscreen 共享路径由 V1 合同 01、03 覆盖。该 runner 不记作当前候选 PASS。
 
 ## Source-of-Truth Rules
 
@@ -220,5 +225,5 @@
 
 ## Next Executor Contract
 
-**V1 — Next Candidate, Pending Acceptance**
-U1 `codex/u1-honest-experimental-ui` 的生产与定向合同已自动验证并推送；生产提交 `7299241839864dd345b713dea1323fb3b72bef33`、`c19a53c800d03ff5a09deb95f5a86cc0815e86dc`、`a33e9a160a413f928429fa976fc071f5e3f5fe27`。Planner 首轮 Necessary Relevant 已修复，最终复审无 Blocker / 必要 Relevant。D / Classic 入口理解度、真实状态与偏好保留的人验仍为 `USER_VERIFICATION_REQUIRED / NOT_RUN`。V1 尚未开始；不得据此标记 `M1_READY`。
+**V1 — AUTOMATED_VERIFIED / USER_PENDING**
+验证分支 `codex/v1-core-integrity-verification` 从 U1 最终 HEAD `d75789ee74b1a68c6caf02cd062b14b3c59dcd24` 建立。20 项当前候选核心合同与 task-specific Debug 构建通过；本轮无生产源码改动。两个既存 U1 runner 过期预期已按当前 catalog、持久选择、Settings 路由及 V3 默认最小校正并通过。产品 UI smoke 因无法证明 app bundle、defaults、SQLite 和自动连接全隔离而未启动。必要真人清单 1–6 仍为 `USER_VERIFICATION_REQUIRED / NOT_RUN`；Planner 定向审查待完成。不得标记 `M1_READY`。
