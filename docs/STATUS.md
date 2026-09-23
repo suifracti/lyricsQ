@@ -8,12 +8,13 @@
 ## Source Identity
 
 - repo root：`/Users/apple/backup/sptifylyrics`
-- branch：`codex/t1-read-projection-fidelity`（基线 H1 final HEAD `c062cfe371a2fcab3b1569888a6da35646627f0e`）
-- source HEAD（T1 已验证 production commit）：`2963f710c85e0993963d0127514791ee6a19196f` (`fix: preserve editor projection on translation switch`)
+- branch：`codex/t2-lossless-editing-timing`（T2 从包含 T1 的 final HEAD 建立）
+- source HEAD（T2 已验证 production commit）：`40cc1b57fd3a20345d292a5be0f9304f9d5df06d` (`fix: preserve lyric timing on manual edits`)
 - H1 production commit：`449df0a6446dd01f250ff84eec34ff87efccf70d`
+- T1 production commit：`2963f710c85e0993963d0127514791ee6a19196f`
 - release identity：正式 GitHub Release `v0.1.2`，release commit `6528be3103f75fd4f63757855b9d61cd30f757d8`
 - status last updated：`2026-09-23`
-- tracked/staged 状态：T1 production、focused contract 与最终 evidence/status 均已提交并推送；原始 H1 checkout 中的三份既有 `PROJECT_FULL_AUDIT_*.md` 保持原样，不纳入 T1。
+- tracked/staged 状态：T2 production、focused contract 与 evidence/status 文档分两个提交完成并推送。原始 H1 checkout 中的三份既有 `PROJECT_FULL_AUDIT_*.md` 保持原样，不纳入 T2。
 
 ## Product Boundary
 
@@ -55,7 +56,12 @@
   - `AUTOMATED_VERIFIED`
   - 真人验收：`USER_VERIFICATION_REQUIRED / NOT_RUN`
   - Evidence：[T1 read / projection fidelity](evidence/core-integrity/T1-read-projection-fidelity.md)
-- **Next**：T1 Planner 定向审查完成，未发现 Blocker / 必要 Relevant；T2 尚未开始。
+- **T2 — CLOSED**
+  - `AUTOMATED_VERIFIED`
+  - 真人验收：`USER_VERIFICATION_REQUIRED / NOT_RUN`
+  - Planner 定向审查：完成，未发现 Blocker / 必要 Relevant
+  - Evidence：[T2 lossless editing / timing](evidence/core-integrity/T2-lossless-editing-timing.md)
+- **Next**：S1 尚未开始；本轮停止在 T2 与 S1 之间。
 
 `NATIVE_INPUT_PENDING` 不是 PASS，也不表示 B0 发现的产品缺陷已经修复。
 
@@ -105,13 +111,23 @@
 
 详见 [T1 evidence](evidence/core-integrity/T1-read-projection-fidelity.md)。
 
+## T2 Confirmed Facts
+
+- Editor copy 与 library revision 均把仍兼容的真实 spans 写入子版本自己的新 timing attachment；attachment 在同一事务中写入，绑定子版本和其 canonical source hash，父版本/父 attachment 保持不变。
+- TTML/YRC 真实解析 fixture 经保存、关闭原 helper scope、重新打开 SQLite 后，spans、行时间、语言、performer（有值时）、部分时间轴 mask、renderer input 和 locked-reading layer 按各 fixture 保留。
+- 原文或行时间使部分 spans 失配时，编辑器与 library revision 在写入前给出损失数量；取消不写入，确认后只保存兼容余量。只改译文继续通过 translation layer，不新增歌词版本或 timing attachment。
+- timing payload 现在须通过文本、UTF-16 范围与时间约束校验，损坏 attachment 不参与自动 word-timing 优先级；用户 preferred/locked 版本优先级保持不变。
+- attachment 插入注入失败会回滚子版本、attachment、选择更新及同事务内容。无 schema 迁移或历史 attachment 改写。
+- T2 真人体验验收保持 `USER_VERIFICATION_REQUIRED / NOT_RUN`。
+
+详见 [T2 evidence](evidence/core-integrity/T2-lossless-editing-timing.md)。
+
 详见 [B0 evidence](evidence/core-integrity/B0-clock-offset.md)；本页只保留结论，不复制运行输出。
 
 ## Open Core Risks
 
 以下项目仍按当前 Master Plan / batch ownership 作为未关闭核心项；T1 本轮只关闭 read/projection fidelity，不判断这些项目已修复：
 
-- T2 lossless edit/timing
 - S1 manual adoption persistence
 - O1 scoped offset
 - R1 reading token consistency
@@ -134,5 +150,5 @@
 
 ## Next Executor Contract
 
-**T2 — Lossless Edit / Timing**
-T1 已自动验收并推送；Planner 定向审查完成，未发现 Blocker / 必要 Relevant。T2 尚未开始。
+**S1 — Manual Adoption Persistence**
+T2 自动验收及 Planner 定向审查已完成，未发现 Blocker / 必要 Relevant；真人验收保持 `USER_VERIFICATION_REQUIRED / NOT_RUN`。S1 尚未开始。
