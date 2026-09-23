@@ -19,6 +19,7 @@ public final class LyricsSessionController: ObservableObject {
     @Published public private(set) var revision: UInt64 = 0
     @Published public private(set) var persistenceStatusMessage: String?
     @Published public private(set) var activeSearchQuery: String?
+    @Published public private(set) var automaticSearchDisabledForCurrentTrack = false
 
     private let searchManager: LyricsSearchManager
     private let repository: (any LyricsRepository)?
@@ -95,6 +96,7 @@ public final class LyricsSessionController: ObservableObject {
         alignmentProvenanceAvailability = .unavailable
         persistenceStatusMessage = nil
         activeSearchQuery = searchQueryOverride
+        automaticSearchDisabledForCurrentTrack = !automaticallySearch
         lyrics = []
 #if DEBUG
         debugLyricsBindingToken = nil
@@ -107,12 +109,6 @@ public final class LyricsSessionController: ObservableObject {
         LyricsE2ELog.log(
             "SESSION begin rev=\(requestRevision) identity=\(identity.stableKey) title=\(track.title) artist=\(track.artist) duration=\(track.duration) spotifyId=\(track.spotifyId ?? "")"
         )
-
-        guard automaticallySearch else {
-            state = .idle
-            LyricsE2ELog.log("SESSION automatic search disabled identity=\(identity.stableKey)")
-            return
-        }
 
         requestTask = Task { [weak self, searchManager, repository] in
             var outcome: SearchOutcome?
@@ -143,14 +139,26 @@ public final class LyricsSessionController: ObservableObject {
             }
 
             if outcome == nil, !Task.isCancelled {
-                let searched = await searchManager.search(
-                    track: track,
-                    identity: identity,
-                    queryOverride: queryOverrideSnapshot,
-                    forceRefresh: forceRefresh,
-                    aliases: storedAliases
-                )
-                outcome = searched
+                if automaticallySearch {
+                    let searched = await searchManager.search(
+                        track: track,
+                        identity: identity,
+                        queryOverride: queryOverrideSnapshot,
+                        forceRefresh: forceRefresh,
+                        aliases: storedAliases
+                    )
+                    outcome = searched
+                } else {
+                    await MainActor.run { [weak self] in
+                        guard let self,
+                              self.activeIdentity == identity,
+                              self.revision == requestRevision else { return }
+                        self.persistenceStatusMessage = persistenceError
+                        self.state = .idle
+                        LyricsE2ELog.log("SESSION automatic search disabled; stored lyrics absent identity=\(identity.stableKey)")
+                    }
+                    return
+                }
             }
 
             guard let outcome else { return }
@@ -183,6 +191,12 @@ public final class LyricsSessionController: ObservableObject {
                     self.alignmentProvenanceAvailability = cachedReference.alignmentProvenanceAvailability
                 }
                 return true
+            }
+
+            // Loading an already persisted choice is read-only. Do not send it
+            // back through the automatic-save path when track search is off.
+            if !automaticallySearch, cachedReference != nil {
+                return
             }
 
             // Persist only after the current Session has accepted the match.
@@ -230,6 +244,7 @@ public final class LyricsSessionController: ObservableObject {
         activeLyricsVersionID = nil
         activeSourceContentHash = nil
         alignmentProvenanceAvailability = .unavailable
+        automaticSearchDisabledForCurrentTrack = false
         lyrics = []
         isSynchronized = true
         isNoSelection = false
@@ -293,6 +308,7 @@ public final class LyricsSessionController: ObservableObject {
         alignmentProvenanceAvailability = .unavailable
         activeTrack = nil
         automaticRecoveryRetryIdentity = nil
+        automaticSearchDisabledForCurrentTrack = false
         searchQueryOverride = nil
         activeSearchQuery = nil
         lyrics = []

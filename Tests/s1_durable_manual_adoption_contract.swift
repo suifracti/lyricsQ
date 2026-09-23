@@ -19,6 +19,24 @@ private struct FixedLyricsProvider: LyricsProvider {
     }
 }
 
+private actor LyricsProviderCallCounter {
+    private var calls = 0
+
+    func record() { calls += 1 }
+    func value() -> Int { calls }
+}
+
+private struct CountingLyricsProvider: LyricsProvider {
+    let name: String
+    let counter: LyricsProviderCallCounter
+    let result: LyricsLookupResult
+
+    func lookup(track: Track, identity: TrackIdentity) async -> LyricsLookupResult {
+        await counter.record()
+        return result
+    }
+}
+
 private func makeTrack(_ suffix: String) -> Track {
     Track(
         title: "采用测试 \(suffix)",
@@ -208,7 +226,7 @@ struct S1DurableManualAdoptionContract {
     static func main() async {
         let scenario = CommandLine.arguments.dropFirst().first ?? "all"
         let scenarios = scenario == "all"
-            ? ["lyrics-ovh-zero", "kugou-half", "timed-spans", "auto-search-timed-reopen", "locked-current", "selection-throws", "timing-throws", "invalid-content", "failed-results", "track-switch", "same-track-order"]
+            ? ["lyrics-ovh-zero", "kugou-half", "timed-spans", "auto-search-timed-reopen", "auto-search-disabled-loads-selection", "locked-current", "selection-throws", "timing-throws", "invalid-content", "failed-results", "track-switch", "same-track-order"]
             : [scenario]
         var failures = 0
         for item in scenarios {
@@ -229,6 +247,7 @@ struct S1DurableManualAdoptionContract {
         case "kugou-half": try await lowConfidenceAdoption(source: .kugouExperimental, confidence: 0.5, suffix: "kugou")
         case "timed-spans": try await lowConfidenceAdoption(source: .amll, confidence: 0.5, suffix: "timed", hasTiming: true)
         case "auto-search-timed-reopen": try await automaticSearchPersistsBestTimedCandidate()
+        case "auto-search-disabled-loads-selection": try await disabledAutoSearchLoadsStoredSelectionWithoutProviderCalls()
         case "locked-current": try await lockedCurrentRequiresConfirmation()
         case "selection-throws": try await preferredSelectionFailureRollsBack()
         case "timing-throws": try await timingAttachmentFailureRollsBack()
@@ -344,6 +363,74 @@ struct S1DurableManualAdoptionContract {
             try check(restoredSession.activeLyricsVersionID == selectedVersionID, "new session did not restore the same automatic selection")
             try check(restoredSession.activeDocument?.lines.first?.timedSpans == partialTimed.lines.first?.timedSpans, "restored session renderer input lost word timing")
             try check(restoredSession.activeDocument?.explicitlyTimedLineIndices == Set([0]), "restored session renderer input lost partial mask")
+        }
+    }
+
+    private static func disabledAutoSearchLoadsStoredSelectionWithoutProviderCalls() async throws {
+        try await withTemporaryRoot { root in
+            let track = makeTrack("auto-disabled-stored")
+            let identity = TrackIdentity(track: track)
+            let preferred = makeCandidate(
+                track: track,
+                source: .amll,
+                confidence: 1,
+                providerID: "persisted-preferred"
+            ).makeDocument()
+            let alternate = makeCandidate(
+                track: track,
+                source: .lrclib,
+                confidence: 0.96,
+                providerID: "persisted-alternate"
+            ).makeDocument()
+            let repository = makeRepository(root: root)
+            try await repository.prepare()
+            guard let preferredID = try await repository.save(
+                track: track,
+                identity: identity,
+                document: preferred
+            ).versionID,
+            try await repository.save(track: track, identity: identity, document: alternate).versionID != nil else {
+                throw ContractFailure(description: "auto-search-disabled fixture versions were not saved")
+            }
+            try await repository.adoptLyricsVersion(trackStableKey: identity.stableKey, lyricsVersionID: preferredID)
+            try await repository.markLocked(versionID: preferredID, locked: true)
+
+            let counter = LyricsProviderCallCounter()
+            let provider = CountingLyricsProvider(
+                name: "must-not-run-when-auto-search-is-disabled",
+                counter: counter,
+                result: .noMatch
+            )
+            let session = LyricsSessionController(providers: [provider], repository: repository)
+            session.begin(track: track, identity: identity, automaticallySearch: false)
+
+            for _ in 0..<200 where session.activeLyricsVersionID != preferredID {
+                try await Task.sleep(nanoseconds: 5_000_000)
+            }
+            try check(session.activeLyricsVersionID == preferredID, "turning off automatic search skipped the persisted preferred/locked lyric load")
+            try check(session.activeDocument?.identity == identity, "disabled auto-search restored a document for the wrong song")
+            try check(session.activeDocument?.source == preferred.source, "disabled auto-search changed the selected source")
+            try check(session.activeDocument?.lines.map(\.originalText) == preferred.lines.map(\.originalText), "disabled auto-search did not restore the selected original text")
+            try check(session.automaticSearchDisabledForCurrentTrack, "session did not retain the disabled-search reason for the current track")
+            try check(await counter.value() == 0, "provider was queried while automatic search was disabled")
+
+            let uncachedTrack = makeTrack("auto-disabled-empty")
+            let uncachedIdentity = TrackIdentity(track: uncachedTrack)
+            session.begin(track: uncachedTrack, identity: uncachedIdentity, automaticallySearch: false)
+            for _ in 0..<200 where session.state != .idle {
+                try await Task.sleep(nanoseconds: 5_000_000)
+            }
+            try check(session.state == .idle, "disabled automatic search should settle to idle when no saved version exists")
+            try check(session.automaticSearchDisabledForCurrentTrack, "idle state lost the disabled-search reason")
+            try check(await counter.value() == 0, "provider was queried for an uncached track while automatic search was disabled")
+
+            session.retry(track: uncachedTrack, identity: uncachedIdentity)
+            for _ in 0..<200 {
+                if await counter.value() > 0 { break }
+                try await Task.sleep(nanoseconds: 5_000_000)
+            }
+            try check(await counter.value() > 0, "explicit manual retry was blocked by the automatic-search preference")
+            try check(!session.automaticSearchDisabledForCurrentTrack, "manual search still presented the automatic-search-disabled state")
         }
     }
 

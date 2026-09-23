@@ -118,6 +118,8 @@ struct LyricsCanvasView: View {
                 }
                 .frame(maxHeight: 160)
             }
+        case .loading where state.isAutomaticSearchDisabledForDisplayedSession:
+            statusView(icon: "text.quote", message: "正在加载已保存歌词…", detail: "切歌后自动搜索已关闭。")
         case .loading:
             statusView(icon: "magnifyingglass", message: "正在自动补全歌词…", detail: "Local → AMLL → LRCLIB → 网易云/QQ（实验）查询中")
         case .noLyrics:
@@ -165,6 +167,19 @@ struct LyricsCanvasView: View {
             }
         case .candidates(_, let candidates):
             candidateList(candidates)
+        case .idle where state.isAutomaticSearchDisabledForDisplayedSession:
+            statusView(
+                icon: "magnifyingglass",
+                message: "切歌后自动搜索已关闭",
+                detail: state.lyricsSession.persistenceStatusMessage.map { "读取已保存歌词失败：\($0)" }
+                    ?? "已保存版本仍会自动加载；可用顶部“搜索歌曲”入口手动查找。"
+            ) {
+                if let onSearch {
+                    Button("手动搜索歌词", action: onSearch)
+                        .buttonStyle(.borderedProminent)
+                        .tint(LyricsDesignTokens.accent)
+                }
+            }
         case .idle:
             statusView(icon: "music.note", message: "等待 Spotify 歌曲", detail: "连接后将自动补全当前歌曲歌词")
         }
@@ -631,6 +646,12 @@ struct LyricsStateContentFirstView: View {
                     .buttonStyle(.borderedProminent)
                     .tint(LyricsDesignTokens.accent)
             }
+        case .idle where state.isAutomaticSearchDisabledForDisplayedSession:
+            if let onSearch {
+                Button("手动搜索歌词", action: onSearch)
+                    .buttonStyle(.borderedProminent)
+                    .tint(LyricsDesignTokens.accent)
+            }
         case .idle where state.providerStatus != .ready:
             Button("重试连接") { state.reconnectSpotify() }
                 .buttonStyle(.borderedProminent)
@@ -734,6 +755,8 @@ struct LyricsStateContentFirstView: View {
 
     private var stateTitle: String {
         switch state.lyricsState {
+        case .loading where state.isAutomaticSearchDisabledForDisplayedSession:
+            return "正在加载已保存歌词"
         case .loading:
             return "正在搜索歌词"
         case .noLyrics:
@@ -744,6 +767,8 @@ struct LyricsStateContentFirstView: View {
             return "暂不使用歌词"
         case .failed:
             return "歌词暂不可用"
+        case .idle where state.isAutomaticSearchDisabledForDisplayedSession:
+            return "切歌后自动搜索已关闭"
         case .idle:
             switch state.providerStatus {
             case .connecting:
@@ -770,6 +795,11 @@ struct LyricsStateContentFirstView: View {
 
     private var stateDetail: String {
         switch state.lyricsState {
+        case .loading where state.isAutomaticSearchDisabledForDisplayedSession:
+            if let error = state.lyricsSession.persistenceStatusMessage {
+                return "读取已保存歌词失败：\(error)"
+            }
+            return "切歌自动搜索已关闭；仍会恢复本地已保存版本。需要查找时可手动搜索。"
         case .loading:
             return "正在为当前歌曲查找可用歌词。"
         case .noLyrics:
@@ -780,6 +810,11 @@ struct LyricsStateContentFirstView: View {
             return "本次播放不显示歌词；已有版本没有被删除。"
         case .failed(_, let failure):
             return friendlyFailureDetail(failure)
+        case .idle where state.isAutomaticSearchDisabledForDisplayedSession:
+            if let error = state.lyricsSession.persistenceStatusMessage {
+                return "读取已保存歌词失败：\(error)"
+            }
+            return "已保存版本仍会自动加载；此设置只关闭切歌后自动搜索。可手动搜索当前歌曲。"
         case .idle:
             switch state.providerStatus {
             case .connecting:

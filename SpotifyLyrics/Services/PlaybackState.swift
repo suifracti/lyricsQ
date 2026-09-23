@@ -457,6 +457,9 @@ public final class PlaybackState: ObservableObject {
     public var lyricsState: LyricsLoadState {
         isShowingSearchPreview ? searchPreviewSession.state : lyricsSession.state
     }
+    public var isAutomaticSearchDisabledForDisplayedSession: Bool {
+        !isShowingSearchPreview && lyricsSession.automaticSearchDisabledForCurrentTrack
+    }
     public var lyricsAreSynchronized: Bool {
         isShowingSearchPreview ? searchPreviewSession.isSynchronized : lyricsSession.isSynchronized
     }
