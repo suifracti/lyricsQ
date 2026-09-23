@@ -4,6 +4,23 @@ import Foundation
 struct U1HonestExperimentalUIContract {
     @MainActor
     static func main() {
+        precondition(
+            DirectionDTrackSummaryPresentation.displayTitle("", hasCurrentTrack: false) == "等待歌曲",
+            "an absent current track must not be labelled as a song"
+        )
+        precondition(
+            DirectionDTrackSummaryPresentation.displayTitle("曲名", hasCurrentTrack: true) == "曲名",
+            "a known current track title must be preserved"
+        )
+        precondition(
+            DirectionDTrackSummaryPresentation.displayTitle("  \n", hasCurrentTrack: true) == "歌曲标题未知",
+            "an identified track with a blank title must be reported as unknown"
+        )
+        precondition(
+            DirectionDTrackSummaryPresentation.displayTitle(nil, hasCurrentTrack: true) == "歌曲标题未知",
+            "an identified track with no title value must be reported as unknown"
+        )
+
         var preparationCalls = 0
         var editorOpenCalls = 0
 

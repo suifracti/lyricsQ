@@ -38,6 +38,12 @@ public struct DirectionDMainWindowView: View {
     private var trackTitle: String { currentTrack.title }
     private var artistName: String { currentTrack.artist }
     private var albumName: String { currentTrack.album }
+    private var trackSummaryTitle: String {
+        DirectionDTrackSummaryPresentation.displayTitle(
+            trackTitle,
+            hasCurrentTrack: playbackState.hasLiveTrack || playbackState.isMockPreviewMode
+        )
+    }
     private var isPlaying: Bool { playbackState.isPlaying }
     private var currentTime: Double { playbackState.currentTime }
     private var totalDuration: Double { max(1, currentTrack.duration) }
@@ -137,7 +143,7 @@ public struct DirectionDMainWindowView: View {
                             .onTapGesture { isSmallSheetOpen = false }
 
                         DirectionDSmallSheetView(
-                            trackTitle: trackTitle.isEmpty ? "当前歌曲" : trackTitle,
+                            trackTitle: trackSummaryTitle,
                             artistName: artistName.isEmpty ? "—" : artistName,
                             albumName: albumName,
                             onClose: { isSmallSheetOpen = false }
@@ -240,7 +246,7 @@ public struct DirectionDMainWindowView: View {
 
             if isInspectorOpen {
                 DirectionDInspectorView(
-                    trackTitle: trackTitle.isEmpty ? "当前歌曲" : trackTitle,
+                    trackTitle: trackSummaryTitle,
                     artistName: artistName.isEmpty ? "—" : artistName,
                     albumName: albumName,
                     onClose: { isInspectorOpen = false }

@@ -91,6 +91,21 @@ direction_d_main = read("SpotifyLyrics/Views/Components/DirectionD/DirectionDMai
 require("primaryDisabledReason:" in direction_d_main and
         "secondaryDisabledReason:" in direction_d_main,
         "AppKit Debug empty-state search/TXT controls remain clickable")
+track_summary = read("SpotifyLyrics/Design/DirectionD/DirectionDProductStateModel.swift")
+require("public enum DirectionDTrackSummaryPresentation" in track_summary,
+        "Direction D has no production mapping for unknown/current track titles")
+require('return "等待歌曲"' in track_summary and 'return "歌曲标题未知"' in track_summary,
+        "track summary mapping does not distinguish absent playback from unknown title metadata")
+require("trackSummaryTitle" in direction_d_main and
+        "hasCurrentTrack: playbackState.hasLiveTrack || playbackState.isMockPreviewMode" in direction_d_main,
+        "main D inspector/sheet title is not mapped from current playback presence")
+product_host = read("SpotifyLyrics/Views/Components/DirectionD/DirectionDProductStateHostView.swift")
+adapter = read("SpotifyLyrics/Design/DirectionD/DirectionDProductStateAdapter.swift")
+require(product_host.count("DirectionDTrackSummaryPresentation.displayTitle(") == 2 and
+        "adapter.hasTrackForDisplay" in product_host and
+        "public var hasTrackForDisplay" in adapter and
+        "playback.hasLiveTrack || playback.isMockPreviewMode" in adapter,
+        "D product host inspector/sheet title is not mapped from adapter playback state")
 
 prefs = read("SpotifyLyrics/Views/Components/LyricsPreferencesPopover.swift")
 require("WindowManager.shared.toggleCapsule(state: playbackState)" in prefs,
@@ -137,6 +152,8 @@ PY
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 swiftc \
+  "$ROOT/SpotifyLyrics/Design/DirectionD/DirectionDDesignTokens.swift" \
+  "$ROOT/SpotifyLyrics/Design/DirectionD/DirectionDProductStateModel.swift" \
   "$ROOT/SpotifyLyrics/Design/DirectionD/DirectionDActionRouter.swift" \
   "$ROOT/Tests/u1_honest_experimental_ui_contract.swift" \
   -o "$TMP/u1-honest-experimental-ui-contract"
