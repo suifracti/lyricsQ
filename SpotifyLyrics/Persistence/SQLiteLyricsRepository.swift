@@ -1262,8 +1262,18 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         var result: [StoredReadingVersion] = []
         while sqlite3_step(statement) == SQLITE_ROW {
             let record = try readingVersionRecord(from: statement)
-            let lines = try fetchReadingLines(versionID: record.id)
-            guard validateStoredReading(record: record, lines: lines, sourceLines: source.lines) else { continue }
+            let storedLines = try fetchReadingLines(versionID: record.id)
+            guard validateStoredReading(record: record, lines: storedLines, sourceLines: source.lines) else { continue }
+            // Older manual versions may contain a token map saved beside a
+            // different whole-line reading. Keep the immutable version and
+            // its readingText, but fail closed on the unusable token layer.
+            let isKana = record.representationID == ReadingRepresentationID.kana.rawValue
+            let lines = storedLines.map { line -> ReadingLineResult in
+                guard !line.tokens.isEmpty else { return line }
+                let rangesMatch = line.hasExactTokenSurfaceCoverage
+                let readingMatches = !isKana || line.hasConsistentKanaTokenProjection
+                return rangesMatch && readingMatches ? line : line.replacingTokens([])
+            }
             result.append(StoredReadingVersion(record: record, lines: lines))
         }
         return result
@@ -1292,6 +1302,12 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
                   !(line.readingText ?? "").contains("\n"),
                   !(line.readingText ?? "").contains("\r") else {
                 throw ReadingRepositoryError.invalidLines("原文映射或空白行规则不匹配")
+            }
+            if request.record.representationID == ReadingRepresentationID.kana.rawValue,
+               request.record.sourceKind == .manualEdit,
+               !line.tokens.isEmpty,
+               !line.hasConsistentKanaTokenProjection {
+                throw ReadingRepositoryError.invalidLines("人工假名与逐词 token 不一致；请清除失效 token 后保存")
             }
         }
         if let existing = try fetchReadingVersion(versionID: request.record.id) {
