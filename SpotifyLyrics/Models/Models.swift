@@ -267,9 +267,11 @@ public enum TimedTextComposer {
         var lastEnd = currentText.startIndex
 
         for span in timedSpans {
+            let endOffset = span.utf16Start.addingReportingOverflow(span.utf16Length)
             guard span.utf16Start >= 0,
                   span.utf16Length >= 0,
-                  span.utf16Start + span.utf16Length <= utf16.count else {
+                  !endOffset.overflow,
+                  endOffset.partialValue <= utf16.count else {
                 return nil
             }
             guard let startU16 = utf16.index(utf16.startIndex, offsetBy: span.utf16Start, limitedBy: utf16.endIndex),
@@ -1338,9 +1340,11 @@ public struct LyricLine: Identifiable, Equatable, Hashable, Sendable {
 
         let utf16 = originalText.utf16
         for span in timedSpans {
+            let endOffset = span.utf16Start.addingReportingOverflow(span.utf16Length)
             guard span.utf16Start >= 0,
                   span.utf16Length >= 0,
-                  span.utf16Start + span.utf16Length <= utf16.count else {
+                  !endOffset.overflow,
+                  endOffset.partialValue <= utf16.count else {
                 return nil
             }
             guard let startU16 = utf16.index(utf16.startIndex, offsetBy: span.utf16Start, limitedBy: utf16.endIndex),

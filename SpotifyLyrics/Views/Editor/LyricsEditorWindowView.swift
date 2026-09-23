@@ -42,6 +42,15 @@ struct LyricsEditorWindowView: View {
                 alert.addButton(withTitle: "取消")
                 return alert.runModal() == .alertFirstButtonReturn
             }
+            editor.confirmTimingLoss = { summary in
+                let alert = NSAlert()
+                alert.messageText = "保存将丢失部分逐字时间"
+                alert.informativeText = summary.confirmationMessage
+                alert.alertStyle = .warning
+                alert.addButton(withTitle: "确认并保存兼容部分")
+                alert.addButton(withTitle: "取消")
+                return alert.runModal() == .alertFirstButtonReturn
+            }
         }
         .focusable()
         .onKeyPress(.space) {

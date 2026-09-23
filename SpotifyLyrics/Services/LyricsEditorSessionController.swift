@@ -64,6 +64,9 @@ public final class LyricsEditorSessionController: ObservableObject {
     @Published public var assistAutoAdvance = true
     /// Callback for partial-save confirmation. Return true to proceed.
     public var confirmPartialSave: ((Int, Int) -> Bool)?
+    /// The user must acknowledge any timed spans that cannot follow the edited
+    /// text/line time. A missing callback fails closed and performs no write.
+    public var confirmTimingLoss: ((LyricsTimingLossSummary) -> Bool)?
 
     public var onSaved: ((LyricsEditSaveResult, TrackIdentity) -> Void)?
     public var isStillCurrent: (() -> Bool)?
@@ -750,6 +753,16 @@ public final class LyricsEditorSessionController: ObservableObject {
         }
         guard validation.isSaveAllowed else { return }
 
+        let timingLoss = LyricsTimingCompatibility.loss(from: baseLyricsLines, to: draft.lines)
+        var timingLossConfirmed = false
+        if timingLoss.requiresConfirmation {
+            guard confirmTimingLoss?(timingLoss) == true else {
+                message = "已取消保存（逐字时间损失未确认）"
+                return
+            }
+            timingLossConfirmed = true
+        }
+
         let timedCount = draft.timedNonBlankLineCount
         let untimedCount = draft.untimedNonBlankLineCount
         if untimedCount > 0, timedCount > 0 {
@@ -760,7 +773,21 @@ public final class LyricsEditorSessionController: ObservableObject {
             }
         }
 
-        guard let document = draft.document(
+        var saveDraft = draft
+        let sourceLinesByID = Dictionary(baseLyricsLines.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        for index in saveDraft.lines.indices {
+            if let sourceLine = sourceLinesByID[saveDraft.lines[index].id],
+               sourceLine.originalText != saveDraft.lines[index].originalText {
+                saveDraft.lines[index].kanaText = nil
+                saveDraft.lines[index].romajiText = nil
+                saveDraft.lines[index].rubyTokens = nil
+                saveDraft.lines[index].readingRepresentationID = nil
+                saveDraft.lines[index].readingSurfaceText = nil
+            }
+        }
+        saveDraft.lines = LyricsTimingCompatibility.sanitized(saveDraft.lines, relativeTo: baseLyricsLines)
+
+        guard let document = saveDraft.document(
             source: isNewSourceSession ? newSourceKind : .manualEdit,
             isSynchronized: validation.isSynchronized
         ) else { return }
@@ -773,8 +800,9 @@ public final class LyricsEditorSessionController: ObservableObject {
             parentVersionID: selectedTranslation?.record.id,
             isLocked: lockTranslation
         ) : nil
-        let readingLayers = draft.lines.enumerated().compactMap { index, line -> LyricsReadingLayerDraft? in
-            guard lockedReadingIDs.contains(line.id) else { return nil }
+        let readingLayers = saveDraft.lines.enumerated().compactMap { index, line -> LyricsReadingLayerDraft? in
+            guard lockedReadingIDs.contains(line.id),
+                  sourceLinesByID[line.id]?.originalText == line.originalText else { return nil }
             return LyricsReadingLayerDraft(
                 lineIndex: index,
                 kanaText: line.kanaText,
@@ -803,6 +831,7 @@ public final class LyricsEditorSessionController: ObservableObject {
                     createLyricsVersion: lyricsChanged,
                     lockLyricsVersion: lockLyrics,
                     targetSource: requestTargetSource,
+                    confirmedTimingLoss: timingLossConfirmed,
                     isNewSource: requestIsNewSource,
                     translation: translation,
                     readingLayers: readingLayers

@@ -229,6 +229,11 @@ public struct DocumentTimingPayload: Codable, Sendable, Equatable {
         }
         var result: [Int: (performerID: String?, spans: [TimedTextSpan])] = [:]
         for line in doc.lines {
+            guard line.lineIndex >= 0,
+                  !line.spans.isEmpty,
+                  result[line.lineIndex] == nil else {
+                return nil
+            }
             result[line.lineIndex] = (line.performerID, line.spans)
         }
         return result
