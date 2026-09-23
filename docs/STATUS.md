@@ -9,7 +9,7 @@
 
 - repo root：`/Users/apple/backup/sptifylyrics`
 - branch：`codex/o1-scoped-lyrics-offset`（O1 从包含 H1/T1/T2/S1 的最终 HEAD 建立）
-- source HEAD（O1 latest production commit）：`69c922b37331bf42be7b00494d9ba2f0f5dda3f7` (`fix: sync editor offset input on scope changes`；核心 scope 实现提交 `dd55087502f3aa5e767f79ed9595e0f0eff9cd5d`)
+- latest O1 production source commit：`69c922b37331bf42be7b00494d9ba2f0f5dda3f7` (`fix: sync editor offset input on scope changes`；核心 scope 实现提交 `dd55087502f3aa5e767f79ed9595e0f0eff9cd5d`)
 - O1 base：S1 final HEAD `6211bed5c2e31fa0325be00e5a2415d8563f0f25`；pushed O1 checkpoint `f228808169991b6448e60ab1e999a6069310215a`
 - S1 base：T2 final HEAD `a427ea65b645931fe2d6fd94dcff5f463b4b1952`；pushed checkpoint `bee7ad106bfee7bfdc2ff96ba536b669cb53a41a`
 - H1 production commit：`449df0a6446dd01f250ff84eec34ff87efccf70d`
