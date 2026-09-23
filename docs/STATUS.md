@@ -15,7 +15,7 @@
 - T1 production commit：`2963f710c85e0993963d0127514791ee6a19196f`
 - release identity：正式 GitHub Release `v0.1.2`，release commit `6528be3103f75fd4f63757855b9d61cd30f757d8`
 - status last updated：`2026-09-23`
-- tracked/staged 状态：S1 production 与 focused contract、evidence/status 文档分两个提交完成并推送。正式根中三份既有 `PROJECT_FULL_AUDIT_*.md` 保持原样，不纳入本批。
+- tracked/staged 状态：S1 production、focused contract 与 evidence/status 文档均已提交并推送。正式根中三份既有 `PROJECT_FULL_AUDIT_*.md` 保持原样，不纳入本批。
 
 ## Product Boundary
 

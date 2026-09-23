@@ -19,13 +19,13 @@
 
 The candidate preview and manual adoption action are separate. Preview remains local to the candidate UI. Both candidate-sheet adoption and Song Search “apply to current song” capture the target `Track`, `TrackIdentity`, source document and request ID, then call the session's explicit manual path. The session publishes the new current document only after the repository returns a committed version ID and canonical source hash.
 
-SQLite manual adoption validates identity, independent provider identity claims, nonempty content and the original finite confidence in the 0...1 range. It deliberately bypasses only the automatic confidence threshold. The automatic `save` path and `LyricsMatcher.isHighConfidence` policy are unchanged. Provider, provider record ID, source, confidence and candidate claims are not rewritten as `manualImport` or confidence 1.
+SQLite manual adoption validates identity, nonempty content and the original finite confidence in the 0...1 range. Spotify IDs are canonicalized; a Spotify ID or ISRC is rejected when it conflicts with the corresponding claim on the target identity. It deliberately bypasses only the automatic confidence threshold. The automatic `save` path and `LyricsMatcher.isHighConfidence` policy are unchanged. Provider, provider record ID, source, confidence and candidate claims are not rewritten as `manualImport` or confidence 1.
 
 The SQLite transaction checks the current request and lock set, writes any new lyrics asset and compatible timing attachment, and updates `is_preferred` together. A lock conflict returns without writes. Confirmed lock IDs are compared with a fresh lock query inside the transaction; newly locked versions cause a new conflict. The transaction changes preferred selection but leaves old `is_locked` values intact.
 
 ## Baseline counterexamples (before production edits)
 
-The initial focused harness exercised the T2 production session and repository paths. It recorded these pre-fix results (runner exit `1`):
+The initial focused harness exercised the T2 production session and repository paths using `bash Tests/s1_durable_manual_adoption_contract.sh all`; the pre-fix run exited `1` and recorded these results:
 
 ```text
 baseline low-confidence source=lyricsOVH score=0 immediateCurrent=true persisted=nil status=nil
