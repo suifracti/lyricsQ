@@ -8,7 +8,7 @@
 ## Source Identity
 
 - repo root：`/Users/apple/backup/sptifylyrics`
-- branch：`codex/v1-core-integrity-verification`（V1 验证分支从 U1 最终 HEAD `d75789ee74b1a68c6caf02cd062b14b3c59dcd24` 建立；隔离 worktree 位于 `/private/tmp/spotifylyrics-v1-core-integrity-verification`；本轮仅测试/文档，无生产源码差异）
+- branch：`codex/nightly-auto-lyrics-stutter`（从已完成 V1 的 `ca98a9dea34df8f1cb9ce723543eb89ce2ed4595` 建立；隔离 worktree 位于 `/private/tmp/spotifylyrics-nightly-auto-lyrics-stutter`；最新生产源码提交为 `137be01c86434afc6e80dc688e1ed9e435abe11e`）
 - U1 base：R1 final HEAD `44f949ac9d062a77d3adf6fede0e94e95b69b3f7`；pushed U1 checkpoint `9bbf14e7071a506ebff5b800dca9808a7ac1fd69`
 - U1 production commits：`7299241839864dd345b713dea1323fb3b72bef33`、`c19a53c800d03ff5a09deb95f5a86cc0815e86dc`、`a33e9a160a413f928429fa976fc071f5e3f5fe27`；包含 H1/T1/T2/S1/O1/R1 祖先，已推送，尚未合并
 - R1 base：O1 final HEAD `c31805467ae877e67ddd14e50af6b6587f719416`；pushed R1 checkpoint `f6e33debc35017fd900029dd1a98ac79f4154b51`
@@ -22,7 +22,7 @@
 - T1 production commit：`2963f710c85e0993963d0127514791ee6a19196f`
 - release identity：正式 GitHub Release `v0.1.2`，release commit `6528be3103f75fd4f63757855b9d61cd30f757d8`
 - status last updated：`2026-09-23`
-- tracked/staged 状态：U1 production、focused contracts 与 evidence/status 文档记录在 U1 功能分支上；正式根中三份既有 `PROJECT_FULL_AUDIT_*.md` 保持原样，不纳入本批。
+- tracked/staged 状态：Nightly 源码与定向合同在 `codex/nightly-auto-lyrics-stutter`；证据/status 变化随后单独提交。正式根的三份 `PROJECT_FULL_AUDIT_*.md` 保持原样，不纳入本批。
 
 ## Product Boundary
 
@@ -98,6 +98,14 @@
   - Debug 构建通过；没有可证明完整隔离的产品 UI harness，因此未启动 App。真人 1–6 项均为 `USER_VERIFICATION_REQUIRED / NOT_RUN`；A0 真实捕获仍为 `USER_VERIFICATION_REQUIRED / NOT_RUN`。
   - V1 不标记 `M1_READY`。Planner 定向复审无剩余 Blocker / 必要 Relevant；必要真人验收仍待完成。
   - Evidence：[V1 core integrity verification](evidence/core-integrity/V1-core-integrity-verification.md)；逐项输出：[V1 contracts](evidence/core-integrity/V1-core-integrity-contracts.txt)
+- **Nightly follow-up — AUTOMATED_VERIFIED / USER_PENDING**
+  - 基于 V1 源码增加新曲自动搜索候选的 timing-quality 仲裁：先保留 SafeMatcher 身份/自动门槛，再按匹配质量、有效 word spans、行级 timing、provider/candidate 配置顺序选择；preferred/locked 仍优先。自动选择合同和临时 SQLite session/关闭重开合同通过。
+  - Playback timer 抑制相同时间值的重复发布；桌面 timed Ruby geometry 使用 512-entry bounded cache。此为局部重复工作的源码/合同修正，没有隔离 SwiftUI 性能实测，因此不声称用户可见卡顿已解决。
+  - V1 聚合合同：20/20 通过；直接受影响的检索、S1 session 恢复、时钟与 V3/Floating 合同通过。Debug 构建通过，改动文件无新增编译警告。
+  - Candidate App：`/tmp/spotifylyrics-nightly-deriveddata.0OfXMh/DerivedData/Build/Products/Debug/SpotifyLyrics.app`；production SHA `137be01c86434afc6e80dc688e1ed9e435abe11e`；executable SHA-256 `c5607803ea45b4cd63e9d7d6eef1c613dfe42b6a89af2374485cc4795f0de0d4`。未启动。
+  - 无完整独立 App 数据配置：候选与正式安装版使用相同 bundle ID、标准 defaults、Application Support SQLite/本地歌词/Provenance 路径；可能沿用播放器连接及用户已保存的 auto-capture / auto-translation 开关。因此没有在当前用户环境启动；完整边界和恢复方案见 evidence。
+  - V1/Nightly 真人验收仍为 `USER_VERIFICATION_REQUIRED / NOT_RUN`；不标记 `M1_READY`。production commit 已普通推送；状态/证据文档随后单独提交与推送。
+  - Evidence：[Nightly automatic selection and stutter](evidence/core-integrity/Nightly-auto-lyrics-selection-stutter.md)；V1 聚合完整输出：[Nightly contracts](evidence/core-integrity/Nightly-auto-lyrics-selection-stutter-contracts.txt)
 
 `NATIVE_INPUT_PENDING` 不是 PASS，也不表示 B0 发现的产品缺陷已经修复。
 
@@ -207,7 +215,9 @@
 
 以下项目仍按当前 Master Plan / batch ownership 作为未关闭核心项；自动合同通过不替代 V1 的必要真人验收：
 
-- V1 真人验收 1–6 尚未完成；阻止 `M1_READY`，当前为 `USER_PENDING`。
+- V1/Nightly 必要真人验收 1–6 尚未完成；候选数据与现有用户环境未隔离，阻止 `M1_READY`，当前为 `USER_PENDING`。
+- 新曲自动搜索中 word-timed provider 的真实在线候选结果未在 UI 人工确认；网络返回具有不确定性。自动选择排序已有生产逻辑与隔离合同证据。
+- 切行卡顿的实际用户影响和 Nightly 局部优化效果未在真实 UI 中测量；不得从代码缓存/纯数据合同推断真人体验已通过。
 
 ## Known Test Drift
 
@@ -225,5 +235,5 @@
 
 ## Next Executor Contract
 
-**V1 — AUTOMATED_VERIFIED / USER_PENDING**
-验证分支 `codex/v1-core-integrity-verification` 从 U1 最终 HEAD `d75789ee74b1a68c6caf02cd062b14b3c59dcd24` 建立。20 项当前候选核心合同与 task-specific Debug 构建通过；本轮无生产源码改动。两个既存 U1 runner 过期预期已按当前 catalog、持久选择、Settings 路由及 V3 默认最小校正并通过。产品 UI smoke 因无法证明 app bundle、defaults、SQLite 和自动连接全隔离而未启动。Planner 定向复审无剩余 Blocker / 必要 Relevant。必要真人清单 1–6 仍为 `USER_VERIFICATION_REQUIRED / NOT_RUN`；不得标记 `M1_READY`。
+**Nightly follow-up — AUTOMATED_VERIFIED / USER_PENDING**
+当前候选在 V1 的 U1 源码链上，production commit `137be01c86434afc6e80dc688e1ed9e435abe11e`。新曲 automatic timing-quality selection、temporary DB close/reopen、clock/tick、Floating/V3 layout focused contracts 通过；`Tests/run_core_integrity.sh` 为 20/20；task-specific Debug build 通过。候选 App 位于 `/tmp/spotifylyrics-nightly-deriveddata.0OfXMh/DerivedData/Build/Products/Debug/SpotifyLyrics.app`，尚未启动。相同 bundle ID 导致 defaults、SQLite、local lyrics 与 provenance 共用；当前用户的自动连接/capture/AI 设置未读取，且无完整 isolation configuration，所以没有运行 UI smoke。卡顿无 runtime 性能测量；低置信 provider 人工流程及 V1 六项均为 `USER_VERIFICATION_REQUIRED / NOT_RUN`。先在 dedicated macOS test account 完成真人验收，再由 Planner 定向审查；不得标记 `M1_READY`。
