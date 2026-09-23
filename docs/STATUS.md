@@ -8,14 +8,15 @@
 ## Source Identity
 
 - repo root：`/Users/apple/backup/sptifylyrics`
-- branch：`codex/s1-durable-manual-adoption`（S1 从包含 H1/T1/T2 的最终 HEAD 建立）
-- source HEAD（S1 production commit）：`e566bbf51d1389e0279f0ba0412fa344bb449ac2` (`fix: persist explicit lyric adoption atomically`)
+- branch：`codex/o1-scoped-lyrics-offset`（O1 从包含 H1/T1/T2/S1 的最终 HEAD 建立）
+- source HEAD（O1 production commit）：`dd55087502f3aa5e767f79ed9595e0f0eff9cd5d` (`fix: scope lyrics offsets by saved version`)
+- O1 base：S1 final HEAD `6211bed5c2e31fa0325be00e5a2415d8563f0f25`；pushed O1 checkpoint `f228808169991b6448e60ab1e999a6069310215a`
 - S1 base：T2 final HEAD `a427ea65b645931fe2d6fd94dcff5f463b4b1952`；pushed checkpoint `bee7ad106bfee7bfdc2ff96ba536b669cb53a41a`
 - H1 production commit：`449df0a6446dd01f250ff84eec34ff87efccf70d`
 - T1 production commit：`2963f710c85e0993963d0127514791ee6a19196f`
 - release identity：正式 GitHub Release `v0.1.2`，release commit `6528be3103f75fd4f63757855b9d61cd30f757d8`
 - status last updated：`2026-09-23`
-- tracked/staged 状态：S1 production、focused contract 与 evidence/status 文档均已提交并推送。正式根中三份既有 `PROJECT_FULL_AUDIT_*.md` 保持原样，不纳入本批。
+- tracked/staged 状态：O1 production、focused contracts 与 evidence/status 文档均记录在已推送的功能分支上；正式根中三份既有 `PROJECT_FULL_AUDIT_*.md` 保持原样，不纳入本批。
 
 ## Product Boundary
 
@@ -67,7 +68,13 @@
   - 真人低置信候选采用后重启恢复：`USER_VERIFICATION_REQUIRED / NOT_RUN`
   - Planner 定向审查：完成，无 Blocker / 必要 Relevant
   - Evidence：[S1 durable manual adoption](evidence/core-integrity/S1-durable-manual-adoption.md)
-- **Next**：S1 自动验收及 Planner 定向审查完成；本轮停止在 O1 前。
+- **O1 — CLOSED**
+  - `AUTOMATED_VERIFIED`
+  - 真人切歌/切版本/重启、跨窗口一致性、编辑器版本身份和真实播放进度：`USER_VERIFICATION_REQUIRED / NOT_RUN`
+  - Planner 定向审查：待执行
+  - Production commit：`dd55087502f3aa5e767f79ed9595e0f0eff9cd5d`，已推送，尚未合并
+  - Evidence：[O1 scoped lyrics offset](evidence/core-integrity/O1-scoped-lyrics-offset.md)
+- **Next**：O1 Planner 定向审查；审查后 R1。本轮代码工作停止在 R1 前。
 
 `NATIVE_INPUT_PENDING` 不是 PASS，也不表示 B0 发现的产品缺陷已经修复。
 
@@ -75,7 +82,7 @@
 
 - production clock：`presentation = raw anchor + elapsed + offset`，最后 clamp。
 - `+offset` = 歌词提前出现；`-offset` = 歌词延后出现。
-- 当前 offset 使用 global key `lyrics.presentationOffset.v1`。
+- 当前 offset 按 canonical track key + 持久 lyrics version UUID 存在 `lyrics.presentationOffset.scoped.v1.*`；旧 `lyrics.presentationOffset.v1` 保留为未分配历史值，不参与运行时偏移。
 - C1 后 V3 transport seconds / progress / slider value 使用 playback-domain time；歌词行与逐字 fill 继续使用 presentation time。
 - mouse / drag pointer mapping 属 raw domain。
 - keyboard / AX slider callback 现在从 playback-domain value 开始并提交 raw seek target。
@@ -138,13 +145,23 @@
 
 详见 [S1 evidence](evidence/core-integrity/S1-durable-manual-adoption.md)。
 
+## O1 Confirmed Facts
+
+- Live scope uses the session's persistent lyrics-version UUID only after the live track identity matches. The repository validates version ownership and resolves existing track redirects before the canonical track key + version UUID pair can activate.
+- A/v1, A/v2 and B/v1 retain independent UserDefaults values across switching and a recreated store/session. New versions start at zero; unknown versions, unsaved drafts, mismatched ownership and unresolved editor identities fail closed.
+- The editor resolves its selected saved version through the same repository boundary. Redirect-family records may retain a raw historical `trackStableKey`; O1 never uses that alias as the offset key. Dirty/stale/new editor drafts disable writes with an explanation.
+- Main V3, fullscreen, floating desktop and settings share the scoped store/control; Capsule continues to consume the common live line projection. No production consumer uses the old global value as an offset.
+- The old global value remains unchanged and unassigned. The scoped write changed no SQLite `data_version`; the ownership resolver is read-only. Offset changes still affect presentation time only and do not seek or change the playback-domain clock.
+- Automated contracts and Debug build passed. Planner review and real window/player experience remain pending; human verification stays `USER_VERIFICATION_REQUIRED / NOT_RUN`.
+
+详见 [O1 evidence](evidence/core-integrity/O1-scoped-lyrics-offset.md)。
+
 详见 [B0 evidence](evidence/core-integrity/B0-clock-offset.md)；本页只保留结论，不复制运行输出。
 
 ## Open Core Risks
 
-以下项目仍按当前 Master Plan / batch ownership 作为未关闭核心项；S1 本轮只关闭 durable manual adoption，不判断这些项目已修复：
+以下项目仍按当前 Master Plan / batch ownership 作为未关闭核心项；O1 本轮只关闭 scoped lyrics offset，不判断这些项目已修复：
 
-- O1 scoped offset
 - R1 reading token consistency
 - U1 honest experimental UI
 - V1 M1 gate
@@ -165,5 +182,5 @@
 
 ## Next Executor Contract
 
-**O1 — Scoped Offset**
-S1 自动验收与 Planner 定向审查已完成并推送；真人低置信候选采用后重启恢复保持 `USER_VERIFICATION_REQUIRED / NOT_RUN`。本轮不进入 O1。
+**R1 — Reading Token Consistency**
+O1 `dd55087502f3aa5e767f79ed9595e0f0eff9cd5d` 已自动验证并推送；Planner 定向审查待执行。真人跨版本偏移恢复与多窗口一致性保持 `USER_VERIFICATION_REQUIRED / NOT_RUN`。进入 R1 前先完成 O1 定向审查；本轮没有开始 R1。
