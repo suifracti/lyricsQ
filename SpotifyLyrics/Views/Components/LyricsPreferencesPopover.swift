@@ -217,6 +217,7 @@ struct LyricsPresentationOffsetControl: View {
             }
         }
         .onAppear { syncInput() }
+        .onChange(of: scope) { _, _ in syncInput() }
         .onChange(of: offsetStore.activeOffset) { _, _ in syncInput() }
         .onChange(of: offsetStore.activeScope) { _, _ in syncInput() }
         .onChange(of: offsetStore.storageRevision) { _, _ in syncInput() }
