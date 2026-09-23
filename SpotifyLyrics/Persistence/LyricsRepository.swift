@@ -31,6 +31,8 @@ public enum LyricsPersistenceSaveDisposition: Equatable, Sendable {
     case inserted
     case duplicate
     case skippedLocked
+    /// An explicit adoption found a lock which requires a user confirmation.
+    case lockedConflict
     case rejected(String)
 }
 
@@ -38,15 +40,21 @@ public struct LyricsPersistenceSaveResult: Equatable, Sendable {
     public let versionID: UUID?
     public let disposition: LyricsPersistenceSaveDisposition
     public let sourceContentHash: String?
+    public let timingVersionID: UUID?
+    public let conflictingLockedVersionIDs: [UUID]
 
     public init(
         versionID: UUID?,
         disposition: LyricsPersistenceSaveDisposition,
-        sourceContentHash: String? = nil
+        sourceContentHash: String? = nil,
+        timingVersionID: UUID? = nil,
+        conflictingLockedVersionIDs: [UUID] = []
     ) {
         self.versionID = versionID
         self.disposition = disposition
         self.sourceContentHash = sourceContentHash
+        self.timingVersionID = timingVersionID
+        self.conflictingLockedVersionIDs = conflictingLockedVersionIDs
     }
 }
 
@@ -150,6 +158,19 @@ public protocol LyricsRepository: Sendable {
         identity: TrackIdentity,
         document: LyricsDocument
     ) async throws -> LyricsPersistenceSaveResult
+    /// Persists a user-confirmed candidate and makes it the preferred version
+    /// in the same transaction. Passing confirmed lock IDs is an explicit
+    /// approval to select over those versions; newly appearing locks are
+    /// returned as a fresh conflict.
+    func registerManualAdoptionRequest(identity: TrackIdentity, requestID: UUID) async throws
+    func cancelManualAdoptionRequest(identity: TrackIdentity, requestID: UUID) async throws
+    func saveAndAdoptManually(
+        track: Track,
+        identity: TrackIdentity,
+        document: LyricsDocument,
+        requestID: UUID,
+        confirmedLockedVersionIDs: [UUID]?
+    ) async throws -> LyricsPersistenceSaveResult
     func saveAlignedVersion(_ request: AlignmentPersistenceRequest) async throws -> LyricsPersistenceSaveResult
     func deleteLyricsVersion(versionID: UUID) async throws
     func markLocked(versionID: UUID, locked: Bool) async throws
@@ -167,6 +188,34 @@ public extension LyricsRepository {
     func saveAlignedVersion(_ request: AlignmentPersistenceRequest) async throws -> LyricsPersistenceSaveResult {
         _ = request
         throw LyricsRepositoryError.unavailable("当前歌词仓库不支持自动排轴版本")
+    }
+
+    func saveAndAdoptManually(
+        track: Track,
+        identity: TrackIdentity,
+        document: LyricsDocument,
+        requestID: UUID,
+        confirmedLockedVersionIDs: [UUID]?
+    ) async throws -> LyricsPersistenceSaveResult {
+        _ = track
+        _ = identity
+        _ = document
+        _ = requestID
+        _ = confirmedLockedVersionIDs
+        return LyricsPersistenceSaveResult(
+            versionID: nil,
+            disposition: .rejected("当前歌词仓库不支持持久采用")
+        )
+    }
+
+    func registerManualAdoptionRequest(identity: TrackIdentity, requestID: UUID) async throws {
+        _ = identity
+        _ = requestID
+    }
+
+    func cancelManualAdoptionRequest(identity: TrackIdentity, requestID: UUID) async throws {
+        _ = identity
+        _ = requestID
     }
 
     func alignmentProvenanceAvailability(versionID: UUID) async -> AlignmentProvenanceAvailability {

@@ -119,6 +119,16 @@ public final class PlaybackState: ObservableObject {
         let lineCount: Int
         let readingRevision: UInt64
     }
+    private struct PendingManualLyricsAdoption {
+        let requestID: UUID
+        let session: LyricsSessionController
+        let track: Track
+        let document: LyricsDocument
+        let identity: TrackIdentity
+        let lockedVersionIDs: [UUID]
+        let clearSearchPreviewGeneration: UInt64?
+    }
+    private var pendingManualLyricsAdoption: PendingManualLyricsAdoption?
     private var liveLyricsProjectionCache: (key: LyricsProjectionCacheKey, lines: [LyricLine])?
     private var previewLyricsProjectionCache: (key: LyricsProjectionCacheKey, lines: [LyricLine])?
     private let tickInterval: TimeInterval = 0.2
@@ -491,7 +501,9 @@ public final class PlaybackState: ObservableObject {
     public var liveLyricsSource: LyricsSource? {
         liveLyricsDocumentMatchesCurrentTrack ? lyricsSession.activeDocument?.source : nil
     }
-    public var isLyricsSelectionEmpty: Bool { lyricsSession.isNoSelection }
+    public var isLyricsSelectionEmpty: Bool {
+        lyricsSession.isNoSelection || lyricsSession.activeLyricsVersionID == nil
+    }
     public var currentTrackIdentity: TrackIdentity? {
         guard hasLiveTrack, !isMockPreviewMode else { return nil }
         return lyricsSession.activeIdentity
@@ -2019,34 +2031,189 @@ public final class PlaybackState: ObservableObject {
         songSearchSelectionMessage = ""
     }
 
-    public func adoptLyricsCandidate(_ candidate: LyricsCandidate) {
-        let session = searchPreviewTrack == nil ? lyricsSession : searchPreviewSession
-        session.adopt(candidate: candidate)
+    public func adoptLyricsCandidate(_ candidate: LyricsCandidate) async throws -> LyricsPersistenceSaveResult {
+        let identity = candidate.identity
+        let target: (track: Track, session: LyricsSessionController)
+        if let previewTrack = searchPreviewTrack,
+           TrackIdentity(track: previewTrack) == identity {
+            target = (previewTrack, searchPreviewSession)
+        } else if currentTrackIdentity == identity {
+            target = (currentTrack, lyricsSession)
+        } else {
+            return LyricsPersistenceSaveResult(
+                versionID: nil,
+                disposition: .rejected("候选歌曲已变化，未采用")
+            )
+        }
+
+        let document = candidate.makeDocument()
+        return try await startManualLyricsAdoption(
+            document: document,
+            track: target.track,
+            session: target.session,
+            clearSearchPreviewGeneration: nil
+        )
+    }
+
+    private func startManualLyricsAdoption(
+        document: LyricsDocument,
+        track: Track,
+        session: LyricsSessionController,
+        clearSearchPreviewGeneration: UInt64?
+    ) async throws -> LyricsPersistenceSaveResult {
+        let identity = document.identity
+        guard TrackIdentity(track: track) == identity else {
+            return LyricsPersistenceSaveResult(
+                versionID: nil,
+                disposition: .rejected("候选歌曲身份与目标歌曲不一致")
+            )
+        }
+
+        if let previous = pendingManualLyricsAdoption {
+            previous.session.cancelManualAdoptionRequest(
+                identity: previous.identity,
+                requestID: previous.requestID
+            )
+        }
+        let requestID = UUID()
+        guard try await session.beginManualAdoptionRequest(identity: identity, requestID: requestID) else {
+            return LyricsPersistenceSaveResult(
+                versionID: nil,
+                disposition: .rejected("候选歌曲已变化，未采用")
+            )
+        }
+        let pending = PendingManualLyricsAdoption(
+            requestID: requestID,
+            session: session,
+            track: track,
+            document: document,
+            identity: identity,
+            lockedVersionIDs: [],
+            clearSearchPreviewGeneration: clearSearchPreviewGeneration
+        )
+        pendingManualLyricsAdoption = pending
+
+        let result: LyricsPersistenceSaveResult
+        do {
+            result = try await session.adoptManually(
+                document: document,
+                track: track,
+                requestID: requestID
+            )
+        } catch {
+            if pendingManualLyricsAdoption?.requestID == requestID {
+                pendingManualLyricsAdoption = nil
+            }
+            throw error
+        }
+
+        if case .lockedConflict = result.disposition {
+            if pendingManualLyricsAdoption?.requestID == requestID {
+                pendingManualLyricsAdoption = PendingManualLyricsAdoption(
+                    requestID: requestID,
+                    session: session,
+                    track: track,
+                    document: document,
+                    identity: identity,
+                    lockedVersionIDs: result.conflictingLockedVersionIDs,
+                    clearSearchPreviewGeneration: clearSearchPreviewGeneration
+                )
+            }
+        } else if pendingManualLyricsAdoption?.requestID == requestID {
+            pendingManualLyricsAdoption = nil
+        }
+        if result.versionID != nil,
+           result.disposition == .inserted || result.disposition == .duplicate {
+            clearSearchPreviewIfCurrent(generation: clearSearchPreviewGeneration)
+        }
+        return result
+    }
+
+    private func clearSearchPreviewIfCurrent(generation: UInt64?) {
+        guard let generation, searchPreviewGeneration == generation else { return }
+        clearSearchPreview()
+    }
+
+    public func confirmPendingManualLyricsAdoption() async throws -> LyricsPersistenceSaveResult? {
+        guard let pending = pendingManualLyricsAdoption else { return nil }
+        let result: LyricsPersistenceSaveResult
+        do {
+            result = try await pending.session.adoptManually(
+                document: pending.document,
+                track: pending.track,
+                requestID: pending.requestID,
+                confirmedLockedVersionIDs: pending.lockedVersionIDs
+            )
+        } catch {
+            if pendingManualLyricsAdoption?.requestID == pending.requestID {
+                pendingManualLyricsAdoption = nil
+            }
+            throw error
+        }
+
+        if case .lockedConflict = result.disposition {
+            if pendingManualLyricsAdoption?.requestID == pending.requestID {
+                pendingManualLyricsAdoption = PendingManualLyricsAdoption(
+                    requestID: pending.requestID,
+                    session: pending.session,
+                    track: pending.track,
+                    document: pending.document,
+                    identity: pending.identity,
+                    lockedVersionIDs: result.conflictingLockedVersionIDs,
+                    clearSearchPreviewGeneration: pending.clearSearchPreviewGeneration
+                )
+            }
+        } else {
+            if pendingManualLyricsAdoption?.requestID == pending.requestID {
+                pendingManualLyricsAdoption = nil
+            }
+            if result.versionID != nil,
+               result.disposition == .inserted || result.disposition == .duplicate {
+                clearSearchPreviewIfCurrent(generation: pending.clearSearchPreviewGeneration)
+            }
+        }
+        return result
+    }
+
+    public func cancelPendingManualLyricsAdoption() {
+        guard let pending = pendingManualLyricsAdoption else { return }
+        pending.session.cancelManualAdoptionRequest(identity: pending.identity, requestID: pending.requestID)
+        pendingManualLyricsAdoption = nil
+    }
+
+    public var pendingManualLyricsAdoptionLockedVersionCount: Int {
+        pendingManualLyricsAdoption?.lockedVersionIDs.count ?? 0
     }
 
     /// Adopts the lyrics currently loaded in search preview to the live playback session.
-    public func adoptSearchPreviewLyrics() {
-        guard hasLiveTrack, let liveIdentity = currentTrackIdentity else { return }
+    public func adoptSearchPreviewLyrics() async throws -> LyricsPersistenceSaveResult? {
+        guard hasLiveTrack, let liveIdentity = currentTrackIdentity else { return nil }
         guard let previewDocument = searchPreviewSession.activeDocument,
-              !previewDocument.lines.isEmpty else { return }
+              !previewDocument.lines.isEmpty else { return nil }
 
         let adoptedDocument = LyricsDocument(
             identity: liveIdentity,
-            title: currentTrack.title,
-            artist: currentTrack.artist,
-            album: currentTrack.album,
-            duration: currentTrack.duration,
+            title: previewDocument.title ?? currentTrack.title,
+            artist: previewDocument.artist ?? currentTrack.artist,
+            album: previewDocument.album ?? currentTrack.album,
+            duration: previewDocument.duration ?? currentTrack.duration,
             lines: previewDocument.lines,
             isSynchronized: previewDocument.isSynchronized,
             source: previewDocument.source,
             confidence: previewDocument.confidence,
             providerSourceID: previewDocument.providerSourceID,
-            spotifyTrackID: currentTrack.spotifyId,
-            isrc: currentTrack.isrc,
-            language: previewDocument.language
+            spotifyTrackID: previewDocument.spotifyTrackID,
+            isrc: previewDocument.isrc,
+            language: previewDocument.language,
+            explicitlyTimedLineIndices: previewDocument.explicitlyTimedLineIndices,
+            timingVersionID: previewDocument.timingVersionID
         )
-        clearSearchPreview()
-        lyricsSession.adopt(document: adoptedDocument)
+        return try await startManualLyricsAdoption(
+            document: adoptedDocument,
+            track: currentTrack,
+            session: lyricsSession,
+            clearSearchPreviewGeneration: searchPreviewGeneration
+        )
     }
 
     public var currentLineIndex: Int? {

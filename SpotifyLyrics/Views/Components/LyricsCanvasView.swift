@@ -8,6 +8,7 @@ struct LyricsCanvasView: View {
     @State private var lastScrolledLineIndex: Int?
     @State private var isAlignmentDetailsPresented = false
     @State private var manualLyricsSearchQuery = ""
+    @State private var candidateToPreview: LyricsCandidate?
 
     var body: some View {
         Group {
@@ -414,7 +415,7 @@ struct LyricsCanvasView: View {
 
                 ForEach(candidates) { candidate in
                     Button {
-                        state.adoptLyricsCandidate(candidate)
+                        candidateToPreview = candidate
                     } label: {
                         candidateRow(candidate)
                     }
@@ -427,6 +428,14 @@ struct LyricsCanvasView: View {
             .padding(.vertical, LyricsDesignTokens.canvasVerticalPadding)
         }
         .scrollIndicators(.hidden)
+        .sheet(item: $candidateToPreview) { candidate in
+            LyricsCandidatePreviewSheet(
+                candidate: candidate,
+                onAdopt: { try await state.adoptLyricsCandidate(candidate) },
+                onConfirmLocked: { try await state.confirmPendingManualLyricsAdoption() },
+                onCancelLocked: { state.cancelPendingManualLyricsAdoption() }
+            )
+        }
     }
 
     private func candidateRow(_ candidate: LyricsCandidate) -> some View {
@@ -563,10 +572,12 @@ struct LyricsStateContentFirstView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .sheet(item: $candidateToPreview) { candidate in
-            LyricsCandidatePreviewSheet(candidate: candidate) {
-                state.adoptLyricsCandidate(candidate)
-                candidateToPreview = nil
-            }
+            LyricsCandidatePreviewSheet(
+                candidate: candidate,
+                onAdopt: { try await state.adoptLyricsCandidate(candidate) },
+                onConfirmLocked: { try await state.confirmPendingManualLyricsAdoption() },
+                onCancelLocked: { state.cancelPendingManualLyricsAdoption() }
+            )
         }
     }
 
@@ -940,8 +951,14 @@ struct LyricsStateContentFirstView: View {
 
 private struct LyricsCandidatePreviewSheet: View {
     let candidate: LyricsCandidate
-    let onAdopt: () -> Void
+    let onAdopt: () async throws -> LyricsPersistenceSaveResult
+    let onConfirmLocked: () async throws -> LyricsPersistenceSaveResult?
+    let onCancelLocked: () -> Void
     @Environment(\.dismiss) private var dismiss
+    @State private var isSaving = false
+    @State private var isLockConfirmationPresented = false
+    @State private var conflictingLockedVersionIDs: [UUID] = []
+    @State private var failureMessage: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -989,13 +1006,82 @@ private struct LyricsCandidatePreviewSheet: View {
 
             HStack {
                 Spacer()
-                Button("取消") { dismiss() }
-                Button("采用此版本", action: onAdopt)
+                Button("取消") {
+                    onCancelLocked()
+                    dismiss()
+                }
+                .disabled(isSaving)
+                Button(isSaving ? "正在保存…" : "采用此版本") {
+                    performAdoption(confirmingLocks: false)
+                }
                     .buttonStyle(.borderedProminent)
+                    .disabled(isSaving)
+            }
+            if let failureMessage {
+                Text(failureMessage)
+                    .font(.callout)
+                    .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .padding(22)
         .frame(width: 620, height: 600)
+        .interactiveDismissDisabled(isSaving)
+        .confirmationDialog(
+            "歌词版本已锁定",
+            isPresented: $isLockConfirmationPresented,
+            titleVisibility: .visible
+        ) {
+            Button("仍采用此版本", role: .destructive) {
+                performAdoption(confirmingLocks: true)
+            }
+            Button("取消", role: .cancel) {
+                onCancelLocked()
+                conflictingLockedVersionIDs = []
+            }
+        } message: {
+            Text("当前歌曲有 \(conflictingLockedVersionIDs.count) 个锁定歌词版本。继续会将此候选设为当前，并保留原版本的锁定标记。")
+        }
+    }
+
+    private func performAdoption(confirmingLocks: Bool) {
+        guard !isSaving else { return }
+        isSaving = true
+        failureMessage = nil
+        Task { @MainActor in
+            do {
+                let result: LyricsPersistenceSaveResult?
+                if confirmingLocks {
+                    result = try await onConfirmLocked()
+                } else {
+                    result = try await onAdopt()
+                }
+                guard let result else {
+                    failureMessage = "候选已失效，请重新搜索后再采用。"
+                    isSaving = false
+                    return
+                }
+                switch result.disposition {
+                case .inserted, .duplicate:
+                    guard result.versionID != nil else {
+                        failureMessage = "歌词没有返回持久版本身份，未显示采用成功。"
+                        break
+                    }
+                    onCancelLocked()
+                    dismiss()
+                case .lockedConflict:
+                    conflictingLockedVersionIDs = result.conflictingLockedVersionIDs
+                    isLockConfirmationPresented = true
+                case .skippedLocked:
+                    failureMessage = "歌词仍受锁定保护，未采用。"
+                case .rejected(let message):
+                    failureMessage = message
+                }
+            } catch {
+                failureMessage = "歌词未能保存：\(error.localizedDescription)"
+            }
+            isSaving = false
+        }
     }
 
     private func previewTimeLabel(_ timestamp: TimeInterval) -> String {

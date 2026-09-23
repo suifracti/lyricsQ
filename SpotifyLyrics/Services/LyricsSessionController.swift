@@ -23,6 +23,7 @@ public final class LyricsSessionController: ObservableObject {
     private let searchManager: LyricsSearchManager
     private let repository: (any LyricsRepository)?
     private var requestTask: Task<Void, Never>?
+    private var manualAdoptionRequestIDs: [TrackIdentity: UUID] = [:]
     private var automaticRecoveryRetryIdentity: TrackIdentity?
     private var activeTrack: Track?
     private var searchQueryOverride: String?
@@ -360,34 +361,134 @@ public final class LyricsSessionController: ObservableObject {
         LyricsE2ELog.log("SESSION markAsInstrumental identity=\(identity.stableKey)")
     }
 
-    public func adopt(candidate: LyricsCandidate) {
-        guard activeIdentity == candidate.identity else {
-            LyricsE2ELog.log("SESSION adopt candidate REJECT identity mismatch")
-            return
+    /// Registers one explicit adoption before any async repository work starts.
+    /// A later adoption for the same identity replaces this request token;
+    /// switching to another identity leaves this operation bound to its source.
+    @discardableResult
+    public func beginManualAdoptionRequest(identity: TrackIdentity, requestID: UUID) async throws -> Bool {
+        guard activeIdentity == identity else {
+            LyricsE2ELog.log("SESSION manual adoption REJECT stale identity")
+            return false
         }
-        guard !candidate.lines.isEmpty else {
-            lyrics = []
-            isNoSelection = false
-            state = .noLyrics(candidate.identity)
-            return
+        manualAdoptionRequestIDs[identity] = requestID
+        do {
+            try await repository?.registerManualAdoptionRequest(identity: identity, requestID: requestID)
+        } catch {
+            if manualAdoptionRequestIDs[identity] == requestID {
+                manualAdoptionRequestIDs.removeValue(forKey: identity)
+            }
+            throw error
         }
-        let document = LyricsDocument(
-            identity: candidate.identity,
-            title: candidate.title,
-            artist: candidate.artist,
-            album: candidate.album,
-            duration: candidate.duration,
-            lines: candidate.lines,
-            isSynchronized: candidate.isSynchronized,
-            source: candidate.source,
-            confidence: candidate.confidence,
-            providerSourceID: candidate.providerSourceID,
-            spotifyTrackID: candidate.spotifyTrackID,
-            isrc: candidate.isrc,
-            language: candidate.language
-        )
-        applyLoadedDocument(document, identity: candidate.identity)
-        persistAdoptedDocument(document)
+        return manualAdoptionRequestIDs[identity] == requestID
+    }
+
+    public func cancelManualAdoptionRequest(identity: TrackIdentity, requestID: UUID) {
+        guard manualAdoptionRequestIDs[identity] == requestID else { return }
+        manualAdoptionRequestIDs.removeValue(forKey: identity)
+        guard let repository else { return }
+        Task {
+            try? await repository.cancelManualAdoptionRequest(identity: identity, requestID: requestID)
+        }
+    }
+
+    /// Persists a user-confirmed document and selects it only after the
+    /// repository commits its asset, timing and preferred-selection rows.
+    /// The Track is captured by the caller at the start of the interaction so
+    /// an A→B switch cannot redirect A's late persistence to B.
+    public func adoptManually(
+        document: LyricsDocument,
+        track: Track,
+        requestID: UUID,
+        confirmedLockedVersionIDs: [UUID]? = nil
+    ) async throws -> LyricsPersistenceSaveResult {
+        let identity = document.identity
+        guard manualAdoptionRequestIDs[identity] == requestID else {
+            return LyricsPersistenceSaveResult(
+                versionID: nil,
+                disposition: .rejected("歌词采用请求已被更新或取消")
+            )
+        }
+        guard TrackIdentity(track: track) == identity else {
+            manualAdoptionRequestIDs.removeValue(forKey: identity)
+            return LyricsPersistenceSaveResult(
+                versionID: nil,
+                disposition: .rejected("歌词身份与当前歌曲不一致")
+            )
+        }
+        guard let repository else {
+            manualAdoptionRequestIDs.removeValue(forKey: identity)
+            return LyricsPersistenceSaveResult(
+                versionID: nil,
+                disposition: .rejected("歌词仓库不可用，候选仅保留为预览")
+            )
+        }
+        guard !Task.isCancelled else {
+            manualAdoptionRequestIDs.removeValue(forKey: identity)
+            throw CancellationError()
+        }
+
+        do {
+            let result = try await repository.saveAndAdoptManually(
+                track: track,
+                identity: identity,
+                document: document,
+                requestID: requestID,
+                confirmedLockedVersionIDs: confirmedLockedVersionIDs
+            )
+            LyricsE2ELog.log(
+                "SESSION manual adoption disposition=\(String(describing: result.disposition)) source=\(document.source) confidence=\(document.confidence) lines=\(document.lines.count)"
+            )
+            switch result.disposition {
+            case .inserted, .duplicate:
+                guard let versionID = result.versionID,
+                      let sourceContentHash = result.sourceContentHash else {
+                    if manualAdoptionRequestIDs[identity] == requestID {
+                        manualAdoptionRequestIDs.removeValue(forKey: identity)
+                    }
+                    return LyricsPersistenceSaveResult(
+                        versionID: nil,
+                        disposition: .rejected("歌词已保存，但缺少持久版本身份")
+                    )
+                }
+                if manualAdoptionRequestIDs[identity] == requestID {
+                    if activeIdentity == identity {
+                        activeLyricsVersionID = versionID
+                        let committedDocument = document.replacingLines(
+                            document.lines,
+                            timingVersionID: result.timingVersionID
+                        )
+                        applyLoadedDocument(committedDocument, identity: identity, sourceContentHash: sourceContentHash)
+                        activeSourceContentHash = sourceContentHash
+                        alignmentProvenanceAvailability = committedDocument.source == .automaticAlignment ? .available : .unavailable
+                        persistenceStatusMessage = nil
+                    }
+                    manualAdoptionRequestIDs.removeValue(forKey: identity)
+                }
+            case .lockedConflict:
+                if activeIdentity == identity,
+                   manualAdoptionRequestIDs[identity] == requestID {
+                    persistenceStatusMessage = "存在锁定歌词版本，需要确认后才能切换当前版本"
+                }
+            case .rejected(let message):
+                if manualAdoptionRequestIDs[identity] == requestID {
+                    if activeIdentity == identity { persistenceStatusMessage = message }
+                    manualAdoptionRequestIDs.removeValue(forKey: identity)
+                }
+            case .skippedLocked:
+                if manualAdoptionRequestIDs[identity] == requestID {
+                    if activeIdentity == identity { persistenceStatusMessage = "歌词版本仍受锁定保护，未采用" }
+                    manualAdoptionRequestIDs.removeValue(forKey: identity)
+                }
+            }
+            return result
+        } catch {
+            if manualAdoptionRequestIDs[identity] == requestID {
+                if activeIdentity == identity { persistenceStatusMessage = error.localizedDescription }
+                manualAdoptionRequestIDs.removeValue(forKey: identity)
+            }
+            LyricsE2ELog.log("PERSISTENCE manual adoption failed error=\(error.localizedDescription)")
+            throw error
+        }
     }
 
     public func adopt(document: LyricsDocument) {

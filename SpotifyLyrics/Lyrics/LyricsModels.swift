@@ -231,6 +231,26 @@ public struct LyricsCandidate: Identifiable, Equatable, Sendable {
 
     public var displayedConfidence: Double { matchScore ?? confidence }
 
+    /// Full provider result promoted to a document without rewriting its
+    /// source, confidence, independent identity claims or lyric lines.
+    public func makeDocument() -> LyricsDocument {
+        LyricsDocument(
+            identity: identity,
+            title: title,
+            artist: artist,
+            album: album,
+            duration: duration,
+            lines: lines,
+            isSynchronized: isSynchronized,
+            source: source,
+            confidence: confidence,
+            providerSourceID: providerSourceID,
+            spotifyTrackID: spotifyTrackID,
+            isrc: isrc,
+            language: language
+        )
+    }
+
     public var arrangementNotice: String? {
         matchExplanation.contains { $0.hasPrefix("pianoConflict ") }
             ? "钢琴版与原曲编排可能不同，请预览确认歌词与时间轴" : nil
