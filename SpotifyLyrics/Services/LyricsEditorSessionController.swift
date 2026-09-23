@@ -50,6 +50,8 @@ public final class LyricsEditorSessionController: ObservableObject {
     @Published public private(set) var state: LyricsEditorSessionState = .idle
     @Published public private(set) var draft: LyricsEditorDraft?
     @Published public private(set) var availableVersions: [StoredEditableLyricsVersion] = []
+    @Published public private(set) var resolvedPersistentLyricsOffsetScope: LyricsOffsetScope?
+    @Published public private(set) var isResolvingLyricsOffsetScope = false
     @Published public private(set) var availableTranslations: [StoredTranslationVersion] = []
     @Published public private(set) var selectedTranslation: StoredTranslationVersion?
     @Published public private(set) var validation = LyricsTimelineValidationResult(issues: [], isSynchronized: false)
@@ -73,6 +75,7 @@ public final class LyricsEditorSessionController: ObservableObject {
 
     private let repository: (any LyricsEditingRepository)?
     private var loadTask: Task<Void, Never>?
+    private var lyricsOffsetScopeTask: Task<Void, Never>?
     private var saveTask: Task<Void, Never>?
     private var generation: UInt64 = 0
     private var track: Track?
@@ -95,6 +98,7 @@ public final class LyricsEditorSessionController: ObservableObject {
 
     deinit {
         loadTask?.cancel()
+        lyricsOffsetScopeTask?.cancel()
         saveTask?.cancel()
     }
 
@@ -110,6 +114,44 @@ public final class LyricsEditorSessionController: ObservableObject {
     public var currentSourceVersionID: UUID? { sourceVersionID }
     public var currentSourceContentHash: String? { sourceContentHash }
     public var currentSourceRevision: UInt64 { sourceRevision }
+
+    /// The editor scope is validated and canonicalized by the repository for
+    /// this selected saved version. Dirty/new drafts never become identities.
+    public var persistentLyricsOffsetScope: LyricsOffsetScope? {
+        guard state != .saving,
+              !isStale,
+              !hasUnsavedChanges,
+              !isNewSourceSession,
+              let selectedSavedLyricsOffsetVersionID,
+              let resolvedPersistentLyricsOffsetScope,
+              resolvedPersistentLyricsOffsetScope.lyricsVersionID == selectedSavedLyricsOffsetVersionID else {
+            return nil
+        }
+        return resolvedPersistentLyricsOffsetScope
+    }
+
+    public var selectedSavedLyricsOffsetVersionID: UUID? {
+        guard !isNewSourceSession,
+              let sourceVersionID,
+              availableVersions.contains(where: { $0.record.id == sourceVersionID }) else {
+            return nil
+        }
+        return sourceVersionID
+    }
+
+    public var lyricsOffsetDisabledReason: String? {
+        if state == .saving { return "正在保存；请稍后再调整已保存版本的偏移。" }
+        if isStale { return "编辑会话已过期，暂不能调整歌词偏移。" }
+        if hasUnsavedChanges { return "请先保存或撤销未保存修改，再调整这个歌词版本的偏移。" }
+        if isNewSourceSession { return "这份歌词尚未保存为持久版本，暂不能设置偏移。" }
+        guard let sourceVersionID else { return "当前编辑内容没有持久歌词版本身份。" }
+        guard availableVersions.contains(where: { $0.record.id == sourceVersionID }) else {
+            return "正在确认所选的已保存歌词版本，暂不能设置偏移。"
+        }
+        if persistentLyricsOffsetScope != nil { return nil }
+        if isResolvingLyricsOffsetScope { return "正在确认此歌词版本所属的歌曲，暂不能设置偏移。" }
+        return "无法确认此歌词版本所属的规范歌曲，偏移写入已禁用。"
+    }
 
     public func reportExportResult(_ message: String) {
         self.message = message
@@ -139,6 +181,7 @@ public final class LyricsEditorSessionController: ObservableObject {
     ) {
         generation &+= 1
         loadTask?.cancel()
+        clearResolvedLyricsOffsetScope()
         saveTask?.cancel()
         self.track = track
         self.identity = identity
@@ -199,6 +242,11 @@ public final class LyricsEditorSessionController: ObservableObject {
                         self.baseLockedReadingIDs = self.lockedReadingIDs
                         self.message = selected.record.isLocked ? "当前来源版本已锁定；保存将创建新的人工版本" : nil
                     }
+                    self.resolveEditorLyricsOffsetScope(
+                        versionID: lyricsVersionID,
+                        identity: identity,
+                        generation: loadGeneration
+                    )
                 }
             } catch {
                 await MainActor.run { [weak self] in
@@ -222,6 +270,7 @@ public final class LyricsEditorSessionController: ObservableObject {
     ) {
         generation &+= 1
         loadTask?.cancel()
+        clearResolvedLyricsOffsetScope()
         saveTask?.cancel()
         self.track = track
         self.identity = identity
@@ -880,6 +929,11 @@ public final class LyricsEditorSessionController: ObservableObject {
                 return next.lines[layer.lineIndex].id
             })
             baseLockedReadingIDs = lockedReadingIDs
+            resolveEditorLyricsOffsetScope(
+                versionID: stored.record.id,
+                identity: identity,
+                generation: generation
+            )
         } else if var draft {
             draft.markSaved()
             self.draft = draft
@@ -910,6 +964,56 @@ public final class LyricsEditorSessionController: ObservableObject {
         message = "已保存人工版本；原始 Provider 版本仍保留"
         if let currentDraft = self.draft { validate(currentDraft) }
         onSaved?(result, identity)
+    }
+
+    private func clearResolvedLyricsOffsetScope() {
+        lyricsOffsetScopeTask?.cancel()
+        lyricsOffsetScopeTask = nil
+        resolvedPersistentLyricsOffsetScope = nil
+        isResolvingLyricsOffsetScope = false
+    }
+
+    private func resolveEditorLyricsOffsetScope(
+        versionID: UUID,
+        identity: TrackIdentity,
+        generation requestGeneration: UInt64
+    ) {
+        clearResolvedLyricsOffsetScope()
+        guard let repository,
+              identity == self.identity,
+              sourceVersionID == versionID,
+              availableVersions.contains(where: { $0.record.id == versionID }) else {
+            return
+        }
+
+        isResolvingLyricsOffsetScope = true
+        lyricsOffsetScopeTask = Task { [weak self, repository] in
+            let resolvedScope: LyricsOffsetScope?
+            do {
+                let canonicalKey = try await repository.canonicalStableKeyForSavedLyricsVersion(
+                    trackStableKey: identity.stableKey,
+                    versionID: versionID
+                )
+                resolvedScope = canonicalKey.flatMap {
+                    LyricsOffsetScope(canonicalTrackStableKey: $0, lyricsVersionID: versionID)
+                }
+            } catch {
+                resolvedScope = nil
+            }
+            guard !Task.isCancelled else { return }
+            await MainActor.run { [weak self] in
+                guard let self,
+                      self.generation == requestGeneration,
+                      self.identity == identity,
+                      self.sourceVersionID == versionID,
+                      self.availableVersions.contains(where: { $0.record.id == versionID }) else {
+                    return
+                }
+                self.isResolvingLyricsOffsetScope = false
+                self.resolvedPersistentLyricsOffsetScope = resolvedScope
+                self.lyricsOffsetScopeTask = nil
+            }
+        }
     }
 
     private func validate(_ draft: LyricsEditorDraft) {

@@ -3174,7 +3174,7 @@ private struct V3LyricsTimePopover: View {
             LyricsPresentationOffsetControl(settings: settings)
 
             Button("恢复默认") {
-                settings.lyricsPresentationOffset = 0
+                settings.lyricsOffsetStore.resetActiveValue()
             }
             .accessibilityIdentifier("lyrics.time.reset")
             .font(.system(size: 11, design: .rounded))

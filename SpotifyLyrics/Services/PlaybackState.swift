@@ -60,6 +60,7 @@ public final class PlaybackState: ObservableObject {
     public let lyricsEditorSession: LyricsEditorSessionController
     private let lyricsRepository: (any LyricsRepository)
     private let settingsStore: AppSettingsStore
+    private var lyricsOffsetScopeBinding: LyricsOffsetScopeBinding?
     private let usesConfiguredLyricsProviders: Bool
     private let alignmentService: any AlignmentService
     public let songSearchManager: SongSearchManager
@@ -146,6 +147,7 @@ public final class PlaybackState: ObservableObject {
     ) {
         let resolvedSettings = settings ?? AppSettingsStore()
         self.settingsStore = resolvedSettings
+        self.lyricsOffsetScopeBinding = LyricsOffsetScopeBinding(store: resolvedSettings.lyricsOffsetStore)
         self.preferences = resolvedSettings.displayPreferences
         let resolvedProvider = provider ?? ActivePlaybackProvider(settings: resolvedSettings)
         self.provider = resolvedProvider
@@ -205,6 +207,16 @@ public final class PlaybackState: ObservableObject {
         self.readingSessionCancellable = nil
         self.lyricsEditorSessionCancellable = nil
         self.spotifyAuthorizationCancellable = nil
+        session.$activeLyricsVersionID
+            .dropFirst()
+            .sink { [weak self] versionID in
+                // @Published emits the next value before the session stores
+                // it. Invalidate/retarget the offset binding synchronously so
+                // an older resolver completion cannot revive the previous
+                // saved-version scope in this will-set window.
+                self?.syncLiveLyricsOffsetScope(lyricsVersionID: versionID)
+            }
+            .store(in: &self.settingsCancellables)
         self.lyricsSessionCancellable = session.objectWillChange.sink { [weak self] _ in
             self?.objectWillChange.send()
             // `@Published` emits objectWillChange before the session property
@@ -216,6 +228,7 @@ public final class PlaybackState: ObservableObject {
                 self.objectWillChange.send()
                 self.syncTranslationSession()
                 self.syncPublishedLineIndex(source: .lyricsSession)
+                self.syncLiveLyricsOffsetScope()
                 // Product auto-align must re-evaluate after lyrics settle
                 // (plain document / version id), not only on willChange races.
                 AutomaticAlignmentJobController.shared.notePlaybackContextChanged()
@@ -323,7 +336,7 @@ public final class PlaybackState: ObservableObject {
                 self.reconnectSpotify()
             }
             .store(in: &self.settingsCancellables)
-        resolvedSettings.$lyricsPresentationOffset
+        resolvedSettings.lyricsOffsetStore.$activeOffset
             .dropFirst()
             .sink { [weak self] newOffset in
                 guard let self else { return }
@@ -1216,6 +1229,7 @@ public final class PlaybackState: ObservableObject {
         providerRefreshTask?.cancel()
         alignmentTask?.cancel()
         clearSearchPreview()
+        lyricsOffsetScopeBinding?.clear()
         isMockPreviewMode = true
         hasLiveTrack = false
         updatePlaybackSourceIdentity(.mockPreview)
@@ -1231,6 +1245,7 @@ public final class PlaybackState: ObservableObject {
         refreshRequestedWhileBusy = true
         alignmentTask?.cancel()
         clearSearchPreview()
+        lyricsOffsetScopeBinding?.clear()
         isMockPreviewMode = false
         hasLiveTrack = false
         updatePlaybackSourceIdentity(.unknown)
@@ -2340,6 +2355,7 @@ public final class PlaybackState: ObservableObject {
         }
 
         if identityChanged {
+            lyricsOffsetScopeBinding?.clear()
             alignmentTask?.cancel()
             clearSearchPreview()
             let previousKey = lyricsSession.activeIdentity?.stableKey
@@ -2423,6 +2439,7 @@ public final class PlaybackState: ObservableObject {
 
     private func clearLiveTrackIfNeeded() {
         guard !isMockPreviewMode else { return }
+        lyricsOffsetScopeBinding?.clear()
         updatePlaybackSourceIdentity(.unknown)
         transientProviderFailureStartedAt = nil
         pauseListeningHistorySession(at: Date())
@@ -2776,7 +2793,28 @@ public final class PlaybackState: ObservableObject {
             isPlaying: isPlaying,
             trackID: currentTrack.id,
             trackDuration: currentTrack.duration,
-            presentationOffset: settingsStore.lyricsPresentationOffset
+            presentationOffset: settingsStore.lyricsOffsetStore.activeOffset
+        )
+    }
+
+    private func syncLiveLyricsOffsetScope() {
+        syncLiveLyricsOffsetScope(lyricsVersionID: lyricsSession.activeLyricsVersionID)
+    }
+
+    private func syncLiveLyricsOffsetScope(lyricsVersionID: UUID?) {
+        guard hasLiveTrack,
+              !isMockPreviewMode,
+              let identity = lyricsSession.activeIdentity,
+              identity == liveTrackIdentity,
+              let versionID = lyricsVersionID else {
+            lyricsOffsetScopeBinding?.clear()
+            return
+        }
+        lyricsOffsetScopeBinding?.bind(
+            trackStableKey: identity.stableKey,
+            lyricsVersionID: versionID,
+            sessionRevision: lyricsSession.revision,
+            resolver: lyricsRepository
         )
     }
 }

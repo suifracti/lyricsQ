@@ -4,8 +4,10 @@ import UniformTypeIdentifiers
 
 struct LyricsEditorWindowView: View {
     @EnvironmentObject private var state: PlaybackState
+    @EnvironmentObject private var settings: AppSettingsStore
     @Environment(\.dismiss) private var dismiss
     @State private var focusedLineID: UUID?
+    @State private var isShowingLyricsOffset = false
 
     private var editor: LyricsEditorSessionController { state.lyricsEditor }
 
@@ -108,6 +110,28 @@ struct LyricsEditorWindowView: View {
             Spacer()
             versionPicker
             translationPicker
+            Button {
+                isShowingLyricsOffset = true
+            } label: {
+                if let versionID = editor.selectedSavedLyricsOffsetVersionID {
+                    Label("偏移 · \(versionID.uuidString.prefix(8))", systemImage: "clock.arrow.2.circlepath")
+                } else {
+                    Label("歌词偏移", systemImage: "clock.arrow.2.circlepath")
+                }
+            }
+            .help(editor.lyricsOffsetDisabledReason ?? "调整所选已保存歌词版本的展示偏移")
+            .popover(isPresented: $isShowingLyricsOffset) {
+                LyricsPresentationOffsetControl(
+                    settings: settings,
+                    target: .savedVersion(
+                        scope: editor.persistentLyricsOffsetScope,
+                        versionID: editor.selectedSavedLyricsOffsetVersionID,
+                        disabledReason: editor.lyricsOffsetDisabledReason
+                    )
+                )
+                .padding(16)
+                .frame(width: 360)
+            }
             Menu("粘贴", systemImage: "doc.on.clipboard") {
                 Button("作为翻译") { pasteTranslation(target: .translation) }
                 Button("作为原文") { pasteTranslation(target: .original) }

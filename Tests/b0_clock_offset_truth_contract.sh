@@ -23,11 +23,14 @@ V3="$ROOT_DIR/SpotifyLyrics/Views/MainWindow/AppleMusicImmersiveV3WindowView.swi
 FULLSCREEN="$ROOT_DIR/SpotifyLyrics/Views/Fullscreen/FullScreenLyricsView.swift"
 
 grep -Fq 'public static let lyricsPresentationOffset = "lyrics.presentationOffset.v1"' "$SETTINGS"
-grep -Fq 'defaults.set(normalized, forKey: Key.lyricsPresentationOffset)' "$SETTINGS"
-grep -Fq 'min(10, max(-10, lyricsPresentationOffset.isFinite ? lyricsPresentationOffset : 0))' "$SETTINGS"
-grep -Fq 'presentationOffset: settingsStore.lyricsPresentationOffset' "$STATE"
+grep -Fq 'public let lyricsOffsetStore: ScopedLyricsOffsetStore' "$SETTINGS"
+grep -Fq 'public var legacyLyricsPresentationOffset: Double?' "$SETTINGS"
+grep -Fq 'presentationOffset: settingsStore.lyricsOffsetStore.activeOffset' "$STATE"
 grep -Fq 'Button("提前 0.10s") { adjust(0.1) }' "$OFFSET_CONTROL"
 grep -Fq 'Button("延后 0.10s") { adjust(-0.1) }' "$OFFSET_CONTROL"
+grep -Fq 'offsetStore.setValue(offset + delta, for: scope)' "$OFFSET_CONTROL"
+grep -Fq 'Button("归零") { reset() }' "$OFFSET_CONTROL"
+grep -Fq 'settings.lyricsOffsetStore.resetActiveValue()' "$V3"
 grep -Fq 'let rawValue = draftPosition ?? state.presentationClock.playbackTime' "$V3"
 grep -Fq 'min(max(playbackPosition / duration, 0), 1)' "$V3"
 grep -Fq 'state.seek(to: min(max(draftPosition, 0), duration), source: "v3-progress-slider")' "$V3"
@@ -36,6 +39,12 @@ grep -Fq 'liveOnly: true' "$FULLSCREEN"
 
 if sed -n '/struct LyricsPresentationOffsetControl/,/^}/p' "$OFFSET_CONTROL" | grep -Eq '\bseek\s*\('; then
   echo 'FAIL: offset control contains a seek call' >&2
+  exit 1
+fi
+
+if rg -n 'settingsStore\.lyricsPresentationOffset|settings\.lyricsPresentationOffset|defaults\.set\([^\n]*Key\.lyricsPresentationOffset' \
+  "$STATE" "$OFFSET_CONTROL" "$V3" "$SETTINGS"; then
+  echo 'FAIL: runtime consumers still read/write the historical global offset' >&2
   exit 1
 fi
 

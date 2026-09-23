@@ -178,6 +178,8 @@ public final class AppSettingsStore: ObservableObject {
         public static let settingsCenterPresentation = "settings.centerPresentation"
         public static let readingPreferences = "reading.preferences.v1"
         public static let v3PlaybackDetailsOnHover = "v3.playbackDetailsOnHover"
+        /// Preserved historical global offset. New runtime reads/writes use
+        /// `lyricsOffsetStore`; this key is never migrated or overwritten.
         public static let lyricsPresentationOffset = "lyrics.presentationOffset.v1"
         public static let v3LyricsPositions = "v3.lyricsPositions.v1"
         public static let v3StageReadabilityEnabled = "v3.stageReadabilityEnabled"
@@ -206,6 +208,7 @@ public final class AppSettingsStore: ObservableObject {
     public let presentationSelections: PresentationSelectionStore
     public let translationProfiles: TranslationProfileStore
     public let readingUserDictionary: ReadingUserDictionaryStore
+    public let lyricsOffsetStore: ScopedLyricsOffsetStore
 
     @Published public var settingsCenterPresentationRawValue: String {
         didSet { defaults.set(settingsCenterPresentationRawValue, forKey: Key.settingsCenterPresentation) }
@@ -375,17 +378,10 @@ public final class AppSettingsStore: ObservableObject {
         didSet { defaults.set(v3PlaybackDetailsOnHover, forKey: Key.v3PlaybackDetailsOnHover) }
     }
 
-    /// Shared presentation-only lyric offset. It never changes Spotify's
-    /// position, provider timestamps, or the stored LRC document.
-    @Published public var lyricsPresentationOffset: Double {
-        didSet {
-            let normalized = min(10, max(-10, lyricsPresentationOffset.isFinite ? lyricsPresentationOffset : 0))
-            if normalized != lyricsPresentationOffset {
-                lyricsPresentationOffset = normalized
-            } else {
-                defaults.set(normalized, forKey: Key.lyricsPresentationOffset)
-            }
-        }
+    /// Old global setting remains available only for an explicit history note.
+    /// Reading this value never assigns it to a song or lyrics version.
+    public var legacyLyricsPresentationOffset: Double? {
+        (defaults.object(forKey: Key.lyricsPresentationOffset) as? NSNumber)?.doubleValue
     }
 
     @Published public var v3StageReadabilityEnabled: Bool {
@@ -460,6 +456,7 @@ public final class AppSettingsStore: ObservableObject {
 
     public init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+        self.lyricsOffsetStore = ScopedLyricsOffsetStore(defaults: defaults)
         self.v3LyricsPositions = (defaults.dictionary(forKey: Key.v3LyricsPositions) as? [String: String] ?? [:])
             .filter { ["automatic", "left", "center", "right"].contains($0.value) }
         let legacyBlur = defaults.object(forKey: Key.v3BackdropBlurRadius) as? Double ?? 36.0
@@ -484,10 +481,6 @@ public final class AppSettingsStore: ObservableObject {
                 ?? (presentation == selectedPresentation ? legacyBlur : blurDefaults[presentation] ?? legacyBlur)
         }
         self.v3PlaybackDetailsOnHover = defaults.bool(forKey: Key.v3PlaybackDetailsOnHover)
-        self.lyricsPresentationOffset = min(
-            10,
-            max(-10, defaults.object(forKey: Key.lyricsPresentationOffset) as? Double ?? 0)
-        )
         self.v3StageReadabilityEnabled = defaults.bool(forKey: Key.v3StageReadabilityEnabled)
         self.v3BackdropBlurRadius = self.v3BlurByPresentation[selectedPresentation] ?? legacyBlur
         self.v3ArtworkPosition = defaults.string(forKey: Key.v3ArtworkPosition) ?? "left"

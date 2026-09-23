@@ -38,6 +38,7 @@ swiftc -parse-as-library \
   "$ROOT_DIR/SpotifyLyrics/Persistence/TranslationRepository.swift" \
   "$ROOT_DIR/SpotifyLyrics/Persistence/LyricsEditingRepository.swift" \
   "$ROOT_DIR/SpotifyLyrics/Persistence/SQLiteLyricsRepository.swift" \
+  "$ROOT_DIR/SpotifyLyrics/Settings/ScopedLyricsOffsetStore.swift" \
   "$ROOT_DIR/SpotifyLyrics/Services/LyricsEditorSessionController.swift" \
   "$ROOT_DIR/Tests/h1_hash_domain_boundary_contract.swift" \
   -o "$TMP_DIR/h1-hash-domain-boundary-contract"

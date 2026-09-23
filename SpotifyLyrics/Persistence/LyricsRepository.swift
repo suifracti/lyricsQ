@@ -137,8 +137,28 @@ public struct LyricsDatabaseStats: Equatable, Sendable {
 }
 
 /// Persistence boundary used by the session layer. Implementations must be
+/// Resolves only scopes backed by an already-persisted lyrics version. A nil
+/// result means the track/version pair is unknown or belongs to another track.
+public protocol LyricsOffsetScopeResolving: Sendable {
+    func canonicalStableKeyForSavedLyricsVersion(
+        trackStableKey: String,
+        versionID: UUID
+    ) async throws -> String?
+}
+
+public extension LyricsOffsetScopeResolving {
+    func canonicalStableKeyForSavedLyricsVersion(
+        trackStableKey: String,
+        versionID: UUID
+    ) async throws -> String? {
+        _ = trackStableKey
+        _ = versionID
+        return nil
+    }
+}
+
 /// Sendable and perform blocking storage work away from MainActor.
-public protocol LyricsRepository: Sendable {
+public protocol LyricsRepository: Sendable, LyricsOffsetScopeResolving {
     func prepare() async throws
     /// Returns persisted aliases for query planning. This is read-only and
     /// never creates a Track or LyricsVersion.

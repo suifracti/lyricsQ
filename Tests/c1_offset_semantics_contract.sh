@@ -14,6 +14,7 @@ if grep -Fq 'state.seek' "$CONTROL"; then
   exit 1
 fi
 
+grep -Fq 'resolvedSettings.lyricsOffsetStore.$activeOffset' "$STATE"
 grep -Fq '.sink { [weak self] newOffset in' "$STATE"
 grep -Fq 'presentationOffset: newOffset' "$STATE"
 echo 'C1 offset semantics/source contract: PASS'

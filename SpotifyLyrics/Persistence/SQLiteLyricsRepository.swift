@@ -908,6 +908,30 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         return try resolvedCanonicalStableKey(stableKey)
     }
 
+    /// Returns a canonical offset scope only when the requested saved version
+    /// belongs to the supplied track identity family. This is a read-only
+    /// validation path; it does not create track/version rows or redirects.
+    public func canonicalStableKeyForSavedLyricsVersion(
+        trackStableKey: String,
+        versionID: UUID
+    ) async throws -> String? {
+        try ensurePrepared()
+        let requestedCanonicalKey = try resolvedCanonicalStableKey(trackStableKey)
+        let statement = try prepare("SELECT track_stable_key FROM lyrics_versions WHERE id = ? LIMIT 1;")
+        defer { sqlite3_finalize(statement) }
+        try bindText(versionID.uuidString, at: 1, to: statement)
+        let result = sqlite3_step(statement)
+        guard result == SQLITE_ROW else {
+            if result == SQLITE_DONE { return nil }
+            throw lastError()
+        }
+        guard let storedTrackKey = columnText(statement, index: 0),
+              try resolvedCanonicalStableKey(storedTrackKey) == requestedCanonicalKey else {
+            return nil
+        }
+        return requestedCanonicalKey
+    }
+
     public func identityFamily(stableKey: String) throws -> [String] {
         try ensurePrepared()
         return try resolvedIdentityFamily(stableKey: stableKey)

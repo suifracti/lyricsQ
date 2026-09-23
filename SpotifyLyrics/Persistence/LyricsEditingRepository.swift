@@ -160,7 +160,7 @@ public enum LyricsEditingRepositoryError: Error, Equatable, Sendable, LocalizedE
     }
 }
 
-public protocol LyricsEditingRepository: Sendable {
+public protocol LyricsEditingRepository: Sendable, LyricsOffsetScopeResolving {
     func loadEditableVersions(track: Track, identity: TrackIdentity) async throws -> [StoredEditableLyricsVersion]
     func loadEditableVersion(versionID: UUID, track: Track, identity: TrackIdentity) async throws -> StoredEditableLyricsVersion?
     /// Marks an existing lyrics version as the preferred persisted version for
