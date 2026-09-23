@@ -289,6 +289,19 @@ struct R1ReadingTokenConsistencyContract {
         } catch let error as ReadingRepositoryError {
             guard case .invalidLines = error else { throw error }
         }
+        let badGeneratedVersionID = UUID()
+        let badGeneratedRecord = ReadingVersionRecord(id: badGeneratedVersionID, lyricsVersionID: lyricsVersionID,
+            sourceContentHash: sourceHash, engineID: parent.engineID, representationID: parent.representationID,
+            sourceKind: .generated, language: parent.language, createdAt: badNow, updatedAt: badNow,
+            isMachineGenerated: true, isManuallyEdited: false, isCurrent: false, isLocked: false, isArchived: false,
+            parentVersionID: parent.id, confidence: 0.9, warningMetadata: [], contextHash: "r1-invalid-generated-token")
+        do {
+            _ = try await reopened.saveReadingVersion(ReadingVersionSaveRequest(record: badGeneratedRecord,
+                lines: [mismatchedLine, parentLines[1]]))
+            throw ContractFailure("repository accepted a generated kana line with conflicting readingText and tokens")
+        } catch let error as ReadingRepositoryError {
+            guard case .invalidLines = error else { throw error }
+        }
         let invalidRangeVersionID = UUID()
         let first = parentLines[0].tokens[0]
         let invalidRangeToken = ReadingToken(id: first.id, surface: first.surface, reading: first.reading,
@@ -308,7 +321,9 @@ struct R1ReadingTokenConsistencyContract {
         }
         let afterRejectedWrites = try await reopened.loadReadingVersions(lyricsVersionID: lyricsVersionID,
             representationID: nil, sourceContentHash: sourceHash)
-        try require(!afterRejectedWrites.contains(where: { $0.record.id == badVersionID || $0.record.id == invalidRangeVersionID }),
+        try require(!afterRejectedWrites.contains(where: {
+            $0.record.id == badVersionID || $0.record.id == badGeneratedVersionID || $0.record.id == invalidRangeVersionID
+        }),
                     "rejected inconsistent token records left readable partial versions")
 
         // The edit creates an immutable child. The prior manual version remains

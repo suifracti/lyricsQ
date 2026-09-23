@@ -1304,10 +1304,9 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
                 throw ReadingRepositoryError.invalidLines("原文映射或空白行规则不匹配")
             }
             if request.record.representationID == ReadingRepresentationID.kana.rawValue,
-               request.record.sourceKind == .manualEdit,
                !line.tokens.isEmpty,
                !line.hasConsistentKanaTokenProjection {
-                throw ReadingRepositoryError.invalidLines("人工假名与逐词 token 不一致；请清除失效 token 后保存")
+                throw ReadingRepositoryError.invalidLines("假名与逐词 token 不一致；请清除失效 token 后保存")
             }
         }
         if let existing = try fetchReadingVersion(versionID: request.record.id) {
