@@ -10,8 +10,9 @@
 - repo root：`/Users/apple/backup/sptifylyrics`
 - branch：`codex/r1-reading-token-consistency`（R1 从 O1 最终 HEAD 建立；隔离 worktree 位于 `/private/tmp/spotifylyrics-r1-reading-token-consistency`）
 - R1 base：O1 final HEAD `c31805467ae877e67ddd14e50af6b6587f719416`；pushed R1 checkpoint `f6e33debc35017fd900029dd1a98ac79f4154b51`
-- latest R1 production commit：`4944a818b8c3059b5f575578eaef6194bdd8b373` (`fix: keep manual reading tokens consistent`)
-- R1 test follow-up：`63498bc9e9a4f53474fe87577092513c1ea92f97`；关闭数据库后重开，并经生产 `select(versionID:)` 持久恢复旧读音版本
+- initial R1 production commit：`4944a818b8c3059b5f575578eaef6194bdd8b373` (`fix: keep manual reading tokens consistent`)
+- latest R1 production commit：`bad730103632cedeb852bffec0836745879ce109` (`fix: reject inconsistent kana tokens from all sources`)
+- R1 test follow-up：`63498bc9e9a4f53474fe87577092513c1ea92f97`；关闭数据库后重开，并经生产 `select(versionID:)` 持久恢复旧读音版本；generated-source 冲突 token 拒绝合同随最新 guard 提交 `bad730103632cedeb852bffec0836745879ce109`
 - latest O1 production source commit：`69c922b37331bf42be7b00494d9ba2f0f5dda3f7` (`fix: sync editor offset input on scope changes`；核心 scope 实现提交 `dd55087502f3aa5e767f79ed9595e0f0eff9cd5d`)
 - O1 base：S1 final HEAD `6211bed5c2e31fa0325be00e5a2415d8563f0f25`；pushed O1 checkpoint `f228808169991b6448e60ab1e999a6069310215a`
 - S1 base：T2 final HEAD `a427ea65b645931fe2d6fd94dcff5f463b4b1952`；pushed checkpoint `bee7ad106bfee7bfdc2ff96ba536b669cb53a41a`
@@ -81,7 +82,7 @@
   - `AUTOMATED_VERIFIED`
   - V3 整行修改、inline/独立读音/full-screen、romaji 与重启的真人验收：`USER_VERIFICATION_REQUIRED / NOT_RUN`
   - Planner 定向审查：完成，无 Blocker / 必要 Relevant
-  - Latest production commit：`4944a818b8c3059b5f575578eaef6194bdd8b373`；最终合同 follow-up：`63498bc9e9a4f53474fe87577092513c1ea92f97`；已推送，尚未合并
+  - Latest production commit：`bad730103632cedeb852bffec0836745879ce109`（初始实现 `4944a818b8c3059b5f575578eaef6194bdd8b373`）；最终合同 follow-up：`63498bc9e9a4f53474fe87577092513c1ea92f97`；已推送，尚未合并
   - Evidence：[R1 reading/token consistency](evidence/core-integrity/R1-reading-token-consistency.md)
 - **Next**：U1 由后续独立批次接手；本轮已停止在 U1 前。
 
@@ -168,7 +169,7 @@
 ## R1 Confirmed Facts
 
 - 整行读音修改以保存的 `readingText` 为准。文本变化时，该行旧 tokens 整体失效；无可靠逐词映射时不猜位置、不显示旧 inline Ruby，独立读音与 romaji 从新 `readingText` 投影。`readingText` 未变时保留正确 tokens；未改行保留原 tokens。
-- 持久读音版本只把范围完整、文本对应且可重建 kana 的 token map 用于投影。SQLite 保存拒绝冲突的人工 kana/token 组合；加载历史冲突只在返回投影中失效 tokens，不重写历史数据。
+- 持久读音版本只把范围完整、文本对应且可重建 kana 的 token map 用于投影。SQLite 保存拒绝所有来源的冲突非空 kana/token 组合；明确空 token fallback 合法，加载历史冲突只在返回投影中失效 tokens，不重写历史数据。
 - 手工保存先核验歌词版本与规范源 hash，取消并等待旧生成，再保存并采用持久子版本后发布当前状态。旧版本与歌曲作用域的点击纠音词典保持不变；延迟生成不能覆盖新人工读音。
 - 临时 SQLite 合同确认原文、规范 hash、timing attachment identity、逐字 spans、行/结束时间、translation、performer、language 及 provider 元数据保留；加载/投影前后的 `PRAGMA data_version` 相同。
 - R1 定向合同、受影响的 H1/T1/T2 与读音/Ruby 合同、Debug 构建均通过。真人 V3 切换/重启/点击纠音检查仍为 `USER_VERIFICATION_REQUIRED / NOT_RUN`。
@@ -201,4 +202,4 @@
 ## Next Executor Contract
 
 **U1 — Honest Experimental UI**
-R1 `4944a818b8c3059b5f575578eaef6194bdd8b373` 已自动验证并推送，Planner 定向审查完成，无 Blocker / 必要 Relevant。V3 整行读音编辑、投影、romaji、重启与既有点击纠音的真人验收仍为 `USER_VERIFICATION_REQUIRED / NOT_RUN`。本轮没有开始 U1。
+R1 `bad730103632cedeb852bffec0836745879ce109` 已自动验证并推送；Planner 定向审查完成，无 Blocker / 必要 Relevant。V3 整行读音编辑、投影、romaji、重启与既有点击纠音的真人验收仍为 `USER_VERIFICATION_REQUIRED / NOT_RUN`。本轮没有开始 U1。
