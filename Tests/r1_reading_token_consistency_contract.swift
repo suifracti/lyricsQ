@@ -144,6 +144,22 @@ private actor DelayedGeneratedSaveRepository: ReadingRepository {
 
 @main
 struct R1ReadingTokenConsistencyContract {
+    private struct ManualEditFixture {
+        let track: Track
+        let identity: TrackIdentity
+        let sourceText: String
+        let spans: [TimedTextSpan]
+        let lyricsVersionID: UUID
+        let sourceHash: String
+        let sourceBefore: StoredEditableLyricsVersion
+        let timingID: UUID
+        let parentLines: [ReadingLineResult]
+        let parent: ReadingVersionRecord
+        let noOpVersionID: UUID
+        let childVersionID: UUID
+        let updatedReadingText: String
+    }
+
     static func main() async {
         do {
             let mode = CommandLine.arguments.dropFirst().first ?? "all"
@@ -162,6 +178,159 @@ struct R1ReadingTokenConsistencyContract {
         let root = try temporaryRoot("manual")
         defer { try? FileManager.default.removeItem(at: root) }
         let dbURL = root.appendingPathComponent("r1-manual.sqlite3")
+        let fixture = try await makeManualEditFixture(root: root, dbURL: dbURL)
+        let track = fixture.track
+        let identity = fixture.identity
+        let sourceText = fixture.sourceText
+        let spans = fixture.spans
+        let lyricsVersionID = fixture.lyricsVersionID
+        let sourceHash = fixture.sourceHash
+        let sourceBefore = fixture.sourceBefore
+        let timingID = fixture.timingID
+        let parentLines = fixture.parentLines
+        let parent = fixture.parent
+        let noOpVersionID = fixture.noOpVersionID
+        let childVersionID = fixture.childVersionID
+        let updatedReadingText = fixture.updatedReadingText
+
+        // The fixture helper has returned, releasing its production session
+        // and repository actors so their SQLite handles close before reopen.
+        let reopened = SQLiteLyricsRepository(databaseURL: dbURL, alignmentProvenanceDirectory: root.appendingPathComponent("provenance"))
+        try await reopened.prepare()
+        let readOnlyProbe = try ReadOnlyDataVersionProbe(url: dbURL)
+        let dataVersionBeforeLoadAndProjection = try readOnlyProbe.dataVersion()
+        guard let sourceAfter = try await reopened.loadEditableVersion(versionID: lyricsVersionID, track: track, identity: identity) else {
+            throw ContractFailure("source lyrics did not survive reading edit/reopen")
+        }
+        let versions = try await reopened.loadReadingVersions(lyricsVersionID: lyricsVersionID, representationID: nil, sourceContentHash: sourceHash)
+        guard let child = versions.first(where: { $0.record.id == childVersionID }),
+              let noOp = versions.first(where: { $0.record.id == noOpVersionID }),
+              let original = versions.first(where: { $0.record.id == parent.id }) else {
+            throw ContractFailure("parent/no-op/edited reading versions did not all reload")
+        }
+        let staleTokensRemain = !child.lines[0].tokens.isEmpty
+        print("R1 ROUNDTRIP: changed line retained old tokens after save/reopen = \(staleTokensRemain)")
+        let timingAfter = sourceAfter.document.timingVersionID?.uuidString ?? "nil"
+        let timingBefore = sourceBefore.document.timingVersionID?.uuidString ?? "nil"
+        let sourceRowsUnchanged = sourceAfter.document.lines.count == sourceBefore.document.lines.count
+            && zip(sourceAfter.document.lines, sourceBefore.document.lines).allSatisfy { after, before in
+                after.timestamp == before.timestamp && after.endTime == before.endTime
+                    && after.originalText == before.originalText && after.translationText == before.translationText
+                    && after.romajiText == before.romajiText && after.kanaText == before.kanaText
+                    && after.performerID == before.performerID && after.timedSpans == before.timedSpans
+            }
+        print("R1 SOURCE CHECK: rows=\(sourceRowsUnchanged) hash=\(sourceAfter.sourceContentHash == sourceBefore.sourceContentHash) timing=\(timingAfter)/\(timingBefore)")
+        try require(!staleTokensRemain, "changed readingText was saved/reloaded with the old repeated-word userDictionary tokens")
+        try require(child.lines[0].readingText == updatedReadingText, "independent reading row did not retain the edited text")
+        try require(child.lines[1].tokens == parentLines[1].tokens && child.lines[1].readingText == "つきとつき",
+                    "unchanged line lost its valid manual tokens")
+        try require(noOp.lines[0].tokens == parentLines[0].tokens,
+                    "unchanged readingText unnecessarily invalidated correct tokens")
+        try require(original.lines == parentLines && original.record.id == parent.id,
+                    "creating a manual child overwrote the prior reading version")
+        try require(sourceRowsUnchanged && sourceAfter.sourceContentHash == sourceBefore.sourceContentHash
+                    && sourceAfter.document.identity == sourceBefore.document.identity
+                    && sourceAfter.document.language == sourceBefore.document.language
+                    && sourceAfter.document.source == sourceBefore.document.source
+                    && sourceAfter.document.providerSourceID == sourceBefore.document.providerSourceID,
+                    "reading edit changed canonical lyrics/timing data or its timing attachment")
+        try require(sourceAfter.document.timingVersionID == timingID && sourceAfter.document.lines[0].timedSpans == spans,
+                    "reading edit changed the timing attachment or Unicode/repeated-word spans")
+
+        let projection = ReadingProjection(lyricsVersionID: lyricsVersionID, sourceContentHash: sourceHash,
+            readingVersionID: childVersionID, representationID: ReadingRepresentationID.kana.rawValue,
+            sourceKind: child.record.sourceKind, lines: child.lines, isNoSelection: false)
+        let projected = projection.applying(to: sourceAfter.document.lines)
+
+        let reopenedSuite = "r1-reopened-session-\(UUID().uuidString)"
+        let reopenedDefaults = UserDefaults(suiteName: reopenedSuite)!
+        defer { reopenedDefaults.removePersistentDomain(forName: reopenedSuite) }
+        let reopenedSettings = AppSettingsStore(defaults: reopenedDefaults)
+        let reopenedSession = await MainActor.run {
+            ReadingSessionController(repository: reopened, settings: reopenedSettings)
+        }
+        await MainActor.run {
+            reopenedSession.synchronize(lyricsVersionID: lyricsVersionID, sourceContentHash: sourceHash,
+                lines: sourceAfter.document.lines, language: sourceAfter.document.language,
+                trackStableKey: identity.stableKey, artistDisplay: track.artist)
+        }
+        try await waitUntil("a new session did not restore the edited current reading version") {
+            reopenedSession.selectedVersion?.record.id == childVersionID
+        }
+        let reopenedSessionProjection = await MainActor.run {
+            reopenedSession.project(onto: sourceAfter.document.lines)
+        }
+        let dataVersionAfterLoadAndProjection = try readOnlyProbe.dataVersion()
+        try require(dataVersionAfterLoadAndProjection == dataVersionBeforeLoadAndProjection,
+                    "reading load/projection performed a SQLite write")
+        try require(child.record.isCurrent && reopenedSessionProjection[0].kanaText == updatedReadingText,
+                    "database/session reopen did not restore the edited current version and its projection")
+        try require(projected[0].kanaText == updatedReadingText, "independent reading line did not use the saved new readingText")
+        try require(projected[0].romajiText == JapaneseRomanizer.romanizeConfirmedKana(updatedReadingText),
+                    "romaji did not derive from the saved new readingText")
+        try require(projected[0].rubyTokens == nil,
+                    "inline Ruby still exposed old tokens after a whole-line partial edit without a provable map")
+        try require(projected[1].rubyTokens?.map { $0.surface + ":" + ($0.ruby ?? "nil") } == ["月:つき", "と:nil", "月:つき"],
+                    "untouched duplicate userDictionary token mapping was not preserved")
+
+        let badVersionID = UUID()
+        let badNow = Date()
+        let badRecord = ReadingVersionRecord(id: badVersionID, lyricsVersionID: lyricsVersionID, sourceContentHash: sourceHash,
+            engineID: ReadingEngineID.japaneseContextual.rawValue, representationID: ReadingRepresentationID.kana.rawValue,
+            sourceKind: .manualEdit, language: .japanese, createdAt: badNow, updatedAt: badNow,
+            isMachineGenerated: false, isManuallyEdited: true, isCurrent: false, isLocked: false, isArchived: false,
+            parentVersionID: parent.id, confidence: 1, warningMetadata: [], contextHash: "r1-invalid-token")
+        let mismatchedLine = ReadingLineResult(lineIndex: 0, originalText: sourceText, readingText: updatedReadingText,
+            language: .japanese, tokens: parentLines[0].tokens, confidence: 1)
+        do {
+            _ = try await reopened.saveReadingVersion(ReadingVersionSaveRequest(record: badRecord,
+                lines: [mismatchedLine, parentLines[1]]))
+            throw ContractFailure("repository accepted a manual kana line with conflicting readingText and tokens")
+        } catch let error as ReadingRepositoryError {
+            guard case .invalidLines = error else { throw error }
+        }
+        let invalidRangeVersionID = UUID()
+        let first = parentLines[0].tokens[0]
+        let invalidRangeToken = ReadingToken(id: first.id, surface: first.surface, reading: first.reading,
+            startOffset: first.startOffset, endOffset: first.endOffset + 1, source: first.source, confidence: first.confidence)
+        let invalidRangeLine = parentLines[0].replacingTokens([invalidRangeToken] + Array(parentLines[0].tokens.dropFirst()))
+        let invalidRangeRecord = ReadingVersionRecord(id: invalidRangeVersionID, lyricsVersionID: lyricsVersionID,
+            sourceContentHash: sourceHash, engineID: parent.engineID, representationID: parent.representationID,
+            sourceKind: .manualEdit, language: .japanese, createdAt: badNow, updatedAt: badNow,
+            isMachineGenerated: false, isManuallyEdited: true, isCurrent: false, isLocked: false, isArchived: false,
+            parentVersionID: parent.id, confidence: 1, warningMetadata: [], contextHash: "r1-invalid-range")
+        do {
+            _ = try await reopened.saveReadingVersion(ReadingVersionSaveRequest(record: invalidRangeRecord,
+                lines: [invalidRangeLine, parentLines[1]]))
+            throw ContractFailure("repository accepted a manual token range outside Swift Character boundaries")
+        } catch let error as ReadingRepositoryError {
+            guard case .invalidLines = error else { throw error }
+        }
+        let afterRejectedWrites = try await reopened.loadReadingVersions(lyricsVersionID: lyricsVersionID,
+            representationID: nil, sourceContentHash: sourceHash)
+        try require(!afterRejectedWrites.contains(where: { $0.record.id == badVersionID || $0.record.id == invalidRangeVersionID }),
+                    "rejected inconsistent token records left readable partial versions")
+
+        // The edit creates an immutable child. The prior manual version remains
+        // selectable and can still become the persisted current version again.
+        await MainActor.run { reopenedSession.select(versionID: parent.id) }
+        try await waitUntil("the production session did not reselect the prior reading version") {
+            reopenedSession.selectedVersion?.record.id == parent.id
+        }
+        var restoredParent = false
+        for _ in 0..<100 {
+            let versionsAfterReselect = try await reopened.loadReadingVersions(
+                lyricsVersionID: lyricsVersionID, representationID: nil, sourceContentHash: sourceHash)
+            if versionsAfterReselect.contains(where: { $0.record.id == parent.id && $0.record.isCurrent }) {
+                restoredParent = true
+                break
+            }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        try require(restoredParent, "prior reading version was selectable in memory but did not persist as current")
+    }
+
+    private static func makeManualEditFixture(root: URL, dbURL: URL) async throws -> ManualEditFixture {
         let track = Track(title: "R1 duplicate token fixture", artist: "Core Integrity", album: "Fixture", duration: 30, spotifyId: "r1-manual")
         let identity = TrackIdentity(track: track)
         let sourceText = "身体と身体👩‍🎤か\u{3099}"
@@ -273,140 +442,10 @@ struct R1ReadingTokenConsistencyContract {
         // loader must preserve the version/text while disabling that token map.
         try injectTokens(dbURL: dbURL, versionID: childVersionID, lineIndex: 0, tokens: parentLines[0].tokens)
 
-        // Drop the live repository/session scope, then verify a separately opened database handle.
-        let reopened = SQLiteLyricsRepository(databaseURL: dbURL, alignmentProvenanceDirectory: root.appendingPathComponent("provenance"))
-        try await reopened.prepare()
-        let readOnlyProbe = try ReadOnlyDataVersionProbe(url: dbURL)
-        let dataVersionBeforeLoadAndProjection = try readOnlyProbe.dataVersion()
-        guard let sourceAfter = try await reopened.loadEditableVersion(versionID: lyricsVersionID, track: track, identity: identity) else {
-            throw ContractFailure("source lyrics did not survive reading edit/reopen")
-        }
-        let versions = try await reopened.loadReadingVersions(lyricsVersionID: lyricsVersionID, representationID: nil, sourceContentHash: sourceHash)
-        guard let child = versions.first(where: { $0.record.id == childVersionID }),
-              let noOp = versions.first(where: { $0.record.id == noOpVersionID }),
-              let original = versions.first(where: { $0.record.id == parent.id }) else {
-            throw ContractFailure("parent/no-op/edited reading versions did not all reload")
-        }
-        let staleTokensRemain = !child.lines[0].tokens.isEmpty
-        print("R1 ROUNDTRIP: changed line retained old tokens after save/reopen = \(staleTokensRemain)")
-        let timingAfter = sourceAfter.document.timingVersionID?.uuidString ?? "nil"
-        let timingBefore = sourceBefore.document.timingVersionID?.uuidString ?? "nil"
-        let sourceRowsUnchanged = sourceAfter.document.lines.count == sourceBefore.document.lines.count
-            && zip(sourceAfter.document.lines, sourceBefore.document.lines).allSatisfy { after, before in
-                after.timestamp == before.timestamp && after.endTime == before.endTime
-                    && after.originalText == before.originalText && after.translationText == before.translationText
-                    && after.romajiText == before.romajiText && after.kanaText == before.kanaText
-                    && after.performerID == before.performerID && after.timedSpans == before.timedSpans
-            }
-        print("R1 SOURCE CHECK: rows=\(sourceRowsUnchanged) hash=\(sourceAfter.sourceContentHash == sourceBefore.sourceContentHash) timing=\(timingAfter)/\(timingBefore)")
-        try require(!staleTokensRemain, "changed readingText was saved/reloaded with the old repeated-word userDictionary tokens")
-        try require(child.lines[0].readingText == updatedReadingText, "independent reading row did not retain the edited text")
-        try require(child.lines[1].tokens == parentLines[1].tokens && child.lines[1].readingText == unchangedReadingText,
-                    "unchanged line lost its valid manual tokens")
-        try require(noOp.lines[0].tokens == parentLines[0].tokens,
-                    "unchanged readingText unnecessarily invalidated correct tokens")
-        try require(original.lines == parentLines && original.record.id == parent.id,
-                    "creating a manual child overwrote the prior reading version")
-        try require(sourceRowsUnchanged && sourceAfter.sourceContentHash == sourceBefore.sourceContentHash
-                    && sourceAfter.document.identity == sourceBefore.document.identity
-                    && sourceAfter.document.language == sourceBefore.document.language
-                    && sourceAfter.document.source == sourceBefore.document.source
-                    && sourceAfter.document.providerSourceID == sourceBefore.document.providerSourceID,
-                    "reading edit changed canonical lyrics/timing data or its timing attachment")
-        try require(sourceAfter.document.timingVersionID == timingID && sourceAfter.document.lines[0].timedSpans == spans,
-                    "reading edit changed the timing attachment or Unicode/repeated-word spans")
-
-        let projection = ReadingProjection(lyricsVersionID: lyricsVersionID, sourceContentHash: sourceHash,
-            readingVersionID: childVersionID, representationID: ReadingRepresentationID.kana.rawValue,
-            sourceKind: child.record.sourceKind, lines: child.lines, isNoSelection: false)
-        let projected = projection.applying(to: sourceAfter.document.lines)
-
-        let reopenedSuite = "r1-reopened-session-\(UUID().uuidString)"
-        let reopenedDefaults = UserDefaults(suiteName: reopenedSuite)!
-        defer { reopenedDefaults.removePersistentDomain(forName: reopenedSuite) }
-        let reopenedSettings = AppSettingsStore(defaults: reopenedDefaults)
-        let reopenedSession = await MainActor.run {
-            ReadingSessionController(repository: reopened, settings: reopenedSettings)
-        }
-        await MainActor.run {
-            reopenedSession.synchronize(lyricsVersionID: lyricsVersionID, sourceContentHash: sourceHash,
-                lines: sourceAfter.document.lines, language: sourceAfter.document.language,
-                trackStableKey: identity.stableKey, artistDisplay: track.artist)
-        }
-        try await waitUntil("a new session did not restore the edited current reading version") {
-            reopenedSession.selectedVersion?.record.id == childVersionID
-        }
-        let reopenedSessionProjection = await MainActor.run {
-            reopenedSession.project(onto: sourceAfter.document.lines)
-        }
-        let dataVersionAfterLoadAndProjection = try readOnlyProbe.dataVersion()
-        try require(dataVersionAfterLoadAndProjection == dataVersionBeforeLoadAndProjection,
-                    "reading load/projection performed a SQLite write")
-        try require(child.record.isCurrent && reopenedSessionProjection[0].kanaText == updatedReadingText,
-                    "database/session reopen did not restore the edited current version and its projection")
-        try require(projected[0].kanaText == updatedReadingText, "independent reading line did not use the saved new readingText")
-        try require(projected[0].romajiText == JapaneseRomanizer.romanizeConfirmedKana(updatedReadingText),
-                    "romaji did not derive from the saved new readingText")
-        try require(projected[0].rubyTokens == nil,
-                    "inline Ruby still exposed old tokens after a whole-line partial edit without a provable map")
-        try require(projected[1].rubyTokens?.map { $0.surface + ":" + ($0.ruby ?? "nil") } == ["月:つき", "と:nil", "月:つき"],
-                    "untouched duplicate userDictionary token mapping was not preserved")
-
-        let badVersionID = UUID()
-        let badNow = Date()
-        let badRecord = ReadingVersionRecord(id: badVersionID, lyricsVersionID: lyricsVersionID, sourceContentHash: sourceHash,
-            engineID: ReadingEngineID.japaneseContextual.rawValue, representationID: ReadingRepresentationID.kana.rawValue,
-            sourceKind: .manualEdit, language: .japanese, createdAt: badNow, updatedAt: badNow,
-            isMachineGenerated: false, isManuallyEdited: true, isCurrent: false, isLocked: false, isArchived: false,
-            parentVersionID: parent.id, confidence: 1, warningMetadata: [], contextHash: "r1-invalid-token")
-        let mismatchedLine = ReadingLineResult(lineIndex: 0, originalText: sourceText, readingText: updatedReadingText,
-            language: .japanese, tokens: parentLines[0].tokens, confidence: 1)
-        do {
-            _ = try await reopened.saveReadingVersion(ReadingVersionSaveRequest(record: badRecord,
-                lines: [mismatchedLine, parentLines[1]]))
-            throw ContractFailure("repository accepted a manual kana line with conflicting readingText and tokens")
-        } catch let error as ReadingRepositoryError {
-            guard case .invalidLines = error else { throw error }
-        }
-        let invalidRangeVersionID = UUID()
-        let first = parentLines[0].tokens[0]
-        let invalidRangeToken = ReadingToken(id: first.id, surface: first.surface, reading: first.reading,
-            startOffset: first.startOffset, endOffset: first.endOffset + 1, source: first.source, confidence: first.confidence)
-        let invalidRangeLine = parentLines[0].replacingTokens([invalidRangeToken] + Array(parentLines[0].tokens.dropFirst()))
-        let invalidRangeRecord = ReadingVersionRecord(id: invalidRangeVersionID, lyricsVersionID: lyricsVersionID,
-            sourceContentHash: sourceHash, engineID: parent.engineID, representationID: parent.representationID,
-            sourceKind: .manualEdit, language: .japanese, createdAt: badNow, updatedAt: badNow,
-            isMachineGenerated: false, isManuallyEdited: true, isCurrent: false, isLocked: false, isArchived: false,
-            parentVersionID: parent.id, confidence: 1, warningMetadata: [], contextHash: "r1-invalid-range")
-        do {
-            _ = try await reopened.saveReadingVersion(ReadingVersionSaveRequest(record: invalidRangeRecord,
-                lines: [invalidRangeLine, parentLines[1]]))
-            throw ContractFailure("repository accepted a manual token range outside Swift Character boundaries")
-        } catch let error as ReadingRepositoryError {
-            guard case .invalidLines = error else { throw error }
-        }
-        let afterRejectedWrites = try await reopened.loadReadingVersions(lyricsVersionID: lyricsVersionID,
-            representationID: nil, sourceContentHash: sourceHash)
-        try require(!afterRejectedWrites.contains(where: { $0.record.id == badVersionID || $0.record.id == invalidRangeVersionID }),
-                    "rejected inconsistent token records left readable partial versions")
-
-        // The edit creates an immutable child. The prior manual version remains
-        // selectable and can still become the persisted current version again.
-        await MainActor.run { reopenedSession.adopt(versionID: parent.id) }
-        try await waitUntil("the production session did not reselect the prior reading version") {
-            reopenedSession.selectedVersion?.record.id == parent.id
-        }
-        var restoredParent = false
-        for _ in 0..<100 {
-            let versionsAfterReselect = try await reopened.loadReadingVersions(
-                lyricsVersionID: lyricsVersionID, representationID: nil, sourceContentHash: sourceHash)
-            if versionsAfterReselect.contains(where: { $0.record.id == parent.id && $0.record.isCurrent }) {
-                restoredParent = true
-                break
-            }
-            try await Task.sleep(nanoseconds: 10_000_000)
-        }
-        try require(restoredParent, "prior reading version was selectable in memory but did not persist as current")
+        return ManualEditFixture(track: track, identity: identity, sourceText: sourceText, spans: spans,
+            lyricsVersionID: lyricsVersionID, sourceHash: sourceHash, sourceBefore: sourceBefore, timingID: timingID,
+            parentLines: parentLines, parent: parent,
+            noOpVersionID: noOpVersionID, childVersionID: childVersionID, updatedReadingText: updatedReadingText)
     }
 
     private static func runDelayedGenerationRace() async throws {
